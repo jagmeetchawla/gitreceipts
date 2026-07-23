@@ -222,6 +222,75 @@ pub fn print(
         pct(claims_landed, claims_total),
         green,
     );
+    // what happened to every exception — the findings, not just counts
+    let all_lines = || audit.intervals.iter().flat_map(|i| i.ledger.iter());
+    let late_verified = all_lines()
+        .filter(|l| l.landing == crate::reconcile::Landing::Late && l.late_verified == Some(true))
+        .count();
+    let late_unverified = all_lines()
+        .filter(|l| l.landing == crate::reconcile::Landing::Late && l.late_verified.is_none())
+        .count();
+    let resolved = |needle: &str| {
+        all_lines()
+            .filter(|l| l.resolution.as_deref().is_some_and(|r| r.contains(needle)))
+            .count()
+    };
+    let superseded = resolved("superseded");
+    let persisted = resolved("persisted outside git");
+    let deliberate = resolved("deliberately");
+    let resolved_total = superseded + persisted + deliberate;
+    let broken = all_lines()
+        .filter(|l| l.landing == crate::reconcile::Landing::Never && l.resolution.is_none())
+        .count();
+    let residue_all = residue_total + attributed_total + dismissed_total;
+
+    println!("  what happened to every exception:");
+    if late_verified + late_unverified > 0 {
+        let unv = if late_unverified > 0 {
+            format!(" ({late_unverified} path-match only)")
+        } else {
+            String::new()
+        };
+        println!(
+            "    · claims that landed late: {}, content-verified against the commit they landed in{}",
+            late_verified + late_unverified,
+            unv
+        );
+    }
+    if resolved_total > 0 {
+        let mut parts: Vec<String> = Vec::new();
+        if superseded > 0 {
+            parts.push(format!("superseded by later landed edits: {superseded}"));
+        }
+        if deliberate > 0 {
+            parts.push(format!(
+                "removed deliberately by the session's own commands: {deliberate}"
+            ));
+        }
+        if persisted > 0 {
+            parts.push(format!("persisted on disk outside git: {persisted}"));
+        }
+        println!(
+            "    · claims that never landed, resolved: {resolved_total} — {}",
+            parts.join(" · ")
+        );
+    }
+    if residue_all > 0 {
+        println!(
+            "    · unclaimed changes (residue): {residue_all} — attributed to commands: {attributed_total} · dismissed as now ignored/untracked: {dismissed_total} · unexplained: {residue_total}",
+        );
+    }
+    println!(
+        "    · {}",
+        if broken == 0 {
+            st.green("broken promises (never landed, nothing explains it): 0")
+                .to_string()
+        } else {
+            st.red(&format!(
+                "broken promises (never landed, nothing explains it): {broken}"
+            ))
+        }
+    );
     println!("  side effects beyond the repo's history:");
     let side = |n: usize, text: String| {
         if n > 0 {
