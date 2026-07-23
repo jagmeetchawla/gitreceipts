@@ -40,10 +40,20 @@ impl Filter {
     }
 }
 
+/// Output format. `text` is the console ledger; `html` is a
+/// self-contained page (redirect it to a file, or pipe it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum Format {
+    #[default]
+    Text,
+    Html,
+}
+
 pub struct Options {
     pub color: ColorMode,
     pub show_intent: bool,
     pub filter: Filter,
+    pub format: Format,
 }
 
 struct Style {

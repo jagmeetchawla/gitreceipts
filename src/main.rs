@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use gitreceipts::{discover, extract, reconcile, report};
+use gitreceipts::{discover, extract, html, reconcile, report};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -54,6 +54,10 @@ enum Cmd {
         /// red-residue (red plus unclaimed-change intervals).
         #[arg(long, value_enum, default_value_t = report::Filter::All)]
         filter: report::Filter,
+        /// Output format: text (console ledger) or html (a self-contained
+        /// page — redirect it: `... --format html > audit.html`).
+        #[arg(long, value_enum, default_value_t = report::Format::Text)]
+        format: report::Format,
     },
 }
 
@@ -84,6 +88,7 @@ fn main() -> Result<()> {
             color,
             no_intent,
             filter,
+            format,
         } => audit(
             sessions,
             latest,
@@ -94,6 +99,7 @@ fn main() -> Result<()> {
                 color,
                 show_intent: !no_intent,
                 filter,
+                format,
             },
         ),
     }
@@ -176,13 +182,26 @@ fn audit(
         ),
     };
     let name = name.as_str();
-    report::print(
-        name,
-        &repo_path.display().to_string(),
-        &session_data,
-        &stats,
-        &audit,
-        &opts,
-    );
+    match opts.format {
+        report::Format::Text => report::print(
+            name,
+            &repo_path.display().to_string(),
+            &session_data,
+            &stats,
+            &audit,
+            &opts,
+        ),
+        report::Format::Html => print!(
+            "{}",
+            html::render(
+                name,
+                &repo_path.display().to_string(),
+                &session_data,
+                &stats,
+                &audit,
+                opts.show_intent,
+            )
+        ),
+    }
     Ok(())
 }

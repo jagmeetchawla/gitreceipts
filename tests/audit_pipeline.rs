@@ -10,7 +10,7 @@ mod common;
 
 use common::{SessionBuilder, TempRepo};
 use gitreceipts::reconcile::{Landing, Status};
-use gitreceipts::{causal, extract, ingest, reconcile};
+use gitreceipts::{causal, extract, html, ingest, reconcile};
 
 fn build_session(root: &str) -> SessionBuilder {
     let mut s = SessionBuilder::new(root);
@@ -136,5 +136,74 @@ fn session_jsonl_itself_stays_out_of_the_equation() {
     assert!(
         !interval.residue.iter().any(|c| c.path == "session.jsonl"),
         "uncommitted files are not residue"
+    );
+}
+
+#[test]
+fn html_report_is_self_contained_and_well_formed() {
+    let repo = TempRepo::new("html");
+    let root = repo.root.display().to_string();
+    repo.write("src.txt", "hello");
+    repo.write("extra.txt", "fallout");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "first"],
+        Some("2026-01-01T10:00:31Z"),
+    );
+    let session_path = repo.root.join("session.jsonl");
+    build_session(&root).save(&session_path);
+
+    let (records, stats) = ingest::ingest(&session_path).unwrap();
+    let session = extract::extract(&causal::order(records));
+    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+    let out = html::render("sess", &root, &session, &stats, &audit, true);
+
+    assert!(out.starts_with("<!doctype html>"));
+    assert!(out.trim_end().ends_with("</html>"));
+    // self-contained: no external asset references
+    for needle in ["src=", "href=", "@import", "http://", "https://"] {
+        assert!(!out.contains(needle), "external ref found: {needle}");
+    }
+    // the report's headline is present
+    assert!(out.contains("broken promises"));
+    assert!(out.contains("interval spine"));
+    // content is HTML-escaped, not raw
+    assert!(!out.contains("<script>alert"));
+}
+
+#[test]
+fn html_report_escapes_hostile_content() {
+    // A session path / prompt containing HTML must not break out of text.
+    let repo = TempRepo::new("htmlesc");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:31Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text(
+        "2026-01-01T10:00:00Z",
+        "look <script>alert(1)</script> here",
+    )
+    .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+    .bash_claim(
+        "2026-01-01T10:00:29Z",
+        "2026-01-01T10:00:31Z",
+        "git add -A && git commit -m one",
+    );
+    let path = repo.root.join("s.jsonl");
+    s.save(&path);
+    let (records, stats) = ingest::ingest(&path).unwrap();
+    let session = extract::extract(&causal::order(records));
+    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+    let out = html::render("sess", &root, &session, &stats, &audit, true);
+
+    assert!(
+        out.contains("&lt;script&gt;"),
+        "prompt HTML must be escaped"
+    );
+    assert!(
+        !out.contains("<script>alert(1)"),
+        "raw script must not appear"
     );
 }
