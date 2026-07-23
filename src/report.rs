@@ -125,9 +125,18 @@ pub fn print(
             dur.num_hours() % 24
         );
     }
+    let dup_note = if stats.duplicates > 0 {
+        format!(", {} fork-duplicates removed", stats.duplicates)
+    } else {
+        String::new()
+    };
     println!(
-        "events: {} kept / {} lines ({} bookkeeping, {} unparseable)",
-        stats.kept, stats.lines, stats.skipped_types, stats.unparseable
+        "events: {} kept / {} lines ({} bookkeeping, {} unparseable{})",
+        stats.kept - stats.duplicates,
+        stats.lines,
+        stats.skipped_types,
+        stats.unparseable,
+        dup_note
     );
     println!(
         "claims: {} file mutations · {} commands · {} observations",

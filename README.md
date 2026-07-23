@@ -74,6 +74,10 @@ planned.
 # audit the most recent session for the repo you're in
 git receipts audit --latest
 
+# audit every session the store still has for this repo, merged into
+# one ledger (forked sessions deduplicate; concurrent sessions union)
+git receipts audit --all
+
 # audit a specific session log against a specific repo
 git receipts audit ~/.claude/projects/<project>/<session>.jsonl --repo ~/code/myapp
 
@@ -91,8 +95,15 @@ git receipts audit --latest --no-intent
 ```
 
 v0.1 reads Claude Code session logs (the JSONL under
-`~/.claude/projects/`). The event model is deliberately
-harness-neutral; adapters for other agent CLIs are on the roadmap.
+`~/.claude/projects/`). Sessions are found for the repo *and its parent
+directories* — launching the agent in a monorepo root or a container
+directory above the repo works — and with no `--repo`, the target is
+inferred from where the session's claims point (ambiguity refuses to
+guess and names the candidates). Note there is no local session
+archive: logs live in the store until its retention cleanup removes
+them, so commits older than your oldest surviving session will show as
+unclaimed keyframes. The event model is deliberately harness-neutral;
+adapters for other agent CLIs are on the roadmap.
 
 ## What the report contains — and what it doesn't
 

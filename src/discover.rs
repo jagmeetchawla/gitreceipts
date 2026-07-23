@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use crate::causal;
 use crate::extract::{Action, Session};
+use crate::ingest::{self, IngestStats};
+use crate::schema::Record;
 
 /// The session store encodes a launch directory by replacing path
 /// separators (and dots) with dashes.
@@ -74,6 +77,84 @@ pub fn latest_session(repo: &Path) -> Result<PathBuf> {
                 .join(", ")
         )
     })
+}
+
+/// Every session the store still has for this repo (and its ancestors),
+/// oldest first. There is no local "archive": sessions live here until
+/// the store's retention cleanup removes them — history older than that
+/// is simply gone, and commits from it will show as unclaimed keyframes.
+pub fn all_sessions(repo: &Path) -> Result<Vec<PathBuf>> {
+    let dirs = session_dirs_for(repo);
+    if dirs.is_empty() {
+        bail!(
+            "no session directories found for {} (or any parent) under ~/.claude/projects",
+            repo.display()
+        );
+    }
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for dir in &dirs {
+        for entry in
+            std::fs::read_dir(dir).with_context(|| format!("read session dir {}", dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                found.push((entry.metadata()?.modified()?, path));
+            }
+        }
+    }
+    if found.is_empty() {
+        bail!(
+            "no .jsonl sessions found for {} or its parents",
+            repo.display()
+        );
+    }
+    found.sort_by_key(|(t, _)| *t);
+    Ok(found.into_iter().map(|(_, p)| p).collect())
+}
+
+/// Ingest several session files into one causally ordered record stream.
+///
+/// Sessions can be forks of one conversation sharing a common prefix of
+/// identical events — records are deduplicated by uuid so a forked
+/// session cannot double-count its claims. Files merge oldest-first, so
+/// the first occurrence of a shared event wins.
+pub fn merge_sessions(paths: &[PathBuf]) -> Result<(Vec<Record>, IngestStats)> {
+    let mut per_file: Vec<(Vec<Record>, IngestStats)> = Vec::new();
+    for path in paths {
+        let (records, stats) = ingest::ingest(path)?;
+        per_file.push((causal::order(records), stats));
+    }
+    // oldest session first, by first event timestamp
+    per_file.sort_by_key(|(records, _)| {
+        records
+            .iter()
+            .find_map(|r| r.timestamp.clone())
+            .unwrap_or_default()
+    });
+
+    let mut merged_stats = IngestStats::default();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut merged: Vec<Record> = Vec::new();
+    for (records, stats) in per_file {
+        merged_stats.lines += stats.lines;
+        merged_stats.kept += stats.kept;
+        merged_stats.skipped_types += stats.skipped_types;
+        merged_stats.unparseable += stats.unparseable;
+        for rec in records {
+            match &rec.uuid {
+                Some(id) => {
+                    if seen.insert(id.clone()) {
+                        merged.push(rec);
+                    } else {
+                        merged_stats.duplicates += 1;
+                    }
+                }
+                None => merged.push(rec),
+            }
+        }
+    }
+    Ok((merged, merged_stats))
 }
 
 /// No `--repo` given: infer it from the session itself.

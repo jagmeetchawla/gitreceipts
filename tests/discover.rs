@@ -4,6 +4,7 @@
 mod common;
 
 use common::{SessionBuilder, TempRepo};
+use gitreceipts::reconcile;
 use gitreceipts::{causal, discover, extract, ingest};
 
 /// A container directory holding two child repos; the session was
@@ -95,4 +96,86 @@ fn a_single_candidate_needs_no_claims() {
 
     let inferred = discover::infer_repo(&session).unwrap();
     assert_eq!(inferred, repo.root);
+}
+
+#[test]
+fn forked_sessions_do_not_double_count_claims() {
+    // Two files carrying the same events (a fork's shared prefix) merge
+    // to one copy of everything.
+    let repo = TempRepo::new("fork");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let f1 = repo.root.join("s1.jsonl");
+    let f2 = repo.root.join("s2.jsonl");
+    s.save(&f1);
+    s.save(&f2); // identical fork
+
+    let (records, stats) = discover::merge_sessions(&[f1, f2]).unwrap();
+    assert_eq!(
+        stats.duplicates, 5,
+        "every event of the fork is a duplicate"
+    );
+    let session = extract::extract(&records);
+    assert_eq!(session.claims.len(), 2, "one write + one command, not four");
+
+    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+    assert_eq!(audit.intervals[0].ledger.len(), 1);
+    assert_eq!(audit.intervals[0].ledger[0].edits, 1, "not double-counted");
+}
+
+#[test]
+fn distinct_sessions_merge_into_one_ledger() {
+    // Session A makes commit one, session B makes commit two. Audited
+    // separately, each sees the other's commit as an unclaimed keyframe;
+    // merged, both intervals are agent-committed and both claims land.
+    let repo = TempRepo::new("union");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    repo.write("b.txt", "x");
+    repo.git(&["add", "b.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
+
+    let mut sa = SessionBuilder::with_id(&root, "A-");
+    sa.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let mut sb = SessionBuilder::with_id(&root, "B-");
+    sb.user_text("2026-01-01T10:00:25Z", "more")
+        .write_claim("2026-01-01T10:00:30Z", "2026-01-01T10:00:31Z", "b.txt")
+        .bash_claim(
+            "2026-01-01T10:00:39Z",
+            "2026-01-01T10:00:41Z",
+            "git add b.txt && git commit -m two",
+        );
+    let fa = repo.root.join("a.jsonl");
+    let fb = repo.root.join("b.jsonl");
+    sa.save(&fa);
+    sb.save(&fb);
+
+    let (records, stats) = discover::merge_sessions(&[fb.clone(), fa.clone()]).unwrap();
+    assert_eq!(stats.duplicates, 0);
+    let session = extract::extract(&records);
+    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+
+    assert_eq!(audit.intervals.len(), 2);
+    assert!(audit.intervals[0].agent_committed, "session A's commit");
+    assert!(audit.intervals[1].agent_committed, "session B's commit");
+    assert!(audit.intervals.iter().all(|i| i.balanced()));
 }

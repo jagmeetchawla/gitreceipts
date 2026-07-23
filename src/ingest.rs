@@ -22,6 +22,9 @@ pub struct IngestStats {
     pub kept: usize,
     pub skipped_types: usize,
     pub unparseable: usize,
+    /// Events removed because a forked sibling session already carried
+    /// them (set by session merging, not by single-file ingest).
+    pub duplicates: usize,
 }
 
 pub fn ingest(path: &Path) -> Result<(Vec<Record>, IngestStats)> {

@@ -65,6 +65,7 @@ impl Drop for TempRepo {
 /// healthy real session.
 pub struct SessionBuilder {
     cwd: String,
+    session_id: String,
     lines: Vec<String>,
     next_id: usize,
     last_uuid: Option<String>,
@@ -72,8 +73,16 @@ pub struct SessionBuilder {
 
 impl SessionBuilder {
     pub fn new(cwd: &str) -> SessionBuilder {
+        Self::with_id(cwd, "")
+    }
+
+    /// A builder whose uuids carry a session-unique prefix — real event
+    /// uuids are globally unique, so two merged fixture sessions must not
+    /// collide by accident.
+    pub fn with_id(cwd: &str, session_id: &str) -> SessionBuilder {
         SessionBuilder {
             cwd: cwd.to_string(),
+            session_id: session_id.to_string(),
             lines: Vec::new(),
             next_id: 0,
             last_uuid: None,
@@ -82,7 +91,7 @@ impl SessionBuilder {
 
     fn uuid(&mut self, prefix: &str) -> String {
         self.next_id += 1;
-        format!("{prefix}{}", self.next_id)
+        format!("{}{prefix}{}", self.session_id, self.next_id)
     }
 
     fn parent_field(&self) -> String {

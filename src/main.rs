@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use gitreceipts::{causal, discover, extract, ingest, reconcile, report};
+use gitreceipts::{discover, extract, reconcile, report};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -20,13 +20,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Audit a Claude Code session against its git repo.
+    /// Audit one or more Claude Code sessions against a git repo.
     Audit {
-        /// Path to the session .jsonl (or use --latest).
-        session: Option<PathBuf>,
+        /// Paths to session .jsonl files (or use --latest / --all).
+        sessions: Vec<PathBuf>,
         /// Audit the most recent session for the repo.
         #[arg(long)]
         latest: bool,
+        /// Audit every session the store still has for this repo and its
+        /// parent directories, merged into one ledger. There is no local
+        /// archive: sessions older than the store's retention are gone,
+        /// and commits from that era will show as unclaimed keyframes.
+        #[arg(long)]
+        all: bool,
         /// Repo to reconcile against (default: cwd recorded in the session).
         #[arg(long)]
         repo: Option<PathBuf>,
@@ -65,15 +71,17 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Cmd::Audit {
-            session,
+            sessions,
             latest,
+            all,
             repo,
             color,
             no_intent,
             filter,
         } => audit(
-            session,
+            sessions,
             latest,
+            all,
             repo,
             report::Options {
                 color,
@@ -85,29 +93,29 @@ fn main() -> Result<()> {
 }
 
 fn audit(
-    session: Option<PathBuf>,
+    sessions: Vec<PathBuf>,
     latest: bool,
+    all: bool,
     repo: Option<PathBuf>,
     opts: report::Options,
 ) -> Result<()> {
-    let session_path = match (session, latest) {
-        (Some(p), false) => p,
-        (None, true) => {
-            let anchor = repo
-                .clone()
-                .or_else(|| std::env::current_dir().ok())
-                .context("cannot determine a directory for --latest")?;
-            discover::latest_session(&anchor)?
-        }
-        (Some(_), true) => bail!("pass a session path or --latest, not both"),
-        (None, false) => bail!("pass a session path or --latest"),
+    let anchor = || {
+        repo.clone()
+            .or_else(|| std::env::current_dir().ok())
+            .context("cannot determine a directory to search for sessions")
+    };
+    let session_paths: Vec<PathBuf> = match (sessions.is_empty(), latest, all) {
+        (false, false, false) => sessions,
+        (true, true, false) => vec![discover::latest_session(&anchor()?)?],
+        (true, false, true) => discover::all_sessions(&anchor()?)?,
+        (true, false, false) => bail!("pass session path(s), --latest, or --all"),
+        _ => bail!("pass session path(s), --latest, or --all — not a combination"),
     };
 
-    let (records, stats) = ingest::ingest(&session_path)?;
-    if records.is_empty() {
-        bail!("no execution events in {}", session_path.display());
+    let (ordered, stats) = discover::merge_sessions(&session_paths)?;
+    if ordered.is_empty() {
+        bail!("no execution events in the given session(s)");
     }
-    let ordered = causal::order(records);
     let session_data = extract::extract(&ordered);
 
     let repo_path = match repo {
@@ -129,10 +137,25 @@ fn audit(
     };
 
     let audit = reconcile::reconcile(&repo_path, &session_data)?;
-    let name = session_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("session");
+    let short = |p: &PathBuf| {
+        p.file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.chars().take(8).collect::<String>())
+            .unwrap_or_else(|| "session".to_string())
+    };
+    let name = match session_paths.as_slice() {
+        [one] => one
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("session")
+            .to_string(),
+        many => format!(
+            "{} sessions merged ({})",
+            many.len(),
+            many.iter().map(short).collect::<Vec<_>>().join(", ")
+        ),
+    };
+    let name = name.as_str();
     report::print(
         name,
         &repo_path.display().to_string(),
