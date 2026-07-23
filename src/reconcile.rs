@@ -269,8 +269,8 @@ pub fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, S
 
 /// Strings that would count as "this command named that file": the full
 /// relative path, its pre-rename path, and every parent directory of
-/// either that still contains a slash (so `git mv Sources/Clipbop
-/// Sources/Clipbob` covers the whole tree, but a bare top-level word
+/// either that still contains a slash (so `git mv src/OldName
+/// src/NewName` covers the whole tree, but a bare top-level word
 /// cannot match by accident). Root-level files match by their full name.
 fn name_candidates(change: &FileChange) -> Vec<String> {
     let mut out = Vec::new();
@@ -285,7 +285,7 @@ fn name_candidates(change: &FileChange) -> Vec<String> {
             parts.pop();
             let ancestor = parts.join("/");
             // a bare top-level word ("src") could match prose by accident;
-            // an extension-bearing name ("ClipBob.xcodeproj") cannot
+            // an extension-bearing name ("MyApp.xcodeproj") cannot
             if parts.len() >= 2 || ancestor.contains('.') {
                 out.push(ancestor);
             }
