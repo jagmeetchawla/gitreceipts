@@ -147,7 +147,7 @@ pub fn commit_names(repo: &Path, hash: &str) -> Result<Vec<FileChange>> {
     Ok(parse_name_status(&raw))
 }
 
-fn parse_name_status(raw: &str) -> Vec<FileChange> {
+pub fn parse_name_status(raw: &str) -> Vec<FileChange> {
     let mut changes = Vec::new();
     for line in raw.lines() {
         let mut cols = line.split('\t');
@@ -170,26 +170,4 @@ fn parse_name_status(raw: &str) -> Vec<FileChange> {
         }
     }
     changes
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_name_status;
-
-    #[test]
-    fn parses_modifications_additions_renames() {
-        let raw = "M\tSources/App.swift\nA\tdocs/notes.md\nR100\told.rs\tnew.rs\nD\tgone.txt\n";
-        let changes = parse_name_status(raw);
-        let paths: Vec<&str> = changes.iter().map(|c| c.path.as_str()).collect();
-        assert_eq!(
-            paths,
-            vec!["Sources/App.swift", "docs/notes.md", "new.rs", "gone.txt"]
-        );
-        assert_eq!(changes[2].status, 'R');
-    }
-
-    #[test]
-    fn skips_noise_lines() {
-        assert!(parse_name_status("\ncommit abc\n\n").is_empty());
-    }
 }

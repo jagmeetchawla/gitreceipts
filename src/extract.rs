@@ -204,7 +204,7 @@ const GIT_LOCAL_WRITE: [&str; 18] = [
 
 /// Heuristic blast radius for a shell command; None means read-only.
 /// Compound commands get the furthest radius any part reaches.
-fn command_radius(command: &str) -> Option<Radius> {
+pub fn command_radius(command: &str) -> Option<Radius> {
     let mut radius: Option<Radius> = None;
     let mut bump = |r: Radius| {
         if radius.is_none_or(|cur| r > cur) {
@@ -275,41 +275,4 @@ fn command_radius(command: &str) -> Option<Radius> {
         }
     }
     radius
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn git_subcommands_sees_through_global_flags() {
-        assert_eq!(git_subcommands("git -C /x commit -m hi"), vec!["commit"]);
-        assert_eq!(git_subcommands("git -c a=b push origin main"), vec!["push"]);
-        assert_eq!(git_subcommands("ls -la && echo git"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn git_subcommands_counts_every_invocation() {
-        let script = "git add -A\ngit commit -q -F - <<'MSG'\nfirst\nMSG\ngit commit -q -aF - <<'MSG'\nsecond\nMSG";
-        let subs = git_subcommands(script);
-        assert_eq!(subs.iter().filter(|s| *s == "commit").count(), 2);
-    }
-
-    #[test]
-    fn radius_orders_by_reach() {
-        assert_eq!(command_radius("git status"), None);
-        assert_eq!(
-            command_radius("git add -A && git commit -m x"),
-            Some(Radius::LocalGit)
-        );
-        assert_eq!(
-            command_radius("git commit -m x && git push"),
-            Some(Radius::RemoteGit)
-        );
-        assert_eq!(command_radius("mkdir -p build"), Some(Radius::LocalFs));
-        assert_eq!(
-            command_radius("curl -s https://example.com"),
-            Some(Radius::Network)
-        );
-    }
 }

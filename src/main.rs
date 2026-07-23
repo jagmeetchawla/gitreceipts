@@ -1,14 +1,8 @@
 //! `git receipts` — see what your agent actually did.
 
-mod causal;
-mod extract;
-mod gitio;
-mod ingest;
-mod reconcile;
-mod report;
-mod schema;
-
 use std::path::PathBuf;
+
+use gitreceipts::{causal, extract, ingest, reconcile, report};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};

@@ -188,7 +188,7 @@ impl Roots {
     }
 }
 
-pub(crate) fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, String)> {
+pub fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, String)> {
     roots
         .iter()
         .filter_map(|root| {
@@ -436,24 +436,4 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     }
 
     Ok(audit)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::longest_prefix;
-
-    #[test]
-    fn longest_prefix_prefers_deepest_root() {
-        let roots = vec!["/a".to_string(), "/a/b".to_string()];
-        let (root, rel) = longest_prefix("/a/b/c.txt", &roots).unwrap();
-        assert_eq!(root, "/a/b");
-        assert_eq!(rel, "c.txt");
-    }
-
-    #[test]
-    fn longest_prefix_rejects_partial_components() {
-        let roots = vec!["/a/repo".to_string()];
-        // "/a/repository/f" must not match root "/a/repo"
-        assert!(longest_prefix("/a/repository/f", &roots).is_none());
-    }
 }
