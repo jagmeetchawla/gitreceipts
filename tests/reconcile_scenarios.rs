@@ -713,3 +713,113 @@ fn a_silently_vanished_file_stays_red() {
     assert!(line.resolution.is_none(), "nothing explains this one");
     assert_eq!(first.status(), Status::Red);
 }
+
+#[test]
+fn a_clone_still_audits_via_the_history_spine() {
+    // No session-era reflog in a clone — the spine falls back to commit
+    // history and the equation still runs.
+    let origin = TempRepo::new("cloneorigin");
+    let root = origin.root.display().to_string();
+    origin.write("a.txt", "x");
+    origin.git(&["add", "a.txt"]);
+    origin.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+
+    let clone_path = std::env::temp_dir().join(format!("gitreceipts-clone-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&clone_path);
+    assert!(
+        std::process::Command::new("git")
+            .arg("clone")
+            .arg("-q")
+            .arg(&origin.root)
+            .arg(&clone_path)
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let path = clone_path.join("session.jsonl");
+    s.save(&path);
+    let (records, _) = ingest::ingest(&path).unwrap();
+    let session = extract::extract(&causal::order(records));
+    let audit = reconcile::reconcile(&clone_path, &session).unwrap();
+
+    assert_eq!(audit.intervals.len(), 1, "history spine found the commit");
+    assert!(audit.intervals[0].commit.from_history);
+    // claims recorded under the ORIGIN path resolve via historical-alias
+    // validation against the clone
+    assert!(audit.intervals[0].balanced());
+    let _ = std::fs::remove_dir_all(&clone_path);
+}
+
+#[test]
+fn a_commit_created_outside_the_reflog_joins_the_spine_from_history() {
+    // Simulates a pulled commit: created via plumbing so HEAD's reflog
+    // never sees it, reachable from a branch.
+    let repo = TempRepo::new("pulled");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+
+    // teammate's commit: build it with commit-tree (no reflog entry)
+    repo.write("b.txt", "x");
+    repo.git(&["add", "b.txt"]);
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo.root)
+        .args(["write-tree"])
+        .output()
+        .unwrap();
+    let tree = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let head = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo.root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
+    let commit = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo.root)
+        .args(["commit-tree", &tree, "-p", &head, "-m", "teammate work"])
+        .env("GIT_AUTHOR_DATE", "2026-01-01T10:00:40Z")
+        .env("GIT_COMMITTER_DATE", "2026-01-01T10:00:40Z")
+        .env("GIT_AUTHOR_NAME", "mate")
+        .env("GIT_AUTHOR_EMAIL", "m@x")
+        .env("GIT_COMMITTER_NAME", "mate")
+        .env("GIT_COMMITTER_EMAIL", "m@x")
+        .output()
+        .unwrap();
+    let commit = String::from_utf8_lossy(&commit.stdout).trim().to_string();
+    repo.git(&["branch", "teammate", &commit]);
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    assert_eq!(audit.intervals.len(), 2);
+    let mate = &audit.intervals[1];
+    assert_eq!(mate.commit.subject, "teammate work");
+    assert!(
+        mate.commit.from_history,
+        "known from history, not the reflog"
+    );
+    assert!(
+        !mate.agent_committed,
+        "someone else's work shows as an unclaimed keyframe, not this agent's"
+    );
+}

@@ -29,6 +29,11 @@ pub struct SpineCommit {
     /// (GIT_COMMITTER_DATE forges the reflog stamp too); creation ORDER
     /// is not. We keep the commit and say the clock cannot be trusted.
     pub clock_anomaly: bool,
+    /// Not in the local reflog: known only from commit history. Either
+    /// the repo is a clone (no session-era reflog at all) or the commit
+    /// was created elsewhere and pulled in. Its dates are trusted as
+    /// recorded — there is no creation order to check them against.
+    pub from_history: bool,
 }
 
 impl SpineCommit {
@@ -45,6 +50,8 @@ pub struct FileChange {
     /// the moving name this side.
     pub old_path: Option<String>,
 }
+
+const NUL: char = '\u{0}';
 
 pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git")
@@ -148,6 +155,7 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
                 reflog_action: gs.split(':').next().unwrap_or(gs).to_string(),
                 reachable: reachable.contains(hash),
                 clock_anomaly: false,
+                from_history: false,
             },
             inside,
         ));
@@ -156,23 +164,75 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
     // sandwich: keep everything from the first in-window entry to the last
     let first = all.iter().position(|(_, inside)| *inside);
     let last = all.iter().rposition(|(_, inside)| *inside);
-    let (Some(first), Some(last)) = (first, last) else {
-        return Ok(Vec::new());
-    };
     let mut commits: Vec<SpineCommit> = Vec::new();
-    for (mut commit, inside) in all.into_iter().take(last + 1).skip(first) {
-        if !inside {
-            commit.clock_anomaly = true;
-            // its own dates are untrusted; clamp into sequence so interval
-            // mapping stays monotonic
-            commit.ts = commits.last().map(|p: &SpineCommit| p.ts).unwrap_or(from);
+    if let (Some(first), Some(last)) = (first, last) {
+        for (mut commit, inside) in all.into_iter().take(last + 1).skip(first) {
+            if !inside {
+                commit.clock_anomaly = true;
+                // its own dates are untrusted; clamp into sequence so interval
+                // mapping stays monotonic
+                commit.ts = commits.last().map(|p: &SpineCommit| p.ts).unwrap_or(from);
+            }
+            if let Some(prev) = commits.last()
+                && commit.ts < prev.ts
+            {
+                commit.ts = prev.ts;
+            }
+            commits.push(commit);
         }
-        if let Some(prev) = commits.last()
-            && commit.ts < prev.ts
-        {
-            commit.ts = prev.ts;
+    }
+
+    // Union in window commits the reflog never saw: on a clone the reflog
+    // is empty (85% of an audit beats none); in a team repo, pulled
+    // commits were created elsewhere. Dates on these are trusted as
+    // recorded — the report labels the downgrade.
+    let known: std::collections::HashSet<String> = commits.iter().map(|c| c.hash.clone()).collect();
+    let hist_raw = git(
+        repo,
+        &["log", "--all", "--format=%H%x00%h%x00%cI%x00%P%x00%s"],
+    )?;
+    let mut extra: Vec<SpineCommit> = Vec::new();
+    for line in hist_raw.lines() {
+        let mut parts = line.split(NUL);
+        let (Some(hash), Some(short), Some(cdate), Some(parents), Some(subject)) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) else {
+            continue;
+        };
+        if known.contains(hash) {
+            continue;
         }
-        commits.push(commit);
+        let Ok(ts) = DateTime::parse_from_rfc3339(cdate) else {
+            continue;
+        };
+        let ts = ts.with_timezone(&Utc);
+        if ts < from || ts > to {
+            continue;
+        }
+        extra.push(SpineCommit {
+            hash: hash.to_string(),
+            short: short.to_string(),
+            parent: parents.split_whitespace().next().unwrap_or("").to_string(),
+            ts,
+            committer_ts: ts,
+            subject: subject.to_string(),
+            reflog_action: "history".to_string(),
+            reachable: reachable.contains(hash),
+            clock_anomaly: false,
+            from_history: true,
+        });
+    }
+    extra.sort_by_key(|c| c.ts);
+    for commit in extra {
+        let pos = commits
+            .iter()
+            .position(|c| c.ts > commit.ts)
+            .unwrap_or(commits.len());
+        commits.insert(pos, commit);
     }
     Ok(commits)
 }

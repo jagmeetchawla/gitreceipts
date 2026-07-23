@@ -348,6 +348,26 @@ pub fn print(
     let agent_commits = audit.intervals.iter().filter(|i| i.agent_committed).count();
     let keyframes = audit.intervals.len() - agent_commits;
     println!();
+    let hist_n = audit
+        .intervals
+        .iter()
+        .filter(|i| i.commit.from_history)
+        .count();
+    let reflog_n = audit.intervals.len() - hist_n;
+    if !audit.intervals.is_empty() && reflog_n == 0 {
+        println!();
+        println!(
+            "{}",
+            st.yellow(
+                "⚠ no session-era reflog (a clone, or a trimmed reflog): spine built from commit history — amended drafts, reset-away commits, and clock-anomaly detection are unavailable; commit dates are trusted as recorded"
+            )
+        );
+    }
+    let source_note = if hist_n > 0 && reflog_n > 0 {
+        format!(" · {hist_n} from history only (created elsewhere — pulled/fetched; dates trusted)")
+    } else {
+        String::new()
+    };
     let filter_note = match opts.filter {
         Filter::All => String::new(),
         Filter::Red => format!(" — showing only red ({red_n} of {total})"),
@@ -359,10 +379,11 @@ pub fn print(
     println!(
         "{}",
         st.bold(&format!(
-            "interval spine: {} commits ({} agent-committed, {} unclaimed keyframes){}",
+            "interval spine: {} commits ({} agent-committed, {} unclaimed keyframes){}{}",
             audit.intervals.len(),
             agent_commits,
             keyframes,
+            source_note,
             filter_note
         ))
     );
@@ -390,15 +411,21 @@ pub fn print(
         } else {
             " [gone from branches — reflog only]"
         };
+        let hist = if interval.commit.from_history {
+            " [from history — created elsewhere]"
+        } else {
+            ""
+        };
         let mut subject = interval.commit.subject.clone();
         subject.truncate(56);
         println!(
-            "{mark} {} {} {}{}{}",
+            "{mark} {} {} {}{}{}{}",
             interval.commit.short,
             interval.commit.ts.format("%m-%d %H:%M"),
             st.dim(&subject),
             st.yellow(who),
             st.yellow(ghost),
+            st.yellow(hist),
         );
         if interval.commit.clock_anomaly {
             println!(

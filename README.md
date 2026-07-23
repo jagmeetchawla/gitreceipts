@@ -30,7 +30,13 @@ Think of it as bank reconciliation for agent work:
   The spine is built from the reflog, so it sees amends, rebases, and
   commits later reset away. A commit created *between* two in-window
   commits stays in the audit no matter what its dates claim — dates
-  are forgeable, reflog order is not.
+  are forgeable, reflog order is not. Commits the reflog never saw —
+  pulled from a teammate, or everything, when the repo is a fresh
+  clone — join the spine from commit history, and the report labels
+  the downgrade: on a clone you get most of the audit (the full
+  equation, verifications, resolutions), but amended drafts,
+  reset-away commits, and clock-anomaly detection need the original
+  working repo, because that evidence exists nowhere else.
 - **The ledger** — the session log's own tool calls are the claims.
   File edits carry their exact content (the diff is in the log); shell
   commands carry a blast radius (local-fs → local-git → remote-git →
@@ -107,6 +113,16 @@ archive: logs live in the store until its retention cleanup removes
 them, so commits older than your oldest surviving session will show as
 unclaimed keyframes. The event model is deliberately harness-neutral;
 adapters for other agent CLIs are on the roadmap.
+
+## Teams
+
+The audit is deliberately per-developer: your sessions, reconciled
+against the repo you work in. Teammates' commits (anything that
+arrived by pull rather than being created locally) enter the spine
+from history and show as *unclaimed keyframes* — correctly attributed
+as "not this agent's work" rather than blamed or ignored. Each
+developer runs their own audit; aggregating them into a team-wide
+ledger is a later layer, not a v0.1 concern.
 
 ## What the report contains — and what it doesn't
 
