@@ -99,6 +99,9 @@ git receipts audit --latest --color=always | less -R
 # suppress quoted prompt text before sharing a screenshot
 git receipts audit --latest --no-intent
 
+# write a self-contained HTML report (theme-aware, no external assets)
+git receipts audit --latest --format html > audit.html
+
 # audit another machine's sessions from a mounted drive
 git receipts audit --all --store /Volumes/studio/Users/me/.claude --repo /Volumes/studio/Users/me/code/myapp
 ```
