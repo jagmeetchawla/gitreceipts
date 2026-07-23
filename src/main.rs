@@ -58,6 +58,14 @@ enum Cmd {
         /// page — redirect it: `... --format html > audit.html`).
         #[arg(long, value_enum, default_value_t = report::Format::Text)]
         format: report::Format,
+        /// HTML only: which commit drill-downs start expanded — auto
+        /// (findings open, balanced collapsed), all, or none.
+        #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
+        expand: report::Expand,
+        /// Console: print each commit's full anatomy — files added/
+        /// modified/deleted/renamed and the commands that ran.
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -89,6 +97,8 @@ fn main() -> Result<()> {
             no_intent,
             filter,
             format,
+            expand,
+            verbose,
         } => audit(
             sessions,
             latest,
@@ -100,6 +110,8 @@ fn main() -> Result<()> {
                 show_intent: !no_intent,
                 filter,
                 format,
+                expand,
+                verbose,
             },
         ),
     }
@@ -200,6 +212,7 @@ fn audit(
                 &stats,
                 &audit,
                 opts.show_intent,
+                opts.expand,
             )
         ),
     }

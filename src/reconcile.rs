@@ -71,10 +71,26 @@ pub struct Superseded {
     pub seconds_before_amend: i64,
 }
 
+/// One effectful command that ran in an interval, for the drill-down.
+#[derive(Debug)]
+pub struct CommandRun {
+    /// First line of the command, truncated for display.
+    pub summary: String,
+    pub radius: Option<Radius>,
+    pub committed: bool,
+    pub pushed: bool,
+    pub failed: bool,
+}
+
 #[derive(Debug)]
 pub struct Interval {
     pub commit: SpineCommit,
     pub agent_committed: bool,
+    /// This commit is reachable from a remote-tracking ref — pushed as of
+    /// the repo's last fetch.
+    pub pushed: bool,
+    /// The effectful commands the agent ran in this interval.
+    pub commands_run: Vec<CommandRun>,
     /// User prompts typed during this interval — the asks this commit
     /// answers to.
     pub intents: Vec<String>,
@@ -381,6 +397,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| repo.display().to_string());
     let history = gitio::history_paths(repo)?;
+    let pushed_set = gitio::pushed_commits(repo);
     let roots = Roots::build(&repo_canon, session, &history);
 
     // Interval index for a timestamp: first spine commit at-or-after it.
@@ -410,6 +427,8 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         intervals.push(Interval {
             commit: commit.clone(),
             agent_committed: false,
+            pushed: pushed_set.contains(&commit.hash),
+            commands_run: Vec::new(),
             intents: Vec::new(),
             spine_jump,
             superseded,
@@ -501,6 +520,12 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 if failed {
                     audit.grades.failed += 1;
                 }
+                let subs = crate::extract::git_subcommands(command);
+                let has_push = subs.iter().any(|s| s == "push");
+                // One Bash call can create several commits back to back; it
+                // claims that many consecutive intervals.
+                let commit_count = subs.iter().filter(|s| s.as_str() == "commit").count();
+
                 let idx = interval_of(claim.ts);
                 if let Some(idx) = idx {
                     audit.intervals[idx].commands += 1;
@@ -508,13 +533,26 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                         audit.intervals[idx].effectful_commands += 1;
                         cmd_corpus[idx].push(command.clone());
                     }
+                    // Show the first line that actually does something —
+                    // skip `cd`, comments, and blanks that a scripted Bash
+                    // call opens with.
+                    let meaningful = command.lines().map(str::trim).find(|l| {
+                        !l.is_empty() && !l.starts_with('#') && *l != "cd" && !l.starts_with("cd ")
+                    });
+                    let summary: String = meaningful
+                        .or_else(|| command.lines().map(str::trim).find(|l| !l.is_empty()))
+                        .unwrap_or("")
+                        .chars()
+                        .take(140)
+                        .collect();
+                    audit.intervals[idx].commands_run.push(CommandRun {
+                        summary,
+                        radius: *radius,
+                        committed: commit_count > 0,
+                        pushed: has_push,
+                        failed,
+                    });
                 }
-                // One Bash call can create several commits back to back; it
-                // claims that many consecutive intervals.
-                let commit_count = crate::extract::git_subcommands(command)
-                    .iter()
-                    .filter(|s| s.as_str() == "commit")
-                    .count();
                 let mut corroborated = false;
                 if commit_count > 0
                     && !failed

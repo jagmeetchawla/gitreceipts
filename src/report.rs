@@ -49,11 +49,27 @@ pub enum Format {
     Html,
 }
 
+/// Which commit drill-downs start expanded in the HTML report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum Expand {
+    /// Findings open (red + residue), balanced commits collapsed.
+    #[default]
+    Auto,
+    /// Every commit expanded.
+    All,
+    /// Every commit collapsed.
+    None,
+}
+
 pub struct Options {
     pub color: ColorMode,
     pub show_intent: bool,
     pub filter: Filter,
     pub format: Format,
+    pub expand: Expand,
+    /// Console: print each commit's full anatomy — the statement's
+    /// added/modified/deleted/renamed files and the commands that ran.
+    pub verbose: bool,
 }
 
 struct Style {
@@ -116,6 +132,15 @@ fn tilde(path: &str) -> String {
         .map(|h| h.display().to_string())
         .and_then(|h| path.strip_prefix(&h).map(|rest| format!("~{rest}")))
         .unwrap_or_else(|| path.to_string())
+}
+
+/// Replace the home directory ANYWHERE in a string with `~` — for command
+/// text, where absolute paths (and the username) appear mid-line.
+pub fn redact_home(s: &str) -> String {
+    match std::env::home_dir().map(|h| h.display().to_string()) {
+        Some(h) if !h.is_empty() => s.replace(&h, "~"),
+        _ => s.to_string(),
+    }
 }
 
 pub fn print(
@@ -454,8 +479,9 @@ pub fn print(
             );
         }
         if show_intent && let Some(first) = interval.intents.first() {
-            let mut shown: String = first.chars().take(76).collect();
-            if first.chars().count() > 76 {
+            let redacted = redact_home(first);
+            let mut shown: String = redacted.chars().take(76).collect();
+            if redacted.chars().count() > 76 {
                 shown.push('\u{2026}');
             }
             let more = if interval.intents.len() > 1 {
@@ -516,6 +542,66 @@ pub fn print(
             residue_notes,
             interval.commands
         );
+
+        if opts.verbose {
+            let commit = if interval.agent_committed {
+                "committed by agent"
+            } else {
+                "not committed by agent"
+            };
+            let push = if interval.pushed {
+                "pushed"
+            } else {
+                "local only"
+            };
+            println!("    {}", st.dim(&format!("{commit} · {push}")));
+            if !interval.statement.is_empty() {
+                let n = |s: char| interval.statement.iter().filter(|c| c.status == s).count();
+                println!(
+                    "    {} {} added · {} modified · {} deleted · {} renamed",
+                    st.dim("files git recorded:"),
+                    n('A'),
+                    n('M'),
+                    n('D'),
+                    n('R') + n('C'),
+                );
+                for c in &interval.statement {
+                    let moved = c
+                        .old_path
+                        .as_ref()
+                        .map(|o| format!("  ← {o}"))
+                        .unwrap_or_default();
+                    println!(
+                        "      {} {}{}",
+                        st.dim(&format!("[{}]", c.status)),
+                        c.path,
+                        st.dim(&moved)
+                    );
+                }
+            }
+            for cr in &interval.commands_run {
+                let rad = cr
+                    .radius
+                    .map(|r| r.to_string())
+                    .unwrap_or_else(|| "read-only".into());
+                let mut flags = String::new();
+                if cr.committed {
+                    flags.push_str(" ✎commit");
+                }
+                if cr.pushed {
+                    flags.push_str(" ↑push");
+                }
+                if cr.failed {
+                    flags.push_str(" ✗failed");
+                }
+                println!(
+                    "      {} {}{}",
+                    st.dim(&format!("$ [{rad}]")),
+                    redact_home(&cr.summary),
+                    st.yellow(&flags)
+                );
+            }
+        }
         for line in &late {
             let (at, dist) = line
                 .landed_at

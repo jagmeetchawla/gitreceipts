@@ -14,6 +14,7 @@ use std::fmt::Write as _;
 use crate::extract::Session;
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Landing, Status};
+use crate::report::Expand;
 
 /// HTML-escape a string for text/attribute content.
 fn esc(s: &str) -> String {
@@ -41,6 +42,7 @@ fn tilde(path: &str) -> String {
 const STYLE: &str = include_str!("html/report.css");
 const SCRIPT: &str = include_str!("html/report.js");
 
+#[allow(clippy::too_many_arguments)]
 pub fn render(
     session_name: &str,
     repo: &str,
@@ -48,6 +50,7 @@ pub fn render(
     stats: &IngestStats,
     audit: &Audit,
     show_intent: bool,
+    expand: Expand,
 ) -> String {
     let total = audit.intervals.len();
     let green = audit.intervals.iter().filter(|i| i.balanced()).count();
@@ -171,7 +174,7 @@ pub fn render(
     );
 
     for iv in &audit.intervals {
-        render_interval(&mut b, iv, show_intent, enriched);
+        render_interval(&mut b, iv, show_intent, enriched, expand);
     }
     b.push_str("</section>\n");
 
@@ -274,27 +277,40 @@ fn render_interval(
     iv: &crate::reconcile::Interval,
     show_intent: bool,
     enriched: bool,
+    expand: Expand,
 ) {
     let (cls, mark) = match iv.status() {
-        Status::Green => ("green", "✔"),
+        Status::Green => ("green", "\u{2714}"),
         Status::ResidueOnly => ("residue", "!"),
-        Status::Red => ("red", "✘"),
+        Status::Red => ("red", "\u{2718}"),
     };
     let mut subject = iv.commit.subject.clone();
     if subject.chars().count() > 72 {
-        subject = subject.chars().take(72).collect::<String>() + "…";
+        subject = subject.chars().take(72).collect::<String>() + "\u{2026}";
     }
+
+    let never: Vec<_> = iv.never_landed().collect();
+    let resolved: Vec<_> = iv.resolved_never().collect();
+    let late: Vec<_> = iv.landed_late().collect();
+    let landed = iv.ledger.len() - never.len() - resolved.len() - late.len();
+
+    let open = match expand {
+        Expand::All => true,
+        Expand::None => false,
+        Expand::Auto => iv.status() != Status::Green,
+    };
     let _ = write!(
         b,
-        "<article class=\"interval {cls}\"><header>\
-         <span class=\"mark\">{mark}</span><code class=\"hash\">{}</code>\
-         <span class=\"date\">{}</span><span class=\"subject\">{}</span>",
+        "<details class=\"interval {cls}\"{}><summary>\
+        <span class=\"mark\">{mark}</span><code class=\"hash\">{}</code>\
+        <span class=\"date\">{}</span><span class=\"subject\">{}</span>",
+        if open { " open" } else { "" },
         esc(&iv.commit.short),
         iv.commit.ts.format("%m-%d %H:%M"),
-        esc(&subject),
+        esc(&subject)
     );
     if !iv.agent_committed {
-        b.push_str("<span class=\"tag\">keyframe: not committed by agent</span>");
+        b.push_str("<span class=\"tag\">keyframe</span>");
     }
     if enriched && iv.commit.from_history {
         b.push_str("<span class=\"tag\">created elsewhere</span>");
@@ -305,7 +321,36 @@ fn render_interval(
     if iv.commit.clock_anomaly {
         b.push_str("<span class=\"tag warn\">clock anomaly</span>");
     }
-    b.push_str("</header>");
+    let _ = write!(
+        b,
+        "<span class=\"scount\">{} claimed / {landed} landed / {} residue \u{00b7} {} cmd</span></summary>\n<div class=\"drill\">",
+        iv.ledger.len(),
+        iv.residue.len(),
+        iv.commands
+    );
+
+    // ---- status badges -------------------------------------------------
+    b.push_str("<div class=\"badges\">");
+    if iv.agent_committed {
+        b.push_str("<span class=\"badge ok\">committed by agent</span>");
+    } else {
+        b.push_str("<span class=\"badge\">not committed by agent (keyframe)</span>");
+    }
+    if iv.pushed {
+        b.push_str("<span class=\"badge ok\">pushed (as of last fetch)</span>");
+    } else {
+        b.push_str("<span class=\"badge\">local only \u{2014} not pushed</span>");
+    }
+    let parent = if iv.commit.parent.is_empty() {
+        "(root)"
+    } else {
+        &iv.commit.parent[..iv.commit.parent.len().min(9)]
+    };
+    let _ = write!(
+        b,
+        "<span class=\"badge\">parent {}</span></div>",
+        esc(parent)
+    );
 
     if show_intent && let Some(first) = iv.intents.first() {
         let more = if iv.intents.len() > 1 {
@@ -315,55 +360,30 @@ fn render_interval(
         };
         let _ = write!(
             b,
-            "<div class=\"line intent\">» intent: {}{}</div>",
-            esc(first),
+            "<div class=\"line intent\">\u{00bb} intent: {}{}</div>",
+            esc(&crate::report::redact_home(first)),
             esc(&more)
         );
     }
     if iv.spine_jump {
         b.push_str(
-            "<div class=\"line warn\">⑂ spine jump: parent is not the previous commit</div>",
+            "<div class=\"line warn\">\u{2442} spine jump: parent is not the previous commit</div>",
         );
     }
     for s in &iv.superseded {
         let _ = write!(
             b,
-            "<div class=\"line warn\">↻ amend: draft {} committed {} files, amended {}s later</div>",
+            "<div class=\"line warn\">\u{21bb} amend: draft {} committed {} files, amended {}s later</div>",
             esc(&s.short),
             s.files,
             s.seconds_before_amend
         );
     }
 
-    let never: Vec<_> = iv.never_landed().collect();
-    let resolved: Vec<_> = iv.resolved_never().collect();
-    let late: Vec<_> = iv.landed_late().collect();
-    let landed = iv.ledger.len() - never.len() - resolved.len() - late.len();
-    let mut notes = String::new();
-    if !late.is_empty() {
-        let _ = write!(notes, " / {} landed late", late.len());
-    }
-    if !resolved.is_empty() {
-        let _ = write!(notes, " / {} resolved", resolved.len());
-    }
-    if !iv.attributed_residue.is_empty() {
-        let _ = write!(
-            notes,
-            " / +{} command-attributed",
-            iv.attributed_residue.len()
-        );
-    }
-    if !iv.dismissed_residue.is_empty() {
-        let _ = write!(notes, " / +{} dismissed", iv.dismissed_residue.len());
-    }
-    let _ = write!(
-        b,
-        "<div class=\"counts\">{} claimed / {landed} landed / {} residue{notes} ({} commands)</div>",
-        iv.ledger.len(),
-        iv.residue.len(),
-        iv.commands,
-    );
+    render_statement(b, iv);
+    render_commands(b, iv);
 
+    // ---- reconciliation findings ---------------------------------------
     for l in &late {
         let (at, dist) = l
             .landed_at
@@ -372,7 +392,7 @@ fn render_interval(
             .unwrap_or(("?", 1));
         let _ = write!(
             b,
-            "<div class=\"line ok\">✓ landed late: {} <span class=\"dim\">(content verified in {}, {} commit(s) later)</span></div>",
+            "<div class=\"line ok\">\u{2713} landed late: {} <span class=\"dim\">(content verified in {}, {} commit(s) later)</span></div>",
             esc(&l.path),
             esc(at),
             dist
@@ -381,7 +401,7 @@ fn render_interval(
     for l in &resolved {
         let _ = write!(
             b,
-            "<div class=\"line warn\">◌ never landed, resolved: {}</div>",
+            "<div class=\"line warn\">\u{25cc} never landed, resolved: {}</div>",
             esc(&l.path)
         );
         if let Some(r) = &l.resolution {
@@ -391,7 +411,7 @@ fn render_interval(
     for l in &never {
         let _ = write!(
             b,
-            "<div class=\"line bad\">✘ never landed: {} <span class=\"dim\">({} edit(s), f#{})</span></div>",
+            "<div class=\"line bad\">\u{2718} never landed: {} <span class=\"dim\">({} edit(s), f#{})</span></div>",
             esc(&l.path),
             l.edits,
             l.frames.first().copied().unwrap_or(0)
@@ -403,7 +423,7 @@ fn render_interval(
     for res in &iv.residue {
         let _ = write!(
             b,
-            "<div class=\"line warn\">● residue: {} <span class=\"dim\">[{}] changed, never claimed</span></div>",
+            "<div class=\"line warn\">\u{25cf} residue: {} <span class=\"dim\">[{}] changed, never claimed</span></div>",
             esc(&res.path),
             res.status
         );
@@ -416,7 +436,7 @@ fn render_interval(
             .unwrap_or_default();
         let _ = write!(
             b,
-            "<div class=\"line dim\">● attributed: {}{} <span class=\"dim\">[{}] — {}</span></div>",
+            "<div class=\"line dim\">\u{25cf} attributed: {}{} <span class=\"dim\">[{}] \u{2014} {}</span></div>",
             esc(&res.path),
             moved,
             res.status,
@@ -426,11 +446,85 @@ fn render_interval(
     for (res, why) in &iv.dismissed_residue {
         let _ = write!(
             b,
-            "<div class=\"line dim\">○ dismissed: {} <span class=\"dim\">[{}] — {}</span></div>",
+            "<div class=\"line dim\">\u{25cb} dismissed: {} <span class=\"dim\">[{}] \u{2014} {}</span></div>",
             esc(&res.path),
             res.status,
             esc(why)
         );
     }
-    b.push_str("</article>\n");
+    b.push_str("</div></details>\n");
+}
+
+/// The commit's own diff, grouped by status — what git actually recorded.
+fn render_statement(b: &mut String, iv: &crate::reconcile::Interval) {
+    if iv.statement.is_empty() {
+        return;
+    }
+    let count = |st: char| iv.statement.iter().filter(|c| c.status == st).count();
+    let (a, m, d, r) = (count('A'), count('M'), count('D'), count('R') + count('C'));
+    let _ = write!(
+        b,
+        "<div class=\"section\"><div class=\"section-h\">files git recorded ({}): \
+        <b class=\"add\">{a} added</b> \u{00b7} <b class=\"mod\">{m} modified</b> \u{00b7} \
+        <b class=\"del\">{d} deleted</b> \u{00b7} <b class=\"ren\">{r} renamed</b></div>",
+        iv.statement.len()
+    );
+    for c in &iv.statement {
+        let (klass, label) = match c.status {
+            'A' => ("add", "A"),
+            'M' => ("mod", "M"),
+            'D' => ("del", "D"),
+            'R' => ("ren", "R"),
+            'C' => ("ren", "C"),
+            _ => ("mod", "?"),
+        };
+        let moved = c
+            .old_path
+            .as_ref()
+            .map(|o| format!(" <span class=\"dim\">\u{2190} {}</span>", esc(o)))
+            .unwrap_or_default();
+        let _ = write!(
+            b,
+            "<div class=\"frow\"><span class=\"st {klass}\">{label}</span>{}{moved}</div>",
+            esc(&c.path)
+        );
+    }
+    b.push_str("</div>");
+}
+
+/// The effectful commands the agent ran in this interval.
+fn render_commands(b: &mut String, iv: &crate::reconcile::Interval) {
+    if iv.commands_run.is_empty() {
+        return;
+    }
+    let _ = write!(
+        b,
+        "<div class=\"section\"><div class=\"section-h\">commands ({} effectful of {} total)</div>",
+        iv.commands_run.len(),
+        iv.commands
+    );
+    for c in &iv.commands_run {
+        b.push_str("<div class=\"crow\">");
+        match c.radius {
+            Some(r) => {
+                let _ = write!(b, "<span class=\"radtag {}\">{}</span>", r, r);
+            }
+            None => b.push_str("<span class=\"radtag ro\">read-only</span>"),
+        }
+        if c.committed {
+            b.push_str("<span class=\"radtag commit\">commit</span>");
+        }
+        if c.pushed {
+            b.push_str("<span class=\"radtag push\">push</span>");
+        }
+        if c.failed {
+            b.push_str("<span class=\"radtag fail\">failed</span>");
+        }
+        let _ = write!(
+            b,
+            "<code>{}</code></div>",
+            esc(&crate::report::redact_home(&c.summary))
+        );
+    }
+    b.push_str("</div>");
 }

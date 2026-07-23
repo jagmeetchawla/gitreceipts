@@ -51,11 +51,36 @@ h1 .cmd { color: var(--accent); }
 .controls select { background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 3px; font: inherit; padding: 0.1rem 0.3rem; }
 .controls select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ledger { display: flex; flex-direction: column; }
-.interval { border-bottom: 1px solid var(--rule); padding: 0.55rem 0 0.55rem 0.75rem; border-left: 3px solid transparent; }
+.interval { border-bottom: 1px solid var(--rule); padding: 0.15rem 0 0.15rem 0.75rem; border-left: 3px solid transparent; }
 .interval.red { border-left-color: var(--red); }
 .interval.residue { border-left-color: var(--amber); }
 .interval.green { border-left-color: var(--green); }
-.interval header { display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: baseline; }
+.interval > summary { display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: baseline; cursor: pointer; padding: 0.4rem 0; list-style: none; }
+.interval > summary::-webkit-details-marker { display: none; }
+.interval > summary::before { content: "\25b8"; color: var(--dim); width: 0.8rem; display: inline-block; transition: transform 0.12s; }
+.interval[open] > summary::before { transform: rotate(90deg); }
+.scount { color: var(--dim); font-size: 0.78rem; margin-left: auto; }
+.drill { padding: 0.15rem 0 0.7rem 1.6rem; display: flex; flex-direction: column; gap: 0.1rem; }
+.badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0 0.4rem; }
+.badge { font-size: 0.7rem; color: var(--dim); border: 1px solid var(--rule); border-radius: 3px; padding: 0.05rem 0.4rem; }
+.badge.ok { color: var(--green); border-color: currentColor; }
+.section { margin: 0.35rem 0; }
+.section-h { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 0.15rem; }
+.section-h .add { color: var(--green); } .section-h .mod { color: var(--intent); }
+.section-h .del { color: var(--red); } .section-h .ren { color: var(--amber); }
+.frow { font-size: 0.8rem; display: flex; gap: 0.5rem; align-items: baseline; overflow-wrap: anywhere; }
+.st { font-weight: 700; width: 1rem; text-align: center; border-radius: 2px; font-size: 0.72rem; flex: none; }
+.st.add { color: var(--green); } .st.mod { color: var(--intent); }
+.st.del { color: var(--red); } .st.ren { color: var(--amber); }
+.crow { font-size: 0.78rem; display: flex; gap: 0.4rem; align-items: baseline; overflow-wrap: anywhere; padding: 0.05rem 0; }
+.crow code { color: var(--ink); }
+.radtag { font-size: 0.65rem; padding: 0 0.35rem; border-radius: 2px; white-space: nowrap; flex: none; border: 1px solid var(--rule); color: var(--dim); }
+.radtag.local-fs { color: var(--intent); } .radtag.local-git { color: var(--intent); }
+.radtag.remote-git { color: var(--amber); border-color: currentColor; }
+.radtag.network { color: var(--red); border-color: currentColor; }
+.radtag.commit { color: var(--green); border-color: currentColor; }
+.radtag.push { color: var(--amber); border-color: currentColor; }
+.radtag.fail { color: var(--red); border-color: currentColor; }
 .mark { font-weight: 700; }
 .interval.green .mark { color: var(--green); }
 .interval.residue .mark { color: var(--amber); }

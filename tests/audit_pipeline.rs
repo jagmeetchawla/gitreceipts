@@ -156,7 +156,15 @@ fn html_report_is_self_contained_and_well_formed() {
     let (records, stats) = ingest::ingest(&session_path).unwrap();
     let session = extract::extract(&causal::order(records));
     let audit = reconcile::reconcile(&repo.root, &session).unwrap();
-    let out = html::render("sess", &root, &session, &stats, &audit, true);
+    let out = html::render(
+        "sess",
+        &root,
+        &session,
+        &stats,
+        &audit,
+        true,
+        gitreceipts::report::Expand::Auto,
+    );
 
     assert!(out.starts_with("<!doctype html>"));
     assert!(out.trim_end().ends_with("</html>"));
@@ -196,7 +204,15 @@ fn html_report_escapes_hostile_content() {
     let (records, stats) = ingest::ingest(&path).unwrap();
     let session = extract::extract(&causal::order(records));
     let audit = reconcile::reconcile(&repo.root, &session).unwrap();
-    let out = html::render("sess", &root, &session, &stats, &audit, true);
+    let out = html::render(
+        "sess",
+        &root,
+        &session,
+        &stats,
+        &audit,
+        true,
+        gitreceipts::report::Expand::Auto,
+    );
 
     assert!(
         out.contains("&lt;script&gt;"),
@@ -205,5 +221,93 @@ fn html_report_escapes_hostile_content() {
     assert!(
         !out.contains("<script>alert(1)"),
         "raw script must not appear"
+    );
+}
+
+#[test]
+fn html_drilldown_shows_statement_commands_and_push_status() {
+    let repo = TempRepo::new("drill");
+    let root = repo.root.display().to_string();
+    repo.write("kept.txt", "x");
+    repo.write("extra.txt", "fallout");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "first"],
+        Some("2026-01-01T10:00:31Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "kept.txt")
+        .bash_claim(
+            "2026-01-01T10:00:29Z",
+            "2026-01-01T10:00:31Z",
+            "git add -A && git commit -m first",
+        );
+    let path = repo.root.join("s.jsonl");
+    s.save(&path);
+    let (records, stats) = ingest::ingest(&path).unwrap();
+    let session = extract::extract(&causal::order(records));
+    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+    let out = html::render(
+        "sess",
+        &root,
+        &session,
+        &stats,
+        &audit,
+        true,
+        gitreceipts::report::Expand::All,
+    );
+
+    assert!(out.contains("<details"), "intervals are collapsible");
+    assert!(
+        out.contains("files git recorded"),
+        "statement breakdown present"
+    );
+    assert!(out.contains("class=\"frow\""), "per-file rows present");
+    assert!(out.contains("class=\"crow\""), "per-command rows present");
+    // no remote in a bare temp repo → local only
+    assert!(out.contains("local only"), "push status shown");
+    // commit command tagged
+    assert!(out.contains("class=\"radtag commit\""));
+}
+
+#[test]
+fn command_text_home_paths_are_redacted_in_html() {
+    // A command that cd's into an absolute home path must render with ~,
+    // not the raw username, in the shareable HTML.
+    let repo = TempRepo::new("redact");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:31Z"));
+
+    let home = std::env::home_dir().unwrap().display().to_string();
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:29Z",
+            "2026-01-01T10:00:31Z",
+            &format!("touch {home}/secret_marker_file && git add -A && git commit -m one"),
+        );
+    let path = repo.root.join("s.jsonl");
+    s.save(&path);
+    let (records, stats) = ingest::ingest(&path).unwrap();
+    let session = extract::extract(&causal::order(records));
+    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+    let out = html::render(
+        "sess",
+        &root,
+        &session,
+        &stats,
+        &audit,
+        true,
+        gitreceipts::report::Expand::All,
+    );
+
+    assert!(
+        !out.contains(&home),
+        "raw home path must not appear in the report"
     );
 }

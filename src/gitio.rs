@@ -254,6 +254,15 @@ pub fn blob_at(repo: &Path, hash: &str, path: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Commits reachable from any remote-tracking ref — i.e. pushed, as of the
+/// repo's last fetch. A local-only commit is absent. This is a local check
+/// (no network), so it reflects the last-known remote state, not live.
+pub fn pushed_commits(repo: &Path) -> std::collections::HashSet<String> {
+    git(repo, &["rev-list", "--remotes"])
+        .map(|raw| raw.lines().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
 /// Is this repo-relative path matched by the repo's ignore rules?
 ///
 /// `rel_path` originates in the session file, which is untrusted — the
