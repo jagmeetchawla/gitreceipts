@@ -139,12 +139,24 @@ impl SessionBuilder {
 
     /// A Write claim for an absolute path under the session cwd.
     pub fn write_claim(&mut self, ts: &str, result_ts: &str, rel: &str) -> &mut Self {
+        self.write_claim_content(ts, result_ts, rel, "x")
+    }
+
+    /// A Write claim with specific claimed content (the probe).
+    pub fn write_claim_content(
+        &mut self,
+        ts: &str,
+        result_ts: &str,
+        rel: &str,
+        content: &str,
+    ) -> &mut Self {
         let path = format!("{}/{}", self.cwd, rel);
+        let content = Self::json_escape(content);
         self.claim(
             ts,
             result_ts,
             "Write",
-            &format!(r#"{{"file_path":"{path}","content":"x"}}"#),
+            &format!(r#"{{"file_path":"{path}","content":"{content}"}}"#),
         )
     }
 
@@ -158,8 +170,15 @@ impl SessionBuilder {
         )
     }
 
+    fn json_escape(s: &str) -> String {
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\t', "\\t")
+    }
+
     pub fn bash_claim(&mut self, ts: &str, result_ts: &str, command: &str) -> &mut Self {
-        let escaped = command.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped = Self::json_escape(command);
         self.claim(
             ts,
             result_ts,
@@ -176,8 +195,8 @@ impl SessionBuilder {
         command: &str,
         output: &str,
     ) -> &mut Self {
-        let cmd = command.replace('\\', "\\\\").replace('"', "\\\"");
-        let out = output.replace('\\', "\\\\").replace('"', "\\\"");
+        let cmd = Self::json_escape(command);
+        let out = Self::json_escape(output);
         let a = self.uuid("a");
         let t = self.uuid("t");
         self.push(

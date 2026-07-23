@@ -294,8 +294,9 @@ pub fn print(
             continue;
         }
         let never: Vec<_> = interval.never_landed().collect();
+        let resolved: Vec<_> = interval.resolved_never().collect();
         let late: Vec<_> = interval.landed_late().collect();
-        let landed = interval.ledger.len() - never.len() - late.len();
+        let landed = interval.ledger.len() - never.len() - resolved.len() - late.len();
         let mark = match interval.status() {
             Status::Green => st.green("✔"),
             Status::ResidueOnly => st.yellow("!"),
@@ -369,6 +370,9 @@ pub fn print(
             format!(" / {} landed late", late.len())
         };
         let mut residue_notes = String::new();
+        if !resolved.is_empty() {
+            residue_notes.push_str(&format!(" (+{} resolved claims)", resolved.len()));
+        }
         if !interval.attributed_residue.is_empty() {
             residue_notes.push_str(&format!(
                 " (+{} command-attributed)",
@@ -414,6 +418,19 @@ pub fn print(
                         "(path match only in {at} — no content to verify against)"
                     ))
                 ),
+            }
+        }
+        for line in &resolved {
+            println!(
+                "    {} {} ({} edit{}, f#{})",
+                st.yellow("◌ never landed, resolved:"),
+                line.path,
+                line.edits,
+                if line.edits == 1 { "" } else { "s" },
+                line.frames.first().copied().unwrap_or(0)
+            );
+            if let Some(w) = &line.resolution {
+                println!("      {}", st.dim(w));
             }
         }
         for line in &never {

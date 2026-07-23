@@ -320,12 +320,21 @@ pub fn command_radius(command: &str) -> Option<Radius> {
             bump(Radius::Network);
         }
     }
-    let first_word = command.split_whitespace().next().unwrap_or("");
+    // check the first token of every segment, not just the whole command —
+    // scripts routinely open with `cd` and mutate on later lines
     let fs_starts = [
         "rm", "mv", "cp", "mkdir", "touch", "chmod", "chown", "ln", "tee", "install",
     ];
-    if fs_starts.contains(&first_word) {
-        bump(Radius::LocalFs);
+    for segment in command
+        .lines()
+        .flat_map(|l| l.split("&&"))
+        .flat_map(|l| l.split(';'))
+        .flat_map(|l| l.split('|'))
+    {
+        let first_word = segment.split_whitespace().next().unwrap_or("");
+        if fs_starts.contains(&first_word) {
+            bump(Radius::LocalFs);
+        }
     }
     for fs in [
         "sed -i",

@@ -546,3 +546,170 @@ fn residue_named_only_in_command_output_attributes_with_the_weaker_reason() {
     assert!(why.contains("output"), "reason was: {why}");
     assert_eq!(sweep.status(), Status::Green);
 }
+
+#[test]
+fn intermediate_edit_superseded_by_later_landed_edit_is_not_red() {
+    // The agent edits a file, doesn't commit that state, edits it again
+    // later and commits. The first edit is an intermediate state in a
+    // kept promise chain — resolved, not red.
+    let repo = TempRepo::new("supersede");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    repo.write("app.swift", "x");
+    repo.git(&["add", "app.swift"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:10Z", "2026-01-01T10:00:11Z", "a.txt")
+        // intermediate app.swift state, never committed as such — its
+        // content differs from what finally landed
+        .write_claim_content(
+            "2026-01-01T10:00:12Z",
+            "2026-01-01T10:00:13Z",
+            "app.swift",
+            "draft that never shipped",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        )
+        // the later edit that actually lands in commit two
+        .write_claim("2026-01-01T10:00:25Z", "2026-01-01T10:00:26Z", "app.swift")
+        .bash_claim(
+            "2026-01-01T10:00:39Z",
+            "2026-01-01T10:00:41Z",
+            "git add app.swift && git commit -m two",
+        );
+    let audit = run(&repo, &s);
+
+    let first = &audit.intervals[0];
+    let line = first.ledger.iter().find(|l| l.path == "app.swift").unwrap();
+    assert_eq!(line.landing, Landing::Never);
+    assert!(
+        line.resolution
+            .as_deref()
+            .unwrap_or("")
+            .contains("superseded"),
+        "resolution: {:?}",
+        line.resolution
+    );
+    assert_eq!(
+        first.status(),
+        Status::Green,
+        "an intermediate state is not a broken promise"
+    );
+}
+
+#[test]
+fn file_removed_by_a_named_command_is_resolved_not_red() {
+    let repo = TempRepo::new("deliberate");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .write_claim("2026-01-01T10:00:08Z", "2026-01-01T10:00:09Z", "probe.txt")
+        .bash_claim(
+            "2026-01-01T10:00:12Z",
+            "2026-01-01T10:00:13Z",
+            "cd /somewhere\nrm -f probe.txt",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    let first = &audit.intervals[0];
+    let line = first.ledger.iter().find(|l| l.path == "probe.txt").unwrap();
+    assert_eq!(line.landing, Landing::Never);
+    assert!(
+        line.resolution
+            .as_deref()
+            .unwrap_or("")
+            .contains("deliberately"),
+        "resolution: {:?}",
+        line.resolution
+    );
+    assert_eq!(first.status(), Status::Green);
+}
+
+#[test]
+fn gitignored_claim_whose_content_persists_on_disk_is_resolved() {
+    let repo = TempRepo::new("persisted");
+    let root = repo.root.display().to_string();
+
+    repo.write(".gitignore", "out.txt\n");
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    // the claimed write persisted on disk; git never saw it
+    repo.write("out.txt", "x");
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:03Z", "2026-01-01T10:00:04Z", ".gitignore")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .write_claim("2026-01-01T10:00:08Z", "2026-01-01T10:00:09Z", "out.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add .gitignore a.txt && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    let first = &audit.intervals[0];
+    let line = first.ledger.iter().find(|l| l.path == "out.txt").unwrap();
+    assert!(
+        line.resolution
+            .as_deref()
+            .unwrap_or("")
+            .contains("persisted outside git"),
+        "resolution: {:?}",
+        line.resolution
+    );
+    assert_eq!(
+        first.status(),
+        Status::Green,
+        "a kept promise outside git's view is not red or yellow"
+    );
+}
+
+#[test]
+fn a_silently_vanished_file_stays_red() {
+    // No later landed edit, no command names it, nothing on disk — the
+    // one story that must remain a broken promise.
+    let repo = TempRepo::new("vanish");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .write_claim("2026-01-01T10:00:08Z", "2026-01-01T10:00:09Z", "ghost.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    let first = &audit.intervals[0];
+    let line = first.ledger.iter().find(|l| l.path == "ghost.txt").unwrap();
+    assert_eq!(line.landing, Landing::Never);
+    assert!(line.resolution.is_none(), "nothing explains this one");
+    assert_eq!(first.status(), Status::Red);
+}

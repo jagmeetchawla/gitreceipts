@@ -56,6 +56,11 @@ pub struct LedgerLine {
     /// For a Late landing: which commit it landed in, and how many commits
     /// after its own interval.
     pub landed_at: Option<(String, usize)>,
+    /// A benign explanation for a never-landed claim: superseded by the
+    /// file's own later landed edits, deliberately removed by the
+    /// session's commands, or persisted on disk outside git's view.
+    /// A resolved line is still listed, but it is not a broken promise.
+    pub resolution: Option<String>,
     /// For never-landed claims: why git never saw it, when we can tell.
     pub diagnosis: Option<&'static str>,
 }
@@ -109,8 +114,18 @@ pub enum Status {
 }
 
 impl Interval {
+    /// Broken promises: never landed AND nothing explains it.
     pub fn never_landed(&self) -> impl Iterator<Item = &LedgerLine> {
-        self.ledger.iter().filter(|l| l.landing == Landing::Never)
+        self.ledger
+            .iter()
+            .filter(|l| l.landing == Landing::Never && l.resolution.is_none())
+    }
+
+    /// Never landed, but benignly explained — not red.
+    pub fn resolved_never(&self) -> impl Iterator<Item = &LedgerLine> {
+        self.ledger
+            .iter()
+            .filter(|l| l.landing == Landing::Never && l.resolution.is_some())
     }
 
     pub fn landed_late(&self) -> impl Iterator<Item = &LedgerLine> {
@@ -118,7 +133,11 @@ impl Interval {
     }
 
     pub fn status(&self) -> Status {
-        if self.ledger.iter().any(|l| l.landing == Landing::Never) {
+        if self
+            .ledger
+            .iter()
+            .any(|l| l.landing == Landing::Never && l.resolution.is_none())
+        {
             Status::Red
         } else if !self.residue.is_empty() {
             Status::ResidueOnly
@@ -491,6 +510,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 probe,
                 late_verified: None,
                 landed_at: None,
+                resolution: None,
                 diagnosis: None,
             });
         }
@@ -626,12 +646,111 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             .collect();
     }
 
+    // Resolve the never-landed claims that are not actually broken
+    // promises, in order of evidence strength.
+    //
+    // 1. Superseded: a LATER claimed edit to the same file landed — the
+    //    red edit was an intermediate state in a chain that kept its
+    //    promise, not lost work.
+    let mut landed_after: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+    for (j, interval) in audit.intervals.iter().enumerate() {
+        for line in &interval.ledger {
+            let commit = match line.landing {
+                Landing::OnTime => interval.commit.short.clone(),
+                Landing::Late => line
+                    .landed_at
+                    .as_ref()
+                    .map(|(s, _)| s.clone())
+                    .unwrap_or_else(|| interval.commit.short.clone()),
+                Landing::Never => continue,
+            };
+            landed_after
+                .entry(line.path.clone())
+                .or_default()
+                .push((j, commit));
+        }
+    }
+    let n_intervals = audit.intervals.len();
+    for i in 0..n_intervals {
+        // (split borrows: read the landing map, then mutate interval i)
+        let mut resolutions: Vec<(usize, String)> = Vec::new();
+        for (line_idx, line) in audit.intervals[i].ledger.iter().enumerate() {
+            if line.landing != Landing::Never || line.resolution.is_some() {
+                continue;
+            }
+            if let Some(hits) = landed_after.get(&line.path)
+                && let Some((_, commit)) = hits.iter().find(|(j, _)| *j > i)
+            {
+                resolutions.push((
+                    line_idx,
+                    format!(
+                        "superseded — a later claimed edit to this file landed (in {commit}); an intermediate state, not lost work"
+                    ),
+                ));
+            }
+        }
+        for (line_idx, why) in resolutions {
+            audit.intervals[i].ledger[line_idx].resolution = Some(why);
+        }
+    }
+
+    // 2. Persisted outside git: the path is ignored, but the claimed
+    //    content is sitting on disk right now. The promise was KEPT —
+    //    git just cannot see it.
+    for interval in audit.intervals.iter_mut() {
+        for line in interval
+            .ledger
+            .iter_mut()
+            .filter(|l| l.landing == Landing::Never && l.resolution.is_none())
+        {
+            let persisted = line.probe.as_ref().is_some_and(|probe| {
+                std::fs::read_to_string(repo.join(&line.path))
+                    .is_ok_and(|now| now.contains(probe.as_str()))
+            });
+            if persisted && gitio::is_ignored(repo, &line.path) {
+                line.resolution = Some(
+                    "gitignored, but the claimed content is on disk today — the promise persisted outside git's view"
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    // 3. Deliberately handled: from the claim's interval onward, the
+    //    session's own commands name the file (an rm, a replacement, a
+    //    cleanup). The disappearance was on purpose, and it is on record.
+    for i in 0..n_intervals {
+        let mut resolutions: Vec<(usize, String)> = Vec::new();
+        for (line_idx, line) in audit.intervals[i].ledger.iter().enumerate() {
+            if line.landing != Landing::Never || line.resolution.is_some() {
+                continue;
+            }
+            let mut names = vec![line.path.clone()];
+            if let Some(base) = line.path.rsplit('/').next()
+                && base.len() >= 5
+            {
+                names.push(base.to_string());
+            }
+            let named = (i..n_intervals)
+                .any(|j| names.iter().any(|nm| cmd_corpus[j].contains(nm.as_str())));
+            if named {
+                resolutions.push((
+                    line_idx,
+                    "the session's own commands name this file after the claim — removed or replaced deliberately, not silently lost".to_string(),
+                ));
+            }
+        }
+        for (line_idx, why) in resolutions {
+            audit.intervals[i].ledger[line_idx].resolution = Some(why);
+        }
+    }
+
     // Diagnose the survivors: why did git never see this claim?
     for interval in audit.intervals.iter_mut() {
         for line in interval
             .ledger
             .iter_mut()
-            .filter(|l| l.landing == Landing::Never)
+            .filter(|l| l.landing == Landing::Never && l.resolution.is_none())
         {
             // The forward sweep already checked every later commit, so
             // these are verified statements, not guesses.
