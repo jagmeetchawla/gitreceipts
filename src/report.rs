@@ -54,6 +54,9 @@ impl Style {
     fn bold(&self, s: &str) -> String {
         self.paint("1", s)
     }
+    fn cyan(&self, s: &str) -> String {
+        self.paint("36", s)
+    }
 }
 
 pub fn print(
@@ -148,6 +151,23 @@ pub fn print(
             st.yellow(who),
             st.yellow(ghost),
         );
+        if let Some(first) = interval.intents.first() {
+            let mut shown: String = first.chars().take(76).collect();
+            if first.chars().count() > 76 {
+                shown.push('\u{2026}');
+            }
+            let more = if interval.intents.len() > 1 {
+                format!("  (+{} more)", interval.intents.len() - 1)
+            } else {
+                String::new()
+            };
+            println!(
+                "    {} {}{}",
+                st.cyan("\u{bb} intent:"),
+                shown,
+                st.dim(&more)
+            );
+        }
         if interval.spine_jump {
             println!(
                 "    {}",
@@ -273,5 +293,80 @@ pub fn print(
             pct(green, total),
             pct(claims_landed, claims_total),
         ))
+    );
+
+    // ---- intent → outcome + side effects ---------------------------------
+    let diag_paths = |prefix: &str| -> usize {
+        let mut paths: Vec<&str> = audit
+            .intervals
+            .iter()
+            .flat_map(|i| i.ledger.iter())
+            .filter(|l| l.diagnosis.is_some_and(|d| d.starts_with(prefix)))
+            .map(|l| l.path.as_str())
+            .collect();
+        paths.sort_unstable();
+        paths.dedup();
+        paths.len()
+    };
+    let gitignored = diag_paths("gitignored");
+    let thrown_away = diag_paths("deleted before any commit");
+    let mut oor_paths: Vec<&str> = audit.out_of_repo.iter().map(|(p, _)| p.as_str()).collect();
+    oor_paths.sort_unstable();
+    oor_paths.dedup();
+
+    println!();
+    println!("{}", st.bold("intent → outcome"));
+    println!(
+        "  {} prompts drove {} commits; {}/{} claimed files landed ({:.0}%), {} intervals fully balanced",
+        audit.prompts,
+        total,
+        claims_landed,
+        claims_total,
+        pct(claims_landed, claims_total),
+        green,
+    );
+    println!("  side effects beyond the repo's history:");
+    let side = |n: usize, text: String| {
+        if n > 0 {
+            println!("    · {text}");
+        }
+    };
+    side(
+        audit.out_of_repo.len(),
+        format!(
+            "writes outside this repo: {} across {} paths (scratch dirs, other repos)",
+            audit.out_of_repo.len(),
+            oor_paths.len()
+        ),
+    );
+    side(
+        audit.radii.network,
+        format!("network commands: {}", audit.radii.network),
+    );
+    side(
+        audit.radii.remote_git,
+        format!(
+            "remote-git commands: {} (push/pull/fetch reached beyond this machine)",
+            audit.radii.remote_git
+        ),
+    );
+    side(
+        gitignored,
+        format!("gitignored write targets: {gitignored} (real writes git never saw)"),
+    );
+    side(
+        thrown_away,
+        format!("written, used, deleted before any commit: {thrown_away}"),
+    );
+    side(
+        audit.tail_claims.len(),
+        format!(
+            "claims after the last commit, still uncommitted: {}",
+            audit.tail_claims.len()
+        ),
+    );
+    side(
+        audit.grades.failed,
+        format!("failed commands or edits: {}", audit.grades.failed),
     );
 }

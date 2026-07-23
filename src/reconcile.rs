@@ -64,6 +64,9 @@ pub struct Superseded {
 pub struct Interval {
     pub commit: SpineCommit,
     pub agent_committed: bool,
+    /// User prompts typed during this interval — the asks this commit
+    /// answers to.
+    pub intents: Vec<String>,
     /// This commit's parent is not the previous spine commit (rebase,
     /// reset, branch switch) — the timeline has a seam here.
     pub spine_jump: bool,
@@ -128,8 +131,11 @@ pub struct Audit {
     /// File claims that resolve outside the repo (scratch dirs, other
     /// repos, memory files, …).
     pub out_of_repo: Vec<(String, usize)>,
+    /// Prompts typed after the last commit.
+    pub tail_intents: Vec<String>,
     pub grades: GradeCount,
     pub radii: RadiusCount,
+    pub prompts: usize,
     pub file_claims: usize,
     pub commands: usize,
     pub observations: usize,
@@ -278,6 +284,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         intervals.push(Interval {
             commit: commit.clone(),
             agent_committed: false,
+            intents: Vec::new(),
             spine_jump,
             superseded,
             statement,
@@ -292,12 +299,21 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         intervals,
         tail_claims: Vec::new(),
         out_of_repo: Vec::new(),
+        tail_intents: Vec::new(),
         grades: GradeCount::default(),
         radii: RadiusCount::default(),
+        prompts: session.prompts.len(),
         file_claims: 0,
         commands: 0,
         observations: 0,
     };
+
+    for prompt in &session.prompts {
+        match interval_of(prompt.ts) {
+            Some(idx) => audit.intervals[idx].intents.push(prompt.text.clone()),
+            None => audit.tail_intents.push(prompt.text.clone()),
+        }
+    }
 
     // per-interval ledgers accumulate as path -> (edits, frames)
     let mut ledgers: Vec<BTreeMap<String, (usize, Vec<usize>)>> = (0..audit.intervals.len())

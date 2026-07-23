@@ -84,6 +84,41 @@ mod extract {
     }
 }
 
+mod prompts {
+    use gitreceipts::extract::extract;
+    use gitreceipts::schema::Record;
+
+    fn session_of(lines: &[&str]) -> gitreceipts::extract::Session {
+        let records: Vec<Record> = lines
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        extract(&records)
+    }
+
+    #[test]
+    fn typed_text_is_intent_tool_results_are_not() {
+        let s = session_of(&[
+            r#"{"type":"user","uuid":"u1","message":{"content":"fix the panel"}}"#,
+            r#"{"type":"user","uuid":"u2","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}"#,
+            r#"{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"on it"}]}}"#,
+        ]);
+        assert_eq!(s.prompts.len(), 1);
+        assert_eq!(s.prompts[0].text, "fix the panel");
+    }
+
+    #[test]
+    fn harness_bookkeeping_lines_are_skipped() {
+        let s = session_of(&[
+            r#"{"type":"user","uuid":"u1","message":{"content":"<command-name>/model</command-name>"}}"#,
+            r#"{"type":"user","uuid":"u2","message":{"content":"Caveat: local command output"}}"#,
+            r#"{"type":"user","uuid":"u3","message":{"content":"<system-reminder>noise</system-reminder>\nactual ask here"}}"#,
+        ]);
+        assert_eq!(s.prompts.len(), 1, "wrapper-only records are not intent");
+        assert_eq!(s.prompts[0].text, "actual ask here");
+    }
+}
+
 mod ingest {
     use std::fs;
 

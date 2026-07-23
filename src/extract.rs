@@ -61,9 +61,17 @@ pub struct Claim {
     pub receipt: Option<Receipt>,
 }
 
+/// A real typed user prompt — the intent the work that follows answers to.
+#[derive(Debug, Clone)]
+pub struct Prompt {
+    pub ts: Option<DateTime<Utc>>,
+    pub text: String,
+}
+
 #[derive(Debug, Default)]
 pub struct Session {
     pub claims: Vec<Claim>,
+    pub prompts: Vec<Prompt>,
     pub first_ts: Option<DateTime<Utc>>,
     pub last_ts: Option<DateTime<Utc>>,
     pub cwds: Vec<String>,
@@ -114,6 +122,12 @@ pub fn extract(ordered: &[Record]) -> Session {
             session.branches.push(b.to_string());
         }
 
+        if rec.kind == "user"
+            && let Some(text) = prompt_text(rec)
+        {
+            session.prompts.push(Prompt { ts, text });
+        }
+
         for tu in rec.tool_uses() {
             let action = classify_tool(&tu.name, &tu.input);
             session.claims.push(Claim {
@@ -125,6 +139,37 @@ pub fn extract(ordered: &[Record]) -> Session {
         }
     }
     session
+}
+
+/// A user record counts as intent only when a person typed it: plain text,
+/// no tool_result blocks, and not harness bookkeeping (command wrappers,
+/// caveats, injected reminders). Returns the first human-looking line.
+fn prompt_text(rec: &Record) -> Option<String> {
+    let content = &rec.message.as_ref()?.content;
+    let raw = match content {
+        Value::String(s) => s.clone(),
+        Value::Array(blocks) => {
+            if blocks
+                .iter()
+                .any(|b| b.get("type").and_then(Value::as_str) == Some("tool_result"))
+            {
+                return None;
+            }
+            blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        _ => return None,
+    };
+    raw.lines()
+        .map(str::trim)
+        .find(|l| {
+            !l.is_empty() && !l.starts_with('<') && !l.starts_with("Caveat:") && !l.starts_with('[')
+        })
+        .map(|l| l.chars().take(200).collect())
 }
 
 fn input_str<'v>(input: &'v Value, key: &str) -> Option<&'v str> {

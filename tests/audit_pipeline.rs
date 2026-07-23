@@ -62,6 +62,7 @@ fn full_pipeline_balances_the_interval_equation() {
     let ordered = causal::order(records);
     let session = extract::extract(&ordered);
     assert_eq!(session.claims.len(), 3); // two writes + one command
+    assert_eq!(session.prompts.len(), 1, "tool results are not prompts");
 
     let audit = reconcile::reconcile(&repo.root, &session).unwrap();
 
@@ -101,6 +102,13 @@ fn full_pipeline_balances_the_interval_equation() {
     assert_eq!(
         audit.grades.receipted, 1,
         "the commit command is corroborated"
+    );
+
+    assert_eq!(audit.prompts, 1);
+    assert_eq!(
+        interval.intents,
+        vec!["build it".to_string()],
+        "the prompt that drove the interval is attached to it"
     );
 }
 
