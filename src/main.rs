@@ -38,6 +38,14 @@ enum Cmd {
 }
 
 fn main() -> Result<()> {
+    // A report exists to be piped (`| head`, `| less` quit early). Restore
+    // default SIGPIPE so a closed pipe ends the process quietly instead of
+    // panicking mid-print.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     let cli = Cli::parse();
     match cli.command {
         Cmd::Audit {

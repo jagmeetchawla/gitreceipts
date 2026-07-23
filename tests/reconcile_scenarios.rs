@@ -206,3 +206,35 @@ fn scratch_dir_cwd_never_counts_as_a_repo_root() {
     );
     assert!(audit.intervals[0].balanced());
 }
+
+#[test]
+fn hostile_dashed_filename_cannot_inject_git_options() {
+    // A session claiming a file named `--stdin` that never lands drives the
+    // diagnosis path through `git check-ignore` — without the `--` guard
+    // this hangs forever on the inherited stdin.
+    let repo = TempRepo::new("dashfile");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:30Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:10Z", "2026-01-01T10:00:11Z", "a.txt")
+        .write_claim("2026-01-01T10:00:12Z", "2026-01-01T10:00:13Z", "--stdin")
+        .bash_claim(
+            "2026-01-01T10:00:29Z",
+            "2026-01-01T10:00:31Z",
+            "git add -A && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    let line = audit.intervals[0]
+        .ledger
+        .iter()
+        .find(|l| l.path == "--stdin")
+        .expect("the claim is in the ledger");
+    assert_eq!(line.landing, Landing::Never);
+    assert!(line.diagnosis.is_some(), "diagnosis ran and returned");
+}

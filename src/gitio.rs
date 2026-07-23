@@ -109,11 +109,16 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
 }
 
 /// Is this repo-relative path matched by the repo's ignore rules?
+///
+/// `rel_path` originates in the session file, which is untrusted — the
+/// `--` keeps a path like `--stdin` from being parsed as a git option
+/// (without it, check-ignore would block forever reading the terminal).
 pub fn is_ignored(repo: &Path, rel_path: &str) -> bool {
     Command::new("git")
         .arg("-C")
         .arg(repo)
-        .args(["check-ignore", "-q", rel_path])
+        .args(["check-ignore", "-q", "--", rel_path])
+        .stdin(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)

@@ -195,11 +195,15 @@ impl Roots {
 }
 
 pub fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, String)> {
+    // A rel with a `..` component could escape the repo when later joined
+    // or handed to git — claimed paths are untrusted, so such a claim goes
+    // to the out-of-repo bucket instead of the ledger.
     roots
         .iter()
         .filter_map(|root| {
             path.strip_prefix(root.as_str())
                 .and_then(|rest| rest.strip_prefix('/'))
+                .filter(|rel| !rel.split('/').any(|c| c == ".."))
                 .map(|rel| (root.as_str(), rel.to_string()))
         })
         .max_by_key(|(root, _)| root.len())

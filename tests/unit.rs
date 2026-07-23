@@ -166,6 +166,25 @@ mod ingest {
     }
 
     #[test]
+    fn oversized_lines_are_dropped_not_loaded() {
+        // a "line" past the cap counts as unparseable; later records survive
+        let big = format!(
+            "{}{}\n{}",
+            r#"{"type":"user","uuid":"u1","message":{"content":""#,
+            "x".repeat(4096),
+            r#"{"type":"user","uuid":"u2"}"#
+        );
+        let path =
+            std::env::temp_dir().join(format!("gitreceipts-ingest-cap-{}", std::process::id()));
+        fs::write(&path, big).unwrap();
+        let (records, stats) = gitreceipts::ingest::ingest_with_cap(&path, 1024).unwrap();
+        let _ = fs::remove_file(&path);
+        assert_eq!(records.len(), 1, "the record after the bomb still loads");
+        assert_eq!(records[0].uuid.as_deref(), Some("u2"));
+        assert_eq!(stats.unparseable, 1);
+    }
+
+    #[test]
     fn missing_file_is_an_error_not_a_panic() {
         let path = std::env::temp_dir().join("gitreceipts-ingest-does-not-exist.jsonl");
         assert!(ingest(&path).is_err());
@@ -202,6 +221,15 @@ mod reconcile {
         let (root, rel) = longest_prefix("/a/b/c.txt", &roots).unwrap();
         assert_eq!(root, "/a/b");
         assert_eq!(rel, "c.txt");
+    }
+
+    #[test]
+    fn longest_prefix_rejects_traversal() {
+        let roots = vec!["/a/repo".to_string()];
+        // a claimed path escaping the root must not produce a repo-relative rel
+        assert!(longest_prefix("/a/repo/../secrets/key", &roots).is_none());
+        assert!(longest_prefix("/a/repo/src/../../x", &roots).is_none());
+        assert!(longest_prefix("/a/repo/src/x", &roots).is_some());
     }
 
     #[test]
