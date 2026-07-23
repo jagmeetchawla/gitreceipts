@@ -7,18 +7,33 @@ use crate::extract::Session;
 use crate::ingest::IngestStats;
 use crate::reconcile::Audit;
 
+/// Follows the git convention: `auto` colors a terminal and strips colors
+/// from pipes; `always` keeps ANSI escapes flowing into `bat`, `less -R`,
+/// a file for later `cat` — anything that renders them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ColorMode {
+    Auto,
+    Always,
+    Never,
+}
+
 struct Style {
     on: bool,
 }
 
 impl Style {
-    fn new() -> Self {
-        Style {
-            on: std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none(),
-        }
+    fn new(mode: ColorMode) -> Self {
+        let on = match mode {
+            ColorMode::Always => true,
+            ColorMode::Never => false,
+            ColorMode::Auto => {
+                std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+            }
+        };
+        Style { on }
     }
     fn paint(&self, code: &str, s: &str) -> String {
-        if self.on {
+        if self.on && !s.is_empty() {
             format!("\x1b[{code}m{s}\x1b[0m")
         } else {
             s.to_string()
@@ -47,8 +62,9 @@ pub fn print(
     session: &Session,
     stats: &IngestStats,
     audit: &Audit,
+    color: ColorMode,
 ) {
-    let st = Style::new();
+    let st = Style::new(color);
 
     println!("{}", st.bold(&format!("git receipts — {session_name}")));
     println!(
@@ -224,7 +240,7 @@ pub fn print(
             "out-of-repo writes: {} claims across {} paths {}",
             audit.out_of_repo.len(),
             paths.len(),
-            Style::new().dim("(outside the audited repo — not in the equation)")
+            st.dim("(outside the audited repo — not in the equation)")
         );
     }
 

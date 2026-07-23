@@ -36,6 +36,10 @@ enum Cmd {
         /// Repo to reconcile against (default: cwd recorded in the session).
         #[arg(long)]
         repo: Option<PathBuf>,
+        /// When to emit ANSI colors. `always` keeps them through pipes,
+        /// for `| bat`, `| less -R`, or saving a colored transcript.
+        #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
+        color: report::ColorMode,
     },
 }
 
@@ -46,7 +50,8 @@ fn main() -> Result<()> {
             session,
             latest,
             repo,
-        } => audit(session, latest, repo),
+            color,
+        } => audit(session, latest, repo, color),
     }
 }
 
@@ -85,7 +90,12 @@ fn latest_session(repo: &std::path::Path) -> Result<PathBuf> {
         .with_context(|| format!("no .jsonl sessions in {}", dir.display()))
 }
 
-fn audit(session: Option<PathBuf>, latest: bool, repo: Option<PathBuf>) -> Result<()> {
+fn audit(
+    session: Option<PathBuf>,
+    latest: bool,
+    repo: Option<PathBuf>,
+    color: report::ColorMode,
+) -> Result<()> {
     let session_path = match (session, latest) {
         (Some(p), false) => p,
         (None, true) => {
@@ -133,6 +143,7 @@ fn audit(session: Option<PathBuf>, latest: bool, repo: Option<PathBuf>) -> Resul
         &session_data,
         &stats,
         &audit,
+        color,
     );
     Ok(())
 }
