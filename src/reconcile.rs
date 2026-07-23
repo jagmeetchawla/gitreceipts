@@ -46,6 +46,13 @@ pub struct LedgerLine {
     pub edits: usize,
     pub frames: Vec<usize>,
     pub landing: Landing,
+    /// The content the last edit claimed to leave behind, for verifying a
+    /// late landing.
+    pub probe: Option<String>,
+    /// For a Late landing: Some(true) if the claimed content was found in
+    /// the next commit's blob; None if there was nothing to check against.
+    /// (A failed check never reaches Late — the claim stays Never.)
+    pub late_verified: Option<bool>,
     /// For never-landed claims: why git never saw it, when we can tell.
     pub diagnosis: Option<&'static str>,
 }
@@ -319,8 +326,9 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         }
     }
 
-    // per-interval ledgers accumulate as path -> (edits, frames)
-    let mut ledgers: Vec<BTreeMap<String, (usize, Vec<usize>)>> = (0..audit.intervals.len())
+    // per-interval ledgers accumulate as path -> (edits, frames, last probe)
+    type LedgerAcc = BTreeMap<String, (usize, Vec<usize>, Option<String>)>;
+    let mut ledgers: Vec<LedgerAcc> = (0..audit.intervals.len())
         .map(|_| BTreeMap::new())
         .collect();
 
@@ -330,7 +338,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 audit.observations += 1;
                 audit.radii.read_only += 1;
             }
-            Action::FileMutation { path, .. } => {
+            Action::FileMutation { path, probe } => {
                 audit.file_claims += 1;
                 audit.grades.add(Grade::Exact);
                 audit.radii.local_fs += 1;
@@ -344,9 +352,12 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 };
                 match interval_of(claim.ts) {
                     Some(idx) => {
-                        let entry = ledgers[idx].entry(rel).or_insert((0, Vec::new()));
+                        let entry = ledgers[idx].entry(rel).or_insert((0, Vec::new(), None));
                         entry.0 += 1;
                         entry.1.push(claim.frame);
+                        if probe.is_some() {
+                            entry.2 = probe.clone();
+                        }
                     }
                     None => audit.tail_claims.push((rel, claim.frame)),
                 }
@@ -396,7 +407,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
 
     // settle each interval: match ledger against statement, find residue
     for (interval, ledger) in audit.intervals.iter_mut().zip(ledgers) {
-        for (path, (edits, frames)) in ledger {
+        for (path, (edits, frames, probe)) in ledger {
             let landing = if interval.statement.iter().any(|c| c.path == path) {
                 Landing::OnTime
             } else {
@@ -407,6 +418,8 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 edits,
                 frames,
                 landing,
+                probe,
+                late_verified: None,
                 diagnosis: None,
             });
         }
@@ -420,7 +433,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
 
     // Carry-forward: a claim edited just before a commit that only staged
     // part of the work lands in the *next* commit. Let it clear one
-    // statement late, and strike the matching residue there.
+    // statement late — but a path match alone can be a coincidence, so we
+    // check the claimed content against the next commit's blob. Verified:
+    // Late, residue struck. Content absent: it did NOT land — stays red.
+    // Nothing to check against: Late, but the report says so.
     for i in 0..audit.intervals.len().saturating_sub(1) {
         let (head, rest) = audit.intervals.split_at_mut(i + 1);
         let (cur, next) = (&mut head[i], &mut rest[0]);
@@ -429,9 +445,29 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             .iter_mut()
             .filter(|l| l.landing == Landing::Never)
         {
-            if let Some(pos) = next.residue.iter().position(|c| c.path == line.path) {
-                line.landing = Landing::Late;
-                next.residue.remove(pos);
+            let Some(pos) = next.residue.iter().position(|c| c.path == line.path) else {
+                continue;
+            };
+            match (
+                &line.probe,
+                gitio::blob_at(repo, &next.commit.hash, &line.path),
+            ) {
+                (Some(probe), Some(blob)) => {
+                    if blob.contains(probe.as_str()) {
+                        line.landing = Landing::Late;
+                        line.late_verified = Some(true);
+                        next.residue.remove(pos);
+                    }
+                    // content absent: the claim genuinely never landed
+                }
+                (Some(_), None) => {
+                    // file gone at the next commit — the claim never landed
+                }
+                (None, _) => {
+                    line.landing = Landing::Late;
+                    line.late_verified = None;
+                    next.residue.remove(pos);
+                }
             }
         }
     }

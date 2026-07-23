@@ -37,7 +37,10 @@ impl fmt::Display for Radius {
 #[derive(Debug, Clone)]
 pub enum Action {
     /// Write/Edit/MultiEdit/NotebookEdit — the diff itself is in the log.
-    FileMutation { path: String },
+    /// `probe` is the content the mutation claims to leave behind (a Write's
+    /// body, an Edit's new_string) — used to verify a late landing really
+    /// carries this edit and not a coincidental change to the same path.
+    FileMutation { path: String, probe: Option<String> },
     /// Bash — an asserted effect with, at best, captured output as receipt.
     Command {
         command: String,
@@ -176,17 +179,35 @@ fn input_str<'v>(input: &'v Value, key: &str) -> Option<&'v str> {
     input.get(key).and_then(Value::as_str)
 }
 
+/// The content this mutation claims to leave in the file.
+fn mutation_probe(tool: &str, input: &Value) -> Option<String> {
+    match tool {
+        "Write" => input_str(input, "content").map(str::to_string),
+        "Edit" => input_str(input, "new_string").map(str::to_string),
+        "MultiEdit" => input
+            .get("edits")
+            .and_then(Value::as_array)
+            .and_then(|edits| edits.last())
+            .and_then(|e| e.get("new_string"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
 fn classify_tool(name: &str, input: &Value) -> Action {
     match name {
         "Write" | "Edit" | "MultiEdit" => Action::FileMutation {
             path: input_str(input, "file_path")
                 .unwrap_or_default()
                 .to_string(),
+            probe: mutation_probe(name, input),
         },
         "NotebookEdit" => Action::FileMutation {
             path: input_str(input, "notebook_path")
                 .unwrap_or_default()
                 .to_string(),
+            probe: input_str(input, "new_source").map(str::to_string),
         },
         "Bash" => {
             let command = input_str(input, "command").unwrap_or_default().to_string();

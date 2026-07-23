@@ -238,3 +238,99 @@ fn hostile_dashed_filename_cannot_inject_git_options() {
     assert_eq!(line.landing, Landing::Never);
     assert!(line.diagnosis.is_some(), "diagnosis ran and returned");
 }
+
+#[test]
+fn backdated_commit_cannot_hide_from_the_spine() {
+    // GIT_COMMITTER_DATE forges both the committer date AND the reflog
+    // timestamp — but not the reflog's order. A commit created between two
+    // in-window commits stays in the audit, flagged as a clock anomaly.
+    let repo = TempRepo::new("backdate");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    repo.write("hidden.txt", "x");
+    repo.git(&["add", "hidden.txt"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "sneaky"],
+        Some("2020-06-06T06:06:06Z"), // far outside the session window
+    );
+    repo.write("b.txt", "x");
+    repo.git(&["add", "b.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:10Z", "2026-01-01T10:00:11Z", "a.txt")
+        .write_claim("2026-01-01T10:00:12Z", "2026-01-01T10:00:13Z", "b.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:41Z",
+            "git commit -m one && git commit -m sneaky && git commit -m two",
+        );
+    let audit = run(&repo, &s);
+
+    assert_eq!(audit.intervals.len(), 3, "the backdated commit is audited");
+    let sneaky = &audit.intervals[1];
+    assert_eq!(sneaky.commit.subject, "sneaky");
+    assert!(sneaky.commit.clock_anomaly, "and flagged as untrustworthy");
+    assert!(!audit.intervals[0].commit.clock_anomaly && !audit.intervals[2].commit.clock_anomaly);
+    // its statement is still checked: hidden.txt shows as residue
+    assert!(sneaky.residue.iter().any(|c| c.path == "hidden.txt"));
+}
+
+#[test]
+fn coincidental_same_path_change_does_not_launder_a_lost_claim() {
+    // The agent claims content for a.txt that never lands. The NEXT commit
+    // happens to touch a.txt too — but with unrelated content. Path-only
+    // carry-forward would call the claim "landed late" and strike the
+    // residue; the content check keeps both red.
+    let repo = TempRepo::new("launder");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "original");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    repo.write("b.txt", "x");
+    repo.git(&["add", "b.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
+    repo.write("a.txt", "completely unrelated human rewrite");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "three"],
+        Some("2026-01-01T10:01:00Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:10Z", "2026-01-01T10:00:11Z", "a.txt")
+        .write_claim("2026-01-01T10:00:12Z", "2026-01-01T10:00:13Z", "b.txt")
+        // claimed between commits one and two; its content ("x" from the
+        // builder) never reaches any commit — commit three's a.txt is a
+        // different rewrite
+        .write_claim("2026-01-01T10:00:25Z", "2026-01-01T10:00:26Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:01:01Z",
+            "git commit -m one && git commit -m two && git commit -m three",
+        );
+    let audit = run(&repo, &s);
+
+    assert_eq!(audit.intervals.len(), 3);
+    let second = &audit.intervals[1]; // closes at commit "two"
+    let line = second
+        .ledger
+        .iter()
+        .find(|l| l.path == "a.txt")
+        .expect("the mid-session a.txt claim maps to interval two");
+    assert_eq!(
+        line.landing,
+        Landing::Never,
+        "unrelated content in commit three must not launder this claim"
+    );
+    assert!(
+        audit.intervals[2].residue.iter().any(|c| c.path == "a.txt"),
+        "and commit three's real residue stays visible"
+    );
+}

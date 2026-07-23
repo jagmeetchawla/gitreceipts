@@ -260,6 +260,15 @@ pub fn print(
             st.yellow(who),
             st.yellow(ghost),
         );
+        if interval.commit.clock_anomaly {
+            println!(
+                "    {}",
+                st.yellow(&format!(
+                    "⚠ clock anomaly: dated {}, but the reflog places it between in-window commits — dates on this commit cannot be trusted (backdated?)",
+                    interval.commit.committer_ts.format("%Y-%m-%d %H:%M")
+                ))
+            );
+        }
         if show_intent && let Some(first) = interval.intents.first() {
             let mut shown: String = first.chars().take(76).collect();
             if first.chars().count() > 76 {
@@ -306,6 +315,22 @@ pub fn print(
             interval.residue.len(),
             interval.commands
         );
+        for line in &late {
+            match line.late_verified {
+                Some(true) => println!(
+                    "    {} {} {}",
+                    st.green("✓ landed next commit:"),
+                    line.path,
+                    st.dim("(claimed content found in that commit)")
+                ),
+                _ => println!(
+                    "    {} {} {}",
+                    st.yellow("~ landed next commit:"),
+                    line.path,
+                    st.yellow("(path match only — no content to verify against)")
+                ),
+            }
+        }
         for line in &never {
             println!(
                 "    {} {} ({} edit{}, f#{})",

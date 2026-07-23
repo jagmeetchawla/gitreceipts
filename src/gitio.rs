@@ -13,12 +13,22 @@ pub struct SpineCommit {
     pub short: String,
     /// First parent, empty for a root commit.
     pub parent: String,
+    /// Timestamp used for windowing and interval mapping. For a commit
+    /// with a clock anomaly this is clamped into sequence, because its
+    /// own dates cannot be trusted.
     pub ts: DateTime<Utc>,
+    /// What the commit object itself claims (committer date).
+    pub committer_ts: DateTime<Utc>,
     pub subject: String,
     /// The reflog action that created it (commit, commit (amend), rebase…).
     pub reflog_action: String,
     /// Still reachable from a branch, or only alive in the reflog?
     pub reachable: bool,
+    /// The reflog places this commit between in-window commits, but its
+    /// own timestamps say otherwise. Dates are trivially forgeable
+    /// (GIT_COMMITTER_DATE forges the reflog stamp too); creation ORDER
+    /// is not. We keep the commit and say the clock cannot be trusted.
+    pub clock_anomaly: bool,
 }
 
 impl SpineCommit {
@@ -55,28 +65,50 @@ pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
 /// The reflog is the local truth of what HEAD did while the session ran —
 /// it sees amends, rebases, and commits later reset away, which plain
 /// `git log` does not.
+///
+/// Windowing is the sandwich rule: an entry belongs to the session if its
+/// own timestamps fall in the window, OR if it was created between two
+/// entries that do. Timestamps are forgeable; the reflog's creation order
+/// is not, so a backdated commit cannot slip out of the audit — it stays
+/// in, flagged as a clock anomaly.
 pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<SpineCommit>> {
     let raw = git(
         repo,
-        &["log", "-g", "--format=%H%x00%h%x00%cI%x00%P%x00%gs%x00%s"],
+        &[
+            "log",
+            "-g",
+            "--date=iso-strict",
+            "--format=%H%x00%h%x00%cI%x00%gd%x00%P%x00%gs%x00%s",
+        ],
     )?;
     let reachable_raw = git(repo, &["rev-list", "--branches", "--tags", "HEAD"])?;
     let reachable: std::collections::HashSet<&str> = reachable_raw.lines().collect();
 
-    let mut commits: Vec<SpineCommit> = Vec::new();
+    // parse every commit-creating entry in creation order first
+    let mut all: Vec<(SpineCommit, bool)> = Vec::new(); // (commit, in_window)
     // `log -g` lists newest first; walk it reversed to get creation order,
     // which stays right even when timestamps tie (commit + amend in the
     // same second, rebase bursts).
     for line in raw.lines().rev() {
         let mut parts = line.split('\u{0}');
-        let (Some(hash), Some(short), Some(cdate), Some(parents), Some(gs), Some(subject)) = (
+        let (
+            Some(hash),
+            Some(short),
+            Some(cdate),
+            Some(gdate),
+            Some(parents),
+            Some(gs),
+            Some(subject),
+        ) = (
             parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
-        ) else {
+            parts.next(),
+        )
+        else {
             continue;
         };
         let creates_commit = ["commit", "rebase", "cherry-pick"]
@@ -85,27 +117,78 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
         if !creates_commit {
             continue;
         }
-        let Ok(ts) = DateTime::parse_from_rfc3339(cdate) else {
+        let Ok(committer_ts) = DateTime::parse_from_rfc3339(cdate) else {
             continue;
         };
-        let ts = ts.with_timezone(&Utc);
-        if ts < from || ts > to {
+        let committer_ts = committer_ts.with_timezone(&Utc);
+        // %gd with iso-strict renders "HEAD@{<iso>}"
+        let reflog_ts = gdate
+            .split('{')
+            .nth(1)
+            .and_then(|s| s.strip_suffix('}'))
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|t| t.with_timezone(&Utc))
+            .unwrap_or(committer_ts);
+        if all.iter().any(|(c, _)| c.hash == hash) {
             continue;
         }
-        if commits.iter().any(|c| c.hash == hash) {
-            continue;
+        let in_window = |t: DateTime<Utc>| t >= from && t <= to;
+        let inside = in_window(committer_ts) || in_window(reflog_ts);
+        all.push((
+            SpineCommit {
+                hash: hash.to_string(),
+                short: short.to_string(),
+                parent: parents.split_whitespace().next().unwrap_or("").to_string(),
+                ts: committer_ts,
+                committer_ts,
+                subject: subject.to_string(),
+                reflog_action: gs.split(':').next().unwrap_or(gs).to_string(),
+                reachable: reachable.contains(hash),
+                clock_anomaly: false,
+            },
+            inside,
+        ));
+    }
+
+    // sandwich: keep everything from the first in-window entry to the last
+    let first = all.iter().position(|(_, inside)| *inside);
+    let last = all.iter().rposition(|(_, inside)| *inside);
+    let (Some(first), Some(last)) = (first, last) else {
+        return Ok(Vec::new());
+    };
+    let mut commits: Vec<SpineCommit> = Vec::new();
+    for (mut commit, inside) in all.into_iter().take(last + 1).skip(first) {
+        if !inside {
+            commit.clock_anomaly = true;
+            // its own dates are untrusted; clamp into sequence so interval
+            // mapping stays monotonic
+            commit.ts = commits.last().map(|p: &SpineCommit| p.ts).unwrap_or(from);
         }
-        commits.push(SpineCommit {
-            hash: hash.to_string(),
-            short: short.to_string(),
-            parent: parents.split_whitespace().next().unwrap_or("").to_string(),
-            ts,
-            subject: subject.to_string(),
-            reflog_action: gs.split(':').next().unwrap_or(gs).to_string(),
-            reachable: reachable.contains(hash),
-        });
+        if let Some(prev) = commits.last()
+            && commit.ts < prev.ts
+        {
+            commit.ts = prev.ts;
+        }
+        commits.push(commit);
     }
     Ok(commits)
+}
+
+/// The content of `path` as committed in `hash`, if it exists there.
+/// Used to verify that a claimed edit's content actually reached a commit.
+pub fn blob_at(repo: &Path, hash: &str, path: &str) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("show")
+        .arg(format!("{hash}:{path}"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Is this repo-relative path matched by the repo's ignore rules?
