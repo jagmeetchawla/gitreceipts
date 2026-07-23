@@ -84,6 +84,9 @@ pub struct Interval {
     pub statement: Vec<FileChange>,
     pub ledger: Vec<LedgerLine>,
     pub residue: Vec<FileChange>,
+    /// Residue whose path is gitignored or untracked TODAY — listed for
+    /// honesty, but dismissed: it does not make the interval yellow.
+    pub dismissed_residue: Vec<(FileChange, &'static str)>,
     pub commands: usize,
     /// Commands with any write radius — the usual explanation for residue.
     pub effectful_commands: usize,
@@ -324,6 +327,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             statement,
             ledger: Vec::new(),
             residue: Vec::new(),
+            dismissed_residue: Vec::new(),
             commands: 0,
             effectful_commands: 0,
         });
@@ -515,6 +519,38 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 next.residue.remove(pos);
             }
         }
+    }
+
+    // Dismiss residue that stopped mattering: the user has since
+    // gitignored the path (local, global, or info/exclude — check-ignore
+    // consults them all) or it is no longer tracked at all. Still listed,
+    // but it no longer colors the interval.
+    let tracked = gitio::tracked_paths(repo).unwrap_or_default();
+    let mut dismissal: HashMap<String, &'static str> = HashMap::new();
+    for interval in audit.intervals.iter_mut() {
+        let (kept, dismissed): (Vec<FileChange>, Vec<FileChange>) =
+            interval.residue.drain(..).partition(|c| {
+                if dismissal.contains_key(&c.path) {
+                    return false;
+                }
+                if gitio::is_ignored(repo, &c.path) {
+                    dismissal.insert(c.path.clone(), "now gitignored");
+                    false
+                } else if !tracked.contains(&c.path) {
+                    dismissal.insert(c.path.clone(), "no longer tracked today");
+                    false
+                } else {
+                    true
+                }
+            });
+        interval.residue = kept;
+        interval.dismissed_residue = dismissed
+            .into_iter()
+            .map(|c| {
+                let why = *dismissal.get(&c.path).expect("just inserted");
+                (c, why)
+            })
+            .collect();
     }
 
     // Diagnose the survivors: why did git never see this claim?

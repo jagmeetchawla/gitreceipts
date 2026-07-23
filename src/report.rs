@@ -174,6 +174,11 @@ pub fn print(
         })
         .sum();
     let residue_total: usize = audit.intervals.iter().map(|i| i.residue.len()).sum();
+    let dismissed_total: usize = audit
+        .intervals
+        .iter()
+        .map(|i| i.dismissed_residue.len())
+        .sum();
     let pct = |n: usize, d: usize| {
         if d == 0 {
             100.0
@@ -358,12 +363,18 @@ pub fn print(
         } else {
             format!(" / {} landed late", late.len())
         };
+        let dismissed_note = if interval.dismissed_residue.is_empty() {
+            String::new()
+        } else {
+            format!(" (+{} dismissed)", interval.dismissed_residue.len())
+        };
         println!(
-            "    {} claimed / {} landed{} / {} residue   ({} commands)",
+            "    {} claimed / {} landed{} / {} residue{}   ({} commands)",
             interval.ledger.len(),
             landed,
             late_note,
             interval.residue.len(),
+            dismissed_note,
             interval.commands
         );
         for line in &late {
@@ -411,6 +422,15 @@ pub fn print(
                 st.yellow("● residue:"),
                 res.path,
                 st.dim(&format!("[{}] changed, never claimed", res.status))
+            );
+        }
+        for (res, why) in &interval.dismissed_residue {
+            println!(
+                "    {}",
+                st.dim(&format!(
+                    "○ residue dismissed: {} [{}] — {why}",
+                    res.path, res.status
+                ))
             );
         }
         if !interval.residue.is_empty() {
@@ -463,7 +483,7 @@ pub fn print(
     println!(
         "{}",
         st.bold(&format!(
-            "balance: {green} green · {residue_n} residue-only · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue files {residue_total}",
+            "balance: {green} green · {residue_n} residue-only · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue {residue_total} (+{dismissed_total} dismissed: now ignored/untracked)",
             pct(green, total),
             pct(claims_landed, claims_total),
         ))

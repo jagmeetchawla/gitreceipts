@@ -386,3 +386,53 @@ fn claim_swept_into_a_much_later_commit_is_found_and_verified() {
     );
     assert!(audit.intervals[0].balanced());
 }
+
+#[test]
+fn residue_later_gitignored_is_dismissed_not_yellow() {
+    // A file committed unclaimed (residue) that the user has SINCE
+    // gitignored and untracked is yesterday's noise: still listed, but
+    // dismissed — the interval goes green, not yellow.
+    let repo = TempRepo::new("dismiss");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.write("generated.plist", "junk");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    // later: user decides generated.plist should never have been tracked
+    repo.git(&["rm", "-q", "--cached", "generated.plist"]);
+    repo.write(".gitignore", "generated.plist\n");
+    repo.git(&["add", ".gitignore"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "ignore it"],
+        Some("2026-01-01T10:00:40Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:10Z", "2026-01-01T10:00:11Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:41Z",
+            "git commit -m one && git commit -m two",
+        );
+    let audit = run(&repo, &s);
+
+    let first = &audit.intervals[0];
+    assert!(
+        first.residue.iter().all(|c| c.path != "generated.plist"),
+        "the since-ignored file is not live residue"
+    );
+    assert!(
+        first
+            .dismissed_residue
+            .iter()
+            .any(|(c, why)| c.path == "generated.plist" && why.contains("gitignored")),
+        "but it is still listed, with the reason"
+    );
+    assert_eq!(
+        first.status(),
+        Status::Green,
+        "dismissed residue does not color the interval"
+    );
+}

@@ -207,6 +207,18 @@ pub fn is_ignored(repo: &Path, rel_path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Paths currently tracked by git (the index). A residue file that is no
+/// longer here was later untracked or deleted — yesterday's noise, not
+/// today's problem.
+pub fn tracked_paths(repo: &Path) -> Result<std::collections::HashSet<String>> {
+    let raw = git(repo, &["ls-files"])?;
+    Ok(raw
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
 /// Every path that ever appeared in the repo's history. Used to decide
 /// whether a session cwd is a historical alias of this repo (it was renamed
 /// or moved) or some other place entirely (a scratch dir, another repo).
