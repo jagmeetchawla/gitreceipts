@@ -168,6 +168,38 @@ impl SessionBuilder {
         )
     }
 
+    /// A Bash claim whose tool_result carries specific captured output.
+    pub fn bash_claim_with_output(
+        &mut self,
+        ts: &str,
+        result_ts: &str,
+        command: &str,
+        output: &str,
+    ) -> &mut Self {
+        let cmd = command.replace('\\', "\\\\").replace('"', "\\\"");
+        let out = output.replace('\\', "\\\\").replace('"', "\\\"");
+        let a = self.uuid("a");
+        let t = self.uuid("t");
+        self.push(
+            "assistant",
+            ts,
+            &a.clone(),
+            &format!(
+                r#"{{"content":[{{"type":"tool_use","id":"{t}","name":"Bash","input":{{"command":"{cmd}"}}}}]}}"#
+            ),
+        );
+        let u = self.uuid("u");
+        self.push(
+            "user",
+            result_ts,
+            &u.clone(),
+            &format!(
+                r#"{{"content":[{{"type":"tool_result","tool_use_id":"{t}","is_error":false,"content":"{out}"}}]}}"#
+            ),
+        );
+        self
+    }
+
     pub fn raw_line(&mut self, line: &str) -> &mut Self {
         self.lines.push(line.to_string());
         self

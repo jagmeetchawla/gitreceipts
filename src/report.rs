@@ -179,6 +179,11 @@ pub fn print(
         .iter()
         .map(|i| i.dismissed_residue.len())
         .sum();
+    let attributed_total: usize = audit
+        .intervals
+        .iter()
+        .map(|i| i.attributed_residue.len())
+        .sum();
     let pct = |n: usize, d: usize| {
         if d == 0 {
             100.0
@@ -363,18 +368,26 @@ pub fn print(
         } else {
             format!(" / {} landed late", late.len())
         };
-        let dismissed_note = if interval.dismissed_residue.is_empty() {
-            String::new()
-        } else {
-            format!(" (+{} dismissed)", interval.dismissed_residue.len())
-        };
+        let mut residue_notes = String::new();
+        if !interval.attributed_residue.is_empty() {
+            residue_notes.push_str(&format!(
+                " (+{} command-attributed)",
+                interval.attributed_residue.len()
+            ));
+        }
+        if !interval.dismissed_residue.is_empty() {
+            residue_notes.push_str(&format!(
+                " (+{} dismissed)",
+                interval.dismissed_residue.len()
+            ));
+        }
         println!(
             "    {} claimed / {} landed{} / {} residue{}   ({} commands)",
             interval.ledger.len(),
             landed,
             late_note,
             interval.residue.len(),
-            dismissed_note,
+            residue_notes,
             interval.commands
         );
         for line in &late {
@@ -422,6 +435,20 @@ pub fn print(
                 st.yellow("● residue:"),
                 res.path,
                 st.dim(&format!("[{}] changed, never claimed", res.status))
+            );
+        }
+        for (res, why) in &interval.attributed_residue {
+            let moved = res
+                .old_path
+                .as_ref()
+                .map(|o| format!(" (was {o})"))
+                .unwrap_or_default();
+            println!(
+                "    {} {}{} {}",
+                st.yellow("● residue (attributed):"),
+                res.path,
+                st.dim(&moved),
+                st.dim(&format!("[{}] — {why}", res.status))
             );
         }
         for (res, why) in &interval.dismissed_residue {
@@ -483,7 +510,7 @@ pub fn print(
     println!(
         "{}",
         st.bold(&format!(
-            "balance: {green} green · {residue_n} residue-only · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue {residue_total} (+{dismissed_total} dismissed: now ignored/untracked)",
+            "balance: {green} green · {residue_n} residue-only · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue {residue_total} (+{attributed_total} command-attributed, +{dismissed_total} dismissed)",
             pct(green, total),
             pct(claims_landed, claims_total),
         ))

@@ -436,3 +436,113 @@ fn residue_later_gitignored_is_dismissed_not_yellow() {
         "dismissed residue does not color the interval"
     );
 }
+
+#[test]
+fn rename_residue_is_attributed_to_the_git_mv_that_did_it() {
+    // A whole-tree rename via git mv produces R-status residue with zero
+    // exact claims; the command names the directories, so every child
+    // attributes to it and the interval settles green.
+    let repo = TempRepo::new("mvattr");
+    let root = repo.root.display().to_string();
+
+    repo.write("Old.xcodeproj/project.pbxproj", "x");
+    repo.write("Sources/OldName/App.swift", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "base"],
+        Some("2026-01-01T10:00:20Z"),
+    );
+    repo.git(&["mv", "Old.xcodeproj", "New.xcodeproj"]);
+    repo.git(&["mv", "Sources/OldName", "Sources/NewName"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "rename"],
+        Some("2026-01-01T10:00:40Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:06Z",
+            "Old.xcodeproj/project.pbxproj",
+        )
+        .write_claim(
+            "2026-01-01T10:00:07Z",
+            "2026-01-01T10:00:08Z",
+            "Sources/OldName/App.swift",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add -A && git commit -m base",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:30Z",
+            "2026-01-01T10:00:41Z",
+            "git mv Old.xcodeproj New.xcodeproj && git mv Sources/OldName Sources/NewName && git commit -m rename",
+        );
+    let audit = run(&repo, &s);
+
+    let rename = &audit.intervals[1];
+    assert!(rename.residue.is_empty(), "everything is accounted for");
+    assert_eq!(rename.attributed_residue.len(), 2);
+    let (change, why) = rename
+        .attributed_residue
+        .iter()
+        .find(|(c, _)| c.path == "Sources/NewName/App.swift")
+        .unwrap();
+    assert_eq!(
+        change.old_path.as_deref(),
+        Some("Sources/OldName/App.swift")
+    );
+    assert!(why.contains("commands"));
+    assert_eq!(rename.status(), Status::Green);
+}
+
+#[test]
+fn residue_named_only_in_command_output_attributes_with_the_weaker_reason() {
+    // A sed loop's command text never names its targets — but its captured
+    // output lists them. That still explains the change, with the reason
+    // saying the evidence came from output, not the command itself.
+    let repo = TempRepo::new("outattr");
+    let root = repo.root.display().to_string();
+
+    repo.write("docs/notes.md", "old token here");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "base"],
+        Some("2026-01-01T10:00:20Z"),
+    );
+    repo.write("docs/notes.md", "new token here");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "sweep"],
+        Some("2026-01-01T10:00:40Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "docs/notes.md")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add -A && git commit -m base",
+        )
+        .bash_claim_with_output(
+            "2026-01-01T10:00:30Z",
+            "2026-01-01T10:00:41Z",
+            "for f in $(grep -rl token docs); do sed -i '' s/old/new/ $f; done && git commit -am sweep",
+            "rewrote: docs/notes.md",
+        );
+    let audit = run(&repo, &s);
+
+    let sweep = &audit.intervals[1];
+    assert!(sweep.residue.is_empty());
+    let (_, why) = sweep
+        .attributed_residue
+        .iter()
+        .find(|(c, _)| c.path == "docs/notes.md")
+        .unwrap();
+    assert!(why.contains("output"), "reason was: {why}");
+    assert_eq!(sweep.status(), Status::Green);
+}

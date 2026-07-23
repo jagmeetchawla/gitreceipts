@@ -41,6 +41,9 @@ impl SpineCommit {
 pub struct FileChange {
     pub status: char,
     pub path: String,
+    /// For renames/copies: where the file lived before. Commands that did
+    /// the moving name this side.
+    pub old_path: Option<String>,
 }
 
 pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
@@ -258,14 +261,18 @@ pub fn parse_name_status(raw: &str) -> Vec<FileChange> {
             continue;
         }
         // renames list old\tnew — the new path is the one that exists at B
-        let path = match status {
-            'R' | 'C' => cols.nth(1),
-            _ => cols.next(),
+        let (old_path, path) = match status {
+            'R' | 'C' => {
+                let old = cols.next();
+                (old.map(str::to_string), cols.next())
+            }
+            _ => (None, cols.next()),
         };
         if let Some(path) = path {
             changes.push(FileChange {
                 status,
                 path: path.to_string(),
+                old_path,
             });
         }
     }

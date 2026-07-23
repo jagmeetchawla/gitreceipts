@@ -84,6 +84,12 @@ pub struct Interval {
     pub statement: Vec<FileChange>,
     pub ledger: Vec<LedgerLine>,
     pub residue: Vec<FileChange>,
+    /// Residue explained by this interval's own commands: the path (or its
+    /// pre-rename path, or a parent directory) is named in a command the
+    /// agent ran, or in that command's captured output. Weaker evidence
+    /// than an exact claim — the diff isn't in the log — but the change is
+    /// accounted for, so it does not make the interval yellow.
+    pub attributed_residue: Vec<(FileChange, &'static str)>,
     /// Residue whose path is gitignored or untracked TODAY — listed for
     /// honesty, but dismissed: it does not make the interval yellow.
     pub dismissed_residue: Vec<(FileChange, &'static str)>,
@@ -242,6 +248,33 @@ pub fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, S
         .max_by_key(|(root, _)| root.len())
 }
 
+/// Strings that would count as "this command named that file": the full
+/// relative path, its pre-rename path, and every parent directory of
+/// either that still contains a slash (so `git mv Sources/Clipbop
+/// Sources/Clipbob` covers the whole tree, but a bare top-level word
+/// cannot match by accident). Root-level files match by their full name.
+fn name_candidates(change: &FileChange) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut sides = vec![change.path.as_str()];
+    if let Some(old) = &change.old_path {
+        sides.push(old.as_str());
+    }
+    for side in sides {
+        out.push(side.to_string());
+        let mut parts: Vec<&str> = side.split('/').collect();
+        while parts.len() > 1 {
+            parts.pop();
+            let ancestor = parts.join("/");
+            // a bare top-level word ("src") could match prose by accident;
+            // an extension-bearing name ("ClipBob.xcodeproj") cannot
+            if parts.len() >= 2 || ancestor.contains('.') {
+                out.push(ancestor);
+            }
+        }
+    }
+    out
+}
+
 fn grade_command(claim: &Claim, corroborated: bool) -> Grade {
     match &claim.receipt {
         None => Grade::Dark,
@@ -327,6 +360,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             statement,
             ledger: Vec::new(),
             residue: Vec::new(),
+            attributed_residue: Vec::new(),
             dismissed_residue: Vec::new(),
             commands: 0,
             effectful_commands: 0,
@@ -358,6 +392,9 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     let mut ledgers: Vec<LedgerAcc> = (0..audit.intervals.len())
         .map(|_| BTreeMap::new())
         .collect();
+    // effectful command text and output per interval, for residue attribution
+    let mut cmd_corpus: Vec<String> = vec![String::new(); audit.intervals.len()];
+    let mut out_corpus: Vec<String> = vec![String::new(); audit.intervals.len()];
 
     for claim in &session.claims {
         match &claim.action {
@@ -407,6 +444,12 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                     audit.intervals[idx].commands += 1;
                     if radius.is_some() && !failed {
                         audit.intervals[idx].effectful_commands += 1;
+                        cmd_corpus[idx].push_str(command);
+                        cmd_corpus[idx].push('\n');
+                        if let Some(r) = &claim.receipt {
+                            out_corpus[idx].push_str(&r.text);
+                            out_corpus[idx].push('\n');
+                        }
                     }
                 }
                 // One Bash call can create several commits back to back; it
@@ -548,6 +591,36 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             .into_iter()
             .map(|c| {
                 let why = *dismissal.get(&c.path).expect("just inserted");
+                (c, why)
+            })
+            .collect();
+    }
+
+    // Attribute what the commands account for: a residue file whose path
+    // (or pre-rename path, or a parent directory of either) is named in an
+    // effectful command this interval — or in that command's captured
+    // output — was changed by the shell, not behind anyone's back. The
+    // diff still isn't in the log, so this is claimed-grade evidence, and
+    // the line says which kind.
+    for (idx, interval) in audit.intervals.iter_mut().enumerate() {
+        let (kept, attributed): (Vec<FileChange>, Vec<FileChange>) =
+            interval.residue.drain(..).partition(|c| {
+                !name_candidates(c)
+                    .iter()
+                    .any(|n| cmd_corpus[idx].contains(n) || out_corpus[idx].contains(n))
+            });
+        interval.residue = kept;
+        interval.attributed_residue = attributed
+            .into_iter()
+            .map(|c| {
+                let why = if name_candidates(&c)
+                    .iter()
+                    .any(|n| cmd_corpus[idx].contains(n))
+                {
+                    "named in this interval's commands"
+                } else {
+                    "named in a command's output this interval"
+                };
                 (c, why)
             })
             .collect();

@@ -50,9 +50,14 @@ pub enum Action {
     Observation,
 }
 
+/// Captured output is capped: enough to carry every file list a command
+/// prints, without holding a whole build log per receipt.
+const RECEIPT_TEXT_CAP: usize = 64 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct Receipt {
     pub is_error: bool,
+    pub text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -93,10 +98,19 @@ pub fn extract(ordered: &[Record]) -> Session {
     let mut receipts: HashMap<String, Receipt> = HashMap::new();
     for rec in ordered {
         for res in rec.tool_results() {
+            let mut text = res.text();
+            if text.len() > RECEIPT_TEXT_CAP {
+                let mut cut = RECEIPT_TEXT_CAP;
+                while !text.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                text.truncate(cut);
+            }
             receipts.insert(
                 res.tool_use_id.clone(),
                 Receipt {
                     is_error: res.is_error.unwrap_or(false),
+                    text,
                 },
             );
         }

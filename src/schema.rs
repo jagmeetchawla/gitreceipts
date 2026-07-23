@@ -49,6 +49,23 @@ pub struct ToolResult {
     pub tool_use_id: String,
     #[serde(default)]
     pub is_error: Option<bool>,
+    #[serde(default)]
+    pub content: Value,
+}
+
+impl ToolResult {
+    /// Flatten result content (string or blocks) to text, best effort.
+    pub fn text(&self) -> String {
+        match &self.content {
+            Value::String(s) => s.clone(),
+            Value::Array(blocks) => blocks
+                .iter()
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            _ => String::new(),
+        }
+    }
 }
 
 impl Record {
