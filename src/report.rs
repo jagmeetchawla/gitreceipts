@@ -98,6 +98,16 @@ impl Style {
     }
 }
 
+/// Abbreviate a large count: 4_997_300 → "5.0M", 125_368 → "125K".
+pub fn abbrev(n: u64) -> String {
+    match n {
+        0..=999 => n.to_string(),
+        1_000..=999_999 => format!("{:.0}K", n as f64 / 1_000.0),
+        1_000_000..=999_999_999 => format!("{:.1}M", n as f64 / 1_000_000.0),
+        _ => format!("{:.1}B", n as f64 / 1_000_000_000.0),
+    }
+}
+
 /// Collapse the home directory to `~` in a displayed path. Reports get
 /// screenshotted and shared; the OS username does not need to ship with
 /// them.
@@ -241,6 +251,18 @@ pub fn print(
         pct(claims_landed, claims_total),
         green,
     );
+    let tk = &session.tokens;
+    if tk.requests > 0 {
+        println!(
+            "  agent effort: {} commands · ~{} output tokens across {} requests (est. from the log; ~{} input, ~{} cached) {}",
+            audit.commands,
+            abbrev(tk.output),
+            tk.requests,
+            abbrev(tk.input),
+            abbrev(tk.cache_read),
+            st.dim("— usage records are approximate, not billing")
+        );
+    }
     // what happened to every exception — the findings, not just counts
     let all_lines = || audit.intervals.iter().flat_map(|i| i.ledger.iter());
     let late_verified = all_lines()

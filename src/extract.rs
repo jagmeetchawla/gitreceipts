@@ -11,7 +11,7 @@ use std::fmt;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use crate::schema::Record;
+use crate::schema::{Record, Usage};
 
 /// How far a claim can reach. Ordered: later variants reach further.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -76,10 +76,25 @@ pub struct Prompt {
     pub text: String,
 }
 
+/// Deduplicated token totals for the session. A single API request is
+/// streamed as several JSONL records that repeat `message.usage` with
+/// growing values; summing them raw overcounts 2–3×. We key each request
+/// on `(message.id, requestId)`, keep the MAX of every field (the final
+/// streamed value), and sum across distinct requests.
+#[derive(Debug, Default)]
+pub struct Tokens {
+    pub requests: usize,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_creation: u64,
+}
+
 #[derive(Debug, Default)]
 pub struct Session {
     pub claims: Vec<Claim>,
     pub prompts: Vec<Prompt>,
+    pub tokens: Tokens,
     pub first_ts: Option<DateTime<Utc>>,
     pub last_ts: Option<DateTime<Utc>>,
     pub cwds: Vec<String>,
@@ -116,6 +131,11 @@ pub fn extract(ordered: &[Record]) -> Session {
         }
     }
 
+    // Token usage, deduplicated per request: streaming records repeat
+    // message.usage with growing values, so we keep the MAX of each field
+    // per (message.id, requestId) and sum across distinct requests.
+    let mut per_request: HashMap<(String, String), Usage> = HashMap::new();
+
     let mut session = Session::default();
     for (frame, rec) in ordered.iter().enumerate() {
         let ts = parse_ts(rec);
@@ -145,6 +165,29 @@ pub fn extract(ordered: &[Record]) -> Session {
             session.prompts.push(Prompt { ts, text });
         }
 
+        if rec.kind == "assistant"
+            && let Some(msg) = &rec.message
+            && let Some(usage) = &msg.usage
+        {
+            // Key on the ids stable across a request's streamed records;
+            // fall back to the record uuid so a missing id can't collapse
+            // distinct requests together.
+            let fallback = || rec.uuid.clone().unwrap_or_default();
+            let key = (
+                msg.id.clone().unwrap_or_else(fallback),
+                rec.request_id.clone().unwrap_or_else(fallback),
+            );
+            let slot = per_request.entry(key).or_default();
+            slot.input_tokens = slot.input_tokens.max(usage.input_tokens);
+            slot.output_tokens = slot.output_tokens.max(usage.output_tokens);
+            slot.cache_read_input_tokens = slot
+                .cache_read_input_tokens
+                .max(usage.cache_read_input_tokens);
+            slot.cache_creation_input_tokens = slot
+                .cache_creation_input_tokens
+                .max(usage.cache_creation_input_tokens);
+        }
+
         for tu in rec.tool_uses() {
             let action = classify_tool(&tu.name, &tu.input);
             session.claims.push(Claim {
@@ -154,6 +197,14 @@ pub fn extract(ordered: &[Record]) -> Session {
                 receipt: receipts.get(&tu.id).cloned(),
             });
         }
+    }
+
+    session.tokens.requests = per_request.len();
+    for u in per_request.values() {
+        session.tokens.input += u.input_tokens;
+        session.tokens.output += u.output_tokens;
+        session.tokens.cache_read += u.cache_read_input_tokens;
+        session.tokens.cache_creation += u.cache_creation_input_tokens;
     }
     session
 }

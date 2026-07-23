@@ -149,6 +149,7 @@ pub fn render(
     // ---- intent → outcome + exceptions --------------------------------
     render_summary(
         &mut b,
+        session,
         audit,
         green,
         total,
@@ -192,6 +193,7 @@ pub fn render(
 #[allow(clippy::too_many_arguments)]
 fn render_summary(
     b: &mut String,
+    session: &Session,
     audit: &Audit,
     green: usize,
     total: usize,
@@ -227,6 +229,19 @@ fn render_summary(
         "<div class=\"line\">{} prompts drove {total} commits; {claims_landed}/{claims_total} claimed files landed, {green} intervals fully balanced</div>",
         audit.prompts,
     );
+    let tk = &session.tokens;
+    if tk.requests > 0 {
+        let _ = write!(
+            b,
+            "<div class=\"line\">agent effort: {} commands · ~{} output tokens across {} requests \
+             <span class=\"dim\">(est. from the log — approximate, not billing; ~{} input, ~{} cached)</span></div>",
+            audit.commands,
+            crate::report::abbrev(tk.output),
+            tk.requests,
+            crate::report::abbrev(tk.input),
+            crate::report::abbrev(tk.cache_read),
+        );
+    }
     b.push_str("<div class=\"heading\">what happened to every exception</div>");
     if late > 0 {
         let _ = write!(

@@ -239,3 +239,64 @@ mod reconcile {
         assert!(longest_prefix("/a/repository/f", &roots).is_none());
     }
 }
+
+mod tokens {
+    use gitreceipts::causal::order;
+    use gitreceipts::extract::extract;
+    use gitreceipts::schema::Record;
+
+    fn rec(json: &str) -> Record {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn streaming_records_of_one_request_are_not_double_counted() {
+        // One API request streamed as 3 records sharing (message.id,
+        // requestId) with growing usage — the real count is the MAX
+        // (final) values, summed ONCE, not 3x.
+        let records = vec![
+            rec(
+                r#"{"type":"assistant","uuid":"a1","requestId":"req_1","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":10,"cache_read_input_tokens":500}}}"#,
+            ),
+            rec(
+                r#"{"type":"assistant","uuid":"a2","requestId":"req_1","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":200,"cache_read_input_tokens":500}}}"#,
+            ),
+            rec(
+                r#"{"type":"assistant","uuid":"a3","requestId":"req_1","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":350,"cache_read_input_tokens":500}}}"#,
+            ),
+        ];
+        let s = extract(&order(records));
+        assert_eq!(s.tokens.requests, 1, "one request, not three");
+        assert_eq!(s.tokens.output, 350, "max output, not 10+200+350");
+        assert_eq!(s.tokens.input, 100, "not 300");
+        assert_eq!(s.tokens.cache_read, 500);
+    }
+
+    #[test]
+    fn distinct_requests_sum() {
+        let records = vec![
+            rec(
+                r#"{"type":"assistant","uuid":"a1","requestId":"req_1","message":{"id":"msg_1","usage":{"output_tokens":100}}}"#,
+            ),
+            rec(
+                r#"{"type":"assistant","uuid":"a2","requestId":"req_2","message":{"id":"msg_2","usage":{"output_tokens":250}}}"#,
+            ),
+        ];
+        let s = extract(&order(records));
+        assert_eq!(s.tokens.requests, 2);
+        assert_eq!(s.tokens.output, 350);
+    }
+
+    #[test]
+    fn records_missing_ids_do_not_collapse_together() {
+        // No message.id / requestId: fall back to the record uuid so two
+        // genuine requests are not merged into one.
+        let records = vec![
+            rec(r#"{"type":"assistant","uuid":"a1","message":{"usage":{"output_tokens":100}}}"#),
+            rec(r#"{"type":"assistant","uuid":"a2","message":{"usage":{"output_tokens":200}}}"#),
+        ];
+        let s = extract(&order(records));
+        assert_eq!(s.tokens.requests, 2);
+        assert_eq!(s.tokens.output, 300);
+    }
+}

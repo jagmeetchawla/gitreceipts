@@ -23,15 +23,42 @@ pub struct Record {
     pub cwd: Option<String>,
     #[serde(rename = "gitBranch", default)]
     pub git_branch: Option<String>,
+    /// The API request that produced this record. A single request is
+    /// streamed as several JSONL records sharing this id — token usage
+    /// must be deduplicated on it (see `extract`).
+    #[serde(rename = "requestId", default)]
+    pub request_id: Option<String>,
     #[serde(default)]
     pub message: Option<Message>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Message {
+    /// The assistant message id — also stable across a request's streamed
+    /// records; paired with `requestId` it keys token deduplication.
+    #[serde(default)]
+    pub id: Option<String>,
     /// Either a plain string (user prompts) or an array of content blocks.
     #[serde(default)]
     pub content: Value,
+    /// Token usage for the assistant turn. Streaming records repeat this
+    /// with monotonically increasing values, so the final (max) per
+    /// request is the real count.
+    #[serde(default)]
+    pub usage: Option<Usage>,
+}
+
+/// Token counts from an assistant record's `message.usage`.
+#[derive(Debug, Default, Deserialize)]
+pub struct Usage {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
 }
 
 /// A `tool_use` content block, extracted from an assistant record.
