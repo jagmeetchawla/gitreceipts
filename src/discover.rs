@@ -26,30 +26,72 @@ fn encode(path: &Path) -> String {
         .collect()
 }
 
-/// Candidate session directories for a repo: the repo's own encoding plus
-/// every ancestor up to (and including) the home directory — the session
-/// may have been launched anywhere above the repo.
-pub fn session_dirs_for(repo: &Path) -> Vec<PathBuf> {
-    let Some(home) = std::env::home_dir() else {
+/// The default store: `~/.claude`.
+pub fn default_store() -> Option<PathBuf> {
+    std::env::home_dir().map(|h| h.join(".claude"))
+}
+
+/// Candidate session directories for a repo inside a given store's
+/// `projects/` dir: the repo's own encoding plus every ancestor (the
+/// session may have been launched anywhere above the repo).
+///
+/// When nothing matches exactly — typical for a store mounted from
+/// another machine, whose encoded names carry THAT machine's absolute
+/// paths — fall back to matching project dirs whose encoded name ends
+/// with an ancestor's directory name ("…-myapp" for a repo at any
+/// /Volumes/mount/…/myapp), and say so.
+pub fn session_dirs_for(store: &Path, repo: &Path) -> Vec<PathBuf> {
+    let projects = store.join("projects");
+    let start = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
+
+    let exact: Vec<PathBuf> = start
+        .ancestors()
+        .map(|a| projects.join(encode(a)))
+        .filter(|d| d.is_dir())
+        .collect();
+    if !exact.is_empty() {
+        return exact;
+    }
+
+    // cross-machine fallback: suffix-match on directory basenames
+    let suffixes: Vec<String> = start
+        .ancestors()
+        .filter_map(|a| a.file_name())
+        .filter_map(|n| n.to_str())
+        .filter(|n| n.len() >= 3)
+        .map(|n| format!("-{}", encode(Path::new(n))))
+        .collect();
+    let Ok(entries) = std::fs::read_dir(&projects) else {
         return Vec::new();
     };
-    let store = home.join(".claude").join("projects");
-    let start = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
-    start
-        .ancestors()
-        .take_while(|a| a.starts_with(&home))
-        .map(|a| store.join(encode(a)))
-        .filter(|d| d.is_dir())
-        .collect()
+    let matched: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| suffixes.iter().any(|s| name.ends_with(s.as_str())))
+        })
+        .collect();
+    for m in &matched {
+        eprintln!(
+            "note: no exact session directory for {} in this store; matched {} by name (a store recorded on another machine encodes that machine's paths)",
+            repo.display(),
+            m.display()
+        );
+    }
+    matched
 }
 
 /// Newest .jsonl across the candidate directories.
-pub fn latest_session(repo: &Path) -> Result<PathBuf> {
-    let dirs = session_dirs_for(repo);
+pub fn latest_session(store: &Path, repo: &Path) -> Result<PathBuf> {
+    let dirs = session_dirs_for(store, repo);
     if dirs.is_empty() {
         bail!(
-            "no session directories found for {} (or any parent) under ~/.claude/projects",
-            repo.display()
+            "no session directories found for {} (or any parent) under {}",
+            repo.display(),
+            store.join("projects").display()
         );
     }
     let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
@@ -83,12 +125,13 @@ pub fn latest_session(repo: &Path) -> Result<PathBuf> {
 /// oldest first. There is no local "archive": sessions live here until
 /// the store's retention cleanup removes them — history older than that
 /// is simply gone, and commits from it will show as unclaimed keyframes.
-pub fn all_sessions(repo: &Path) -> Result<Vec<PathBuf>> {
-    let dirs = session_dirs_for(repo);
+pub fn all_sessions(store: &Path, repo: &Path) -> Result<Vec<PathBuf>> {
+    let dirs = session_dirs_for(store, repo);
     if dirs.is_empty() {
         bail!(
-            "no session directories found for {} (or any parent) under ~/.claude/projects",
-            repo.display()
+            "no session directories found for {} (or any parent) under {}",
+            repo.display(),
+            store.join("projects").display()
         );
     }
     let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();

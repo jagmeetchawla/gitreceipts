@@ -92,6 +92,9 @@ git receipts audit --latest --color=always | less -R
 
 # suppress quoted prompt text before sharing a screenshot
 git receipts audit --latest --no-intent
+
+# audit another machine's sessions from a mounted drive
+git receipts audit --all --store /Volumes/studio/Users/me/.claude --repo /Volumes/studio/Users/me/code/myapp
 ```
 
 v0.1 reads Claude Code session logs (the JSONL under

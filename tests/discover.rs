@@ -179,3 +179,59 @@ fn distinct_sessions_merge_into_one_ledger() {
     assert!(audit.intervals[1].agent_committed, "session B's commit");
     assert!(audit.intervals.iter().all(|i| i.balanced()));
 }
+
+/// A fake session store: <tmp>/store/.claude-style layout with projects/.
+fn fake_store(name: &str) -> std::path::PathBuf {
+    let root =
+        std::env::temp_dir().join(format!("gitreceipts-store-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("projects")).unwrap();
+    root
+}
+
+#[test]
+fn store_lookup_matches_exact_ancestor_encodings() {
+    let store = fake_store("exact");
+    // a repo at <tmp>/…/work/myapp, session recorded at the parent "work"
+    let work = std::env::temp_dir()
+        .join(format!("gitreceipts-anchor-{}", std::process::id()))
+        .join("work");
+    let repo = work.join("myapp");
+    std::fs::create_dir_all(&repo).unwrap();
+    let canon = work.canonicalize().unwrap();
+    let encoded: String = canon
+        .display()
+        .to_string()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
+    let project_dir = store.join("projects").join(encoded);
+    std::fs::create_dir_all(&project_dir).unwrap();
+    std::fs::write(project_dir.join("s1.jsonl"), "{}").unwrap();
+
+    let found = discover::latest_session(&store, &repo).unwrap();
+    assert_eq!(found.file_name().unwrap(), "s1.jsonl");
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+#[test]
+fn mounted_store_falls_back_to_name_suffix_match() {
+    // The store was recorded on another machine: its encoded dir carries
+    // that machine's absolute path. Our local mount path shares only the
+    // trailing directory name.
+    let store = fake_store("mounted");
+    let foreign = store
+        .join("projects")
+        .join("-Users-someone-else-Developer-myapp");
+    std::fs::create_dir_all(&foreign).unwrap();
+    std::fs::write(foreign.join("remote.jsonl"), "{}").unwrap();
+
+    let local_mount = std::env::temp_dir()
+        .join(format!("gitreceipts-mount-{}", std::process::id()))
+        .join("myapp");
+    std::fs::create_dir_all(&local_mount).unwrap();
+
+    let found = discover::latest_session(&store, &local_mount).unwrap();
+    assert_eq!(found.file_name().unwrap(), "remote.jsonl");
+    let _ = std::fs::remove_dir_all(&store);
+}

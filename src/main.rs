@@ -36,6 +36,11 @@ enum Cmd {
         /// Repo to reconcile against (default: cwd recorded in the session).
         #[arg(long)]
         repo: Option<PathBuf>,
+        /// Claude data directory holding the session store (default:
+        /// ~/.claude). Point at a mounted drive to audit another
+        /// machine's sessions: --store /Volumes/studio/Users/me/.claude
+        #[arg(long)]
+        store: Option<PathBuf>,
         /// When to emit ANSI colors. `always` keeps them through pipes,
         /// for `| bat`, `| less -R`, or saving a colored transcript.
         #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
@@ -75,6 +80,7 @@ fn main() -> Result<()> {
             latest,
             all,
             repo,
+            store,
             color,
             no_intent,
             filter,
@@ -83,6 +89,7 @@ fn main() -> Result<()> {
             latest,
             all,
             repo,
+            store,
             report::Options {
                 color,
                 show_intent: !no_intent,
@@ -97,8 +104,21 @@ fn audit(
     latest: bool,
     all: bool,
     repo: Option<PathBuf>,
+    store: Option<PathBuf>,
     opts: report::Options,
 ) -> Result<()> {
+    let store = match store {
+        Some(s) => {
+            if !s.join("projects").is_dir() {
+                bail!(
+                    "{} has no projects/ directory — --store expects the .claude directory itself",
+                    s.display()
+                );
+            }
+            s
+        }
+        None => discover::default_store().context("cannot locate the home directory")?,
+    };
     let anchor = || {
         repo.clone()
             .or_else(|| std::env::current_dir().ok())
@@ -106,8 +126,8 @@ fn audit(
     };
     let session_paths: Vec<PathBuf> = match (sessions.is_empty(), latest, all) {
         (false, false, false) => sessions,
-        (true, true, false) => vec![discover::latest_session(&anchor()?)?],
-        (true, false, true) => discover::all_sessions(&anchor()?)?,
+        (true, true, false) => vec![discover::latest_session(&store, &anchor()?)?],
+        (true, false, true) => discover::all_sessions(&store, &anchor()?)?,
         (true, false, false) => bail!("pass session path(s), --latest, or --all"),
         _ => bail!("pass session path(s), --latest, or --all — not a combination"),
     };
