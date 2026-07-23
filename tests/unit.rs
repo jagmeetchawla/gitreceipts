@@ -84,6 +84,59 @@ mod extract {
     }
 }
 
+mod ingest {
+    use std::fs;
+
+    use gitreceipts::ingest::ingest;
+
+    fn ingest_str(name: &str, content: &str) -> (usize, gitreceipts::ingest::IngestStats) {
+        let path =
+            std::env::temp_dir().join(format!("gitreceipts-ingest-{name}-{}", std::process::id()));
+        fs::write(&path, content).unwrap();
+        let (records, stats) = ingest(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        (records.len(), stats)
+    }
+
+    #[test]
+    fn keeps_execution_records_and_counts_the_rest() {
+        let content = concat!(
+            r#"{"type":"user","uuid":"u1","timestamp":"2026-01-01T00:00:00Z"}"#,
+            "\n\n", // blank lines are not counted at all
+            r#"{"type":"assistant","uuid":"a1","parentUuid":"u1"}"#,
+            "\n",
+            r#"{"type":"system","uuid":"s1"}"#,
+            "\n",
+            r#"{"type":"queue-operation","uuid":"q1"}"#,
+            "\n",
+            r#"{"type":"file-history-snapshot"}"#,
+            "\n",
+            "{definitely not json",
+            "\n",
+        );
+        let (kept, stats) = ingest_str("mixed", content);
+        assert_eq!(kept, 3);
+        assert_eq!(stats.lines, 6);
+        assert_eq!(stats.kept, 3);
+        assert_eq!(stats.skipped_types, 2);
+        assert_eq!(stats.unparseable, 1);
+    }
+
+    #[test]
+    fn unknown_fields_do_not_fail_a_record() {
+        let content = r#"{"type":"user","uuid":"u1","someFutureField":{"deeply":["nested"]},"anotherOne":42}"#;
+        let (kept, stats) = ingest_str("tolerant", content);
+        assert_eq!(kept, 1);
+        assert_eq!(stats.unparseable, 0);
+    }
+
+    #[test]
+    fn missing_file_is_an_error_not_a_panic() {
+        let path = std::env::temp_dir().join("gitreceipts-ingest-does-not-exist.jsonl");
+        assert!(ingest(&path).is_err());
+    }
+}
+
 mod gitio {
     use gitreceipts::gitio::parse_name_status;
 

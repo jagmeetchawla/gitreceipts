@@ -6,90 +6,33 @@
 //! must show one landed claim, one never-landed claim with a diagnosis,
 //! and one residue file.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+mod common;
 
+use common::{SessionBuilder, TempRepo};
 use gitreceipts::reconcile::Landing;
 use gitreceipts::{causal, extract, ingest, reconcile};
 
-struct TempRepo {
-    root: PathBuf,
-}
-
-impl TempRepo {
-    fn new(name: &str) -> TempRepo {
-        let root =
-            std::env::temp_dir().join(format!("gitreceipts-{}-{}", name, std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        let repo = TempRepo {
-            root: root.canonicalize().unwrap(),
-        };
-        repo.git(&["init", "-q"]);
-        repo.git(&["config", "user.name", "test"]);
-        repo.git(&["config", "user.email", "test@example.invalid"]);
-        repo
-    }
-
-    fn git(&self, args: &[&str]) {
-        self.git_at(args, None);
-    }
-
-    fn git_at(&self, args: &[&str], date: Option<&str>) {
-        let mut cmd = Command::new("git");
-        cmd.arg("-C").arg(&self.root).args(args);
-        if let Some(d) = date {
-            cmd.env("GIT_AUTHOR_DATE", d).env("GIT_COMMITTER_DATE", d);
-        }
-        let status = cmd.status().unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    }
-
-    fn write(&self, rel: &str, content: &str) {
-        fs::write(self.root.join(rel), content).unwrap();
-    }
-}
-
-impl Drop for TempRepo {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
-}
-
-fn write_session(path: &Path, repo_root: &str) {
-    let cwd = repo_root;
-    let e = |json: String| json;
-    let lines = [
-        e(format!(
-            r#"{{"type":"user","uuid":"u1","timestamp":"2026-01-01T10:00:00Z","cwd":"{cwd}","message":{{"content":"build it"}}}}"#
-        )),
+fn build_session(root: &str) -> SessionBuilder {
+    let mut s = SessionBuilder::new(root);
+    s.user_text("2026-01-01T10:00:00Z", "build it")
         // claim 1: src.txt — will land in the commit
-        e(format!(
-            r#"{{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-01-01T10:00:10Z","cwd":"{cwd}","message":{{"content":[{{"type":"tool_use","id":"t1","name":"Write","input":{{"file_path":"{cwd}/src.txt","content":"hello"}}}}]}}}}"#
-        )),
-        e(format!(
-            r#"{{"type":"user","uuid":"u2","parentUuid":"a1","timestamp":"2026-01-01T10:00:11Z","cwd":"{cwd}","message":{{"content":[{{"type":"tool_result","tool_use_id":"t1","is_error":false,"content":"ok"}}]}}}}"#
-        )),
+        .write_claim("2026-01-01T10:00:10Z", "2026-01-01T10:00:11Z", "src.txt")
         // claim 2: scratch.txt — deleted before the commit, never lands
-        e(format!(
-            r#"{{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2026-01-01T10:00:20Z","cwd":"{cwd}","message":{{"content":[{{"type":"tool_use","id":"t2","name":"Write","input":{{"file_path":"{cwd}/scratch.txt","content":"probe"}}}}]}}}}"#
-        )),
-        e(format!(
-            r#"{{"type":"user","uuid":"u3","parentUuid":"a2","timestamp":"2026-01-01T10:00:21Z","cwd":"{cwd}","message":{{"content":[{{"type":"tool_result","tool_use_id":"t2","is_error":false,"content":"ok"}}]}}}}"#
-        )),
+        .write_claim(
+            "2026-01-01T10:00:20Z",
+            "2026-01-01T10:00:21Z",
+            "scratch.txt",
+        )
         // the commit command
-        e(format!(
-            r#"{{"type":"assistant","uuid":"a3","parentUuid":"u3","timestamp":"2026-01-01T10:00:30Z","cwd":"{cwd}","message":{{"content":[{{"type":"tool_use","id":"t3","name":"Bash","input":{{"command":"git add -A && git commit -m first"}}}}]}}}}"#
-        )),
-        e(format!(
-            r#"{{"type":"user","uuid":"u4","parentUuid":"a3","timestamp":"2026-01-01T10:00:32Z","cwd":"{cwd}","message":{{"content":[{{"type":"tool_result","tool_use_id":"t3","is_error":false,"content":"[main abc] first"}}]}}}}"#
-        )),
+        .bash_claim(
+            "2026-01-01T10:00:30Z",
+            "2026-01-01T10:00:32Z",
+            "git add -A && git commit -m first",
+        )
         // bookkeeping noise the ingester must skip, plus one garbage line
-        e(r#"{"type":"queue-operation","uuid":"q1"}"#.to_string()),
-        e("{not json at all".to_string()),
-    ];
-    fs::write(path, lines.join("\n")).unwrap();
+        .raw_line(r#"{"type":"queue-operation","uuid":"q1"}"#)
+        .raw_line("{not json at all");
+    s
 }
 
 #[test]
@@ -109,7 +52,7 @@ fn full_pipeline_balances_the_interval_equation() {
     );
 
     let session_path = repo.root.join("session.jsonl");
-    write_session(&session_path, &root);
+    build_session(&root).save(&session_path);
 
     let (records, stats) = ingest::ingest(&session_path).unwrap();
     assert_eq!(stats.kept, 7);
@@ -175,7 +118,7 @@ fn session_jsonl_itself_stays_out_of_the_equation() {
     );
 
     let session_path = repo.root.join("session.jsonl");
-    write_session(&session_path, &root);
+    build_session(&root).save(&session_path);
 
     let (records, _) = ingest::ingest(&session_path).unwrap();
     let session = extract::extract(&causal::order(records));
