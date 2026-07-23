@@ -5,7 +5,7 @@ use std::io::IsTerminal;
 
 use crate::extract::Session;
 use crate::ingest::IngestStats;
-use crate::reconcile::Audit;
+use crate::reconcile::{Audit, Status};
 
 /// Follows the git convention: `auto` colors a terminal and strips colors
 /// from pipes; `always` keeps ANSI escapes flowing into `bat`, `less -R`,
@@ -15,6 +15,35 @@ pub enum ColorMode {
     Auto,
     Always,
     Never,
+}
+
+/// Which intervals to list in the spine section. Header, summary, and
+/// balance always cover the whole session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum Filter {
+    /// Every interval.
+    #[default]
+    All,
+    /// Only broken promises: intervals with never-landed claims.
+    Red,
+    /// Red plus residue-only intervals (unclaimed changes).
+    RedResidue,
+}
+
+impl Filter {
+    fn keeps(self, status: Status) -> bool {
+        match self {
+            Filter::All => true,
+            Filter::Red => status == Status::Red,
+            Filter::RedResidue => status != Status::Green,
+        }
+    }
+}
+
+pub struct Options {
+    pub color: ColorMode,
+    pub show_intent: bool,
+    pub filter: Filter,
 }
 
 struct Style {
@@ -75,10 +104,10 @@ pub fn print(
     session: &Session,
     stats: &IngestStats,
     audit: &Audit,
-    color: ColorMode,
-    show_intent: bool,
+    opts: &Options,
 ) {
-    let st = Style::new(color);
+    let st = Style::new(opts.color);
+    let show_intent = opts.show_intent;
 
     println!("{}", st.bold(&format!("git receipts — {session_name}")));
     println!(
@@ -123,6 +152,16 @@ pub fn print(
 
     let green = audit.intervals.iter().filter(|i| i.balanced()).count();
     let total = audit.intervals.len();
+    let red_n = audit
+        .intervals
+        .iter()
+        .filter(|i| i.status() == Status::Red)
+        .count();
+    let residue_n = audit
+        .intervals
+        .iter()
+        .filter(|i| i.status() == Status::ResidueOnly)
+        .count();
     let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
     let claims_landed: usize = audit
         .intervals
@@ -221,24 +260,36 @@ pub fn print(
     let agent_commits = audit.intervals.iter().filter(|i| i.agent_committed).count();
     let keyframes = audit.intervals.len() - agent_commits;
     println!();
+    let filter_note = match opts.filter {
+        Filter::All => String::new(),
+        Filter::Red => format!(" — showing only red ({red_n} of {total})"),
+        Filter::RedResidue => format!(
+            " — showing red + residue ({} of {total})",
+            red_n + residue_n
+        ),
+    };
     println!(
         "{}",
         st.bold(&format!(
-            "interval spine: {} commits ({} agent-committed, {} unclaimed keyframes)",
+            "interval spine: {} commits ({} agent-committed, {} unclaimed keyframes){}",
             audit.intervals.len(),
             agent_commits,
-            keyframes
+            keyframes,
+            filter_note
         ))
     );
 
     for interval in &audit.intervals {
+        if !opts.filter.keeps(interval.status()) {
+            continue;
+        }
         let never: Vec<_> = interval.never_landed().collect();
         let late: Vec<_> = interval.landed_late().collect();
         let landed = interval.ledger.len() - never.len() - late.len();
-        let mark = if interval.balanced() {
-            st.green("✔")
-        } else {
-            st.red("✘")
+        let mark = match interval.status() {
+            Status::Green => st.green("✔"),
+            Status::ResidueOnly => st.yellow("!"),
+            Status::Red => st.red("✘"),
         };
         let who = if interval.agent_committed {
             ""
@@ -402,7 +453,7 @@ pub fn print(
     println!(
         "{}",
         st.bold(&format!(
-            "balance: {green}/{total} intervals green ({:.0}%) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue files {residue_total}",
+            "balance: {green} green · {residue_n} residue-only · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue files {residue_total}",
             pct(green, total),
             pct(claims_landed, claims_total),
         ))

@@ -6,7 +6,7 @@
 mod common;
 
 use common::{SessionBuilder, TempRepo};
-use gitreceipts::reconcile::Landing;
+use gitreceipts::reconcile::{Landing, Status};
 use gitreceipts::{causal, extract, ingest, reconcile};
 
 fn run(repo: &TempRepo, session: &SessionBuilder) -> gitreceipts::reconcile::Audit {
@@ -276,8 +276,10 @@ fn backdated_commit_cannot_hide_from_the_spine() {
     assert_eq!(sneaky.commit.subject, "sneaky");
     assert!(sneaky.commit.clock_anomaly, "and flagged as untrustworthy");
     assert!(!audit.intervals[0].commit.clock_anomaly && !audit.intervals[2].commit.clock_anomaly);
-    // its statement is still checked: hidden.txt shows as residue
+    // its statement is still checked: hidden.txt shows as residue,
+    // which alone is a warning (yellow), not a broken promise (red)
     assert!(sneaky.residue.iter().any(|c| c.path == "hidden.txt"));
+    assert_eq!(sneaky.status(), Status::ResidueOnly);
 }
 
 #[test]

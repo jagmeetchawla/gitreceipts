@@ -9,7 +9,7 @@
 mod common;
 
 use common::{SessionBuilder, TempRepo};
-use gitreceipts::reconcile::Landing;
+use gitreceipts::reconcile::{Landing, Status};
 use gitreceipts::{causal, extract, ingest, reconcile};
 
 fn build_session(root: &str) -> SessionBuilder {
@@ -69,9 +69,10 @@ fn full_pipeline_balances_the_interval_equation() {
     assert_eq!(audit.intervals.len(), 1, "one commit, one interval");
     let interval = &audit.intervals[0];
     assert!(interval.agent_committed, "the Bash claim covers the commit");
-    assert!(
-        !interval.balanced(),
-        "a red interval: one lost claim + residue"
+    assert_eq!(
+        interval.status(),
+        Status::Red,
+        "a lost claim makes the interval red, not merely residue-yellow"
     );
 
     let landed: Vec<&str> = interval

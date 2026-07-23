@@ -39,6 +39,10 @@ enum Cmd {
         /// a report from a session you don't fully remember.
         #[arg(long)]
         no_intent: bool,
+        /// Which intervals to list: all, red (broken promises only), or
+        /// red-residue (red plus unclaimed-change intervals).
+        #[arg(long, value_enum, default_value_t = report::Filter::All)]
+        filter: report::Filter,
     },
 }
 
@@ -59,7 +63,17 @@ fn main() -> Result<()> {
             repo,
             color,
             no_intent,
-        } => audit(session, latest, repo, color, no_intent),
+            filter,
+        } => audit(
+            session,
+            latest,
+            repo,
+            report::Options {
+                color,
+                show_intent: !no_intent,
+                filter,
+            },
+        ),
     }
 }
 
@@ -102,8 +116,7 @@ fn audit(
     session: Option<PathBuf>,
     latest: bool,
     repo: Option<PathBuf>,
-    color: report::ColorMode,
-    no_intent: bool,
+    opts: report::Options,
 ) -> Result<()> {
     let session_path = match (session, latest) {
         (Some(p), false) => p,
@@ -152,8 +165,7 @@ fn audit(
         &session_data,
         &stats,
         &audit,
-        color,
-        !no_intent,
+        &opts,
     );
     Ok(())
 }

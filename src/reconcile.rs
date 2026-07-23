@@ -86,6 +86,16 @@ pub struct Interval {
     pub effectful_commands: usize,
 }
 
+/// How an interval settled. Red is a broken promise (a claim that never
+/// landed); residue alone is a warning (something changed unclaimed —
+/// usually command fallout), not a lie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    Green,
+    ResidueOnly,
+    Red,
+}
+
 impl Interval {
     pub fn never_landed(&self) -> impl Iterator<Item = &LedgerLine> {
         self.ledger.iter().filter(|l| l.landing == Landing::Never)
@@ -95,8 +105,18 @@ impl Interval {
         self.ledger.iter().filter(|l| l.landing == Landing::Late)
     }
 
+    pub fn status(&self) -> Status {
+        if self.ledger.iter().any(|l| l.landing == Landing::Never) {
+            Status::Red
+        } else if !self.residue.is_empty() {
+            Status::ResidueOnly
+        } else {
+            Status::Green
+        }
+    }
+
     pub fn balanced(&self) -> bool {
-        self.residue.is_empty() && self.ledger.iter().all(|l| l.landing != Landing::Never)
+        self.status() == Status::Green
     }
 }
 
