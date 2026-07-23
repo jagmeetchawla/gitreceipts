@@ -34,6 +34,11 @@ enum Cmd {
         /// for `| bat`, `| less -R`, or saving a colored transcript.
         #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
         color: report::ColorMode,
+        /// Suppress the quoted prompt text on intent lines (counts stay).
+        /// Prompts are where pasted secrets live; use this before sharing
+        /// a report from a session you don't fully remember.
+        #[arg(long)]
+        no_intent: bool,
     },
 }
 
@@ -53,7 +58,8 @@ fn main() -> Result<()> {
             latest,
             repo,
             color,
-        } => audit(session, latest, repo, color),
+            no_intent,
+        } => audit(session, latest, repo, color, no_intent),
     }
 }
 
@@ -97,6 +103,7 @@ fn audit(
     latest: bool,
     repo: Option<PathBuf>,
     color: report::ColorMode,
+    no_intent: bool,
 ) -> Result<()> {
     let session_path = match (session, latest) {
         (Some(p), false) => p,
@@ -146,6 +153,7 @@ fn audit(
         &stats,
         &audit,
         color,
+        !no_intent,
     );
     Ok(())
 }

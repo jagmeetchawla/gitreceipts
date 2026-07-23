@@ -59,6 +59,16 @@ impl Style {
     }
 }
 
+/// Collapse the home directory to `~` in a displayed path. Reports get
+/// screenshotted and shared; the OS username does not need to ship with
+/// them.
+fn tilde(path: &str) -> String {
+    std::env::home_dir()
+        .map(|h| h.display().to_string())
+        .and_then(|h| path.strip_prefix(&h).map(|rest| format!("~{rest}")))
+        .unwrap_or_else(|| path.to_string())
+}
+
 pub fn print(
     session_name: &str,
     repo: &str,
@@ -66,12 +76,14 @@ pub fn print(
     stats: &IngestStats,
     audit: &Audit,
     color: ColorMode,
+    show_intent: bool,
 ) {
     let st = Style::new(color);
 
     println!("{}", st.bold(&format!("git receipts — {session_name}")));
     println!(
-        "repo: {repo}   branches seen: {}",
+        "repo: {}   branches seen: {}",
+        tilde(repo),
         session.branches.join(", ")
     );
     if let (Some(a), Some(b)) = (session.first_ts, session.last_ts) {
@@ -248,7 +260,7 @@ pub fn print(
             st.yellow(who),
             st.yellow(ghost),
         );
-        if let Some(first) = interval.intents.first() {
+        if show_intent && let Some(first) = interval.intents.first() {
             let mut shown: String = first.chars().take(76).collect();
             if first.chars().count() > 76 {
                 shown.push('\u{2026}');
