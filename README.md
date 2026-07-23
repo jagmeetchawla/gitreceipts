@@ -27,16 +27,16 @@ Think of it as bank reconciliation for agent work:
 
 - **The statement** — the repo's real commits form the spine. Each
   commit's diff is the statement for the interval that produced it.
-  The spine is built from the reflog, so it sees amends, rebases, and
-  commits later reset away. A commit created *between* two in-window
-  commits stays in the audit no matter what its dates claim — dates
-  are forgeable, reflog order is not. Commits the reflog never saw —
-  pulled from a teammate, or everything, when the repo is a fresh
-  clone — join the spine from commit history, and the report labels
-  the downgrade: on a clone you get most of the audit (the full
-  equation, verifications, resolutions), but amended drafts,
-  reset-away commits, and clock-anomaly detection need the original
-  working repo, because that evidence exists nowhere else.
+  Commit history is the primary source — the one thing every repo
+  has, clone or original. When the local reflog exists it enriches
+  the spine with evidence history cannot carry: amended drafts and
+  reset-away commits (objects that never reached a ref), true
+  creation order, and backdating detection — a commit created
+  *between* two in-window commits stays in the audit no matter what
+  its dates claim, because dates are forgeable and creation order is
+  not. On a repo with no useful reflog you simply get the history
+  spine: the full equation, verifications, and resolutions all run;
+  only the reflog-borne stories are absent.
 - **The ledger** — the session log's own tool calls are the claims.
   File edits carry their exact content (the diff is in the log); shell
   commands carry a blast radius (local-fs → local-git → remote-git →

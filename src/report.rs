@@ -354,17 +354,12 @@ pub fn print(
         .filter(|i| i.commit.from_history)
         .count();
     let reflog_n = audit.intervals.len() - hist_n;
-    if !audit.intervals.is_empty() && reflog_n == 0 {
-        println!();
-        println!(
-            "{}",
-            st.yellow(
-                "⚠ no session-era reflog (a clone, or a trimmed reflog): spine built from commit history — amended drafts, reset-away commits, and clock-anomaly detection are unavailable; commit dates are trusted as recorded"
-            )
-        );
-    }
-    let source_note = if hist_n > 0 && reflog_n > 0 {
-        format!(" · {hist_n} from history only (created elsewhere — pulled/fetched; dates trusted)")
+    // Only when a reflog exists does "absent from it" mean anything: those
+    // commits were created elsewhere (pulled/fetched) — attribution, not a
+    // warning. With no reflog, history is simply the spine; say nothing.
+    let enriched = reflog_n > 0;
+    let source_note = if enriched && hist_n > 0 {
+        format!(" · {hist_n} created elsewhere (pulled/fetched)")
     } else {
         String::new()
     };
@@ -411,8 +406,8 @@ pub fn print(
         } else {
             " [gone from branches — reflog only]"
         };
-        let hist = if interval.commit.from_history {
-            " [from history — created elsewhere]"
+        let hist = if enriched && interval.commit.from_history {
+            " [created elsewhere]"
         } else {
             ""
         };

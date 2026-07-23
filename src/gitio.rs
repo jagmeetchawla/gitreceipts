@@ -29,10 +29,10 @@ pub struct SpineCommit {
     /// (GIT_COMMITTER_DATE forges the reflog stamp too); creation ORDER
     /// is not. We keep the commit and say the clock cannot be trusted.
     pub clock_anomaly: bool,
-    /// Not in the local reflog: known only from commit history. Either
-    /// the repo is a clone (no session-era reflog at all) or the commit
-    /// was created elsewhere and pulled in. Its dates are trusted as
-    /// recorded — there is no creation order to check them against.
+    /// Known from commit history rather than the local reflog. When a
+    /// session-era reflog exists alongside, this usually means the commit
+    /// was created elsewhere and pulled in — useful attribution. With no
+    /// reflog at all it is simply how every commit is known.
     pub from_history: bool,
 }
 
@@ -70,17 +70,18 @@ pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Commit-creating reflog entries inside the window, in creation order.
+/// The commit spine for a session window.
 ///
-/// The reflog is the local truth of what HEAD did while the session ran —
-/// it sees amends, rebases, and commits later reset away, which plain
-/// `git log` does not.
+/// PRIMARY: commit history (`git log --all`), windowed on committer date —
+/// the one source every repo has, clone or original.
 ///
-/// Windowing is the sandwich rule: an entry belongs to the session if its
-/// own timestamps fall in the window, OR if it was created between two
-/// entries that do. Timestamps are forgeable; the reflog's creation order
-/// is not, so a backdated commit cannot slip out of the audit — it stays
-/// in, flagged as a clock anomaly.
+/// ENRICHMENT: the local reflog, when it exists. It contributes what
+/// history cannot: amended drafts and reset-away commits (objects that
+/// never reached a ref), true creation order for tied timestamps, and the
+/// sandwich rule — an entry created between two in-window entries belongs
+/// to the session no matter what its (forgeable) dates claim, flagged as
+/// a clock anomaly. A repo without a useful reflog simply gets the
+/// history spine, quietly.
 pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<SpineCommit>> {
     let raw = git(
         repo,
@@ -182,10 +183,9 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
         }
     }
 
-    // Union in window commits the reflog never saw: on a clone the reflog
-    // is empty (85% of an audit beats none); in a team repo, pulled
-    // commits were created elsewhere. Dates on these are trusted as
-    // recorded — the report labels the downgrade.
+    // PRIMARY source: every window commit from history that the reflog
+    // walk above didn't already place. With no reflog this is the whole
+    // spine; with one, it adds commits created elsewhere (pulls, fetches).
     let known: std::collections::HashSet<String> = commits.iter().map(|c| c.hash.clone()).collect();
     let hist_raw = git(
         repo,
