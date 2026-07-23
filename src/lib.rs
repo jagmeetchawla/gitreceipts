@@ -7,6 +7,7 @@
 //! (console ledger).
 
 pub mod causal;
+pub mod discover;
 pub mod extract;
 pub mod gitio;
 pub mod ingest;

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use gitreceipts::{causal, extract, ingest, reconcile, report};
+use gitreceipts::{causal, discover, extract, ingest, reconcile, report};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -46,6 +46,13 @@ enum Cmd {
     },
 }
 
+/// Walk up from `dir` to the nearest directory containing `.git`.
+fn find_enclosing_repo(dir: &std::path::Path) -> Option<PathBuf> {
+    dir.ancestors()
+        .find(|a| a.join(".git").exists())
+        .map(|a| a.to_path_buf())
+}
+
 fn main() -> Result<()> {
     // A report exists to be piped (`| head`, `| less` quit early). Restore
     // default SIGPIPE so a closed pipe ends the process quietly instead of
@@ -77,41 +84,6 @@ fn main() -> Result<()> {
     }
 }
 
-/// The `~/.claude/projects` directory encodes a repo path by replacing
-/// path separators (and dots) with dashes.
-fn sessions_dir_for(repo: &std::path::Path) -> Option<PathBuf> {
-    let home = std::env::home_dir()?;
-    let canon = repo.canonicalize().ok()?;
-    let encoded: String = canon
-        .display()
-        .to_string()
-        .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
-        .collect();
-    Some(home.join(".claude").join("projects").join(encoded))
-}
-
-fn latest_session(repo: &std::path::Path) -> Result<PathBuf> {
-    let dir = sessions_dir_for(repo).context("cannot locate ~/.claude/projects")?;
-    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
-    for entry in std::fs::read_dir(&dir)
-        .with_context(|| format!("no sessions found for this repo at {}", dir.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-            continue;
-        }
-        let modified = entry.metadata()?.modified()?;
-        if newest.as_ref().is_none_or(|(t, _)| modified > *t) {
-            newest = Some((modified, path));
-        }
-    }
-    newest
-        .map(|(_, p)| p)
-        .with_context(|| format!("no .jsonl sessions in {}", dir.display()))
-}
-
 fn audit(
     session: Option<PathBuf>,
     latest: bool,
@@ -121,11 +93,11 @@ fn audit(
     let session_path = match (session, latest) {
         (Some(p), false) => p,
         (None, true) => {
-            let repo = repo
+            let anchor = repo
                 .clone()
                 .or_else(|| std::env::current_dir().ok())
-                .context("cannot determine repo for --latest")?;
-            latest_session(&repo)?
+                .context("cannot determine a directory for --latest")?;
+            discover::latest_session(&anchor)?
         }
         (Some(_), true) => bail!("pass a session path or --latest, not both"),
         (None, false) => bail!("pass a session path or --latest"),
@@ -139,20 +111,22 @@ fn audit(
     let session_data = extract::extract(&ordered);
 
     let repo_path = match repo {
-        Some(r) => r,
-        None => PathBuf::from(
-            session_data
-                .cwds
-                .first()
-                .context("session records no cwd; pass --repo")?,
-        ),
+        Some(r) => {
+            if !r.join(".git").exists() {
+                bail!("{} is not a git repo", r.display());
+            }
+            r
+        }
+        // No --repo: prefer the repo we're standing in; otherwise infer
+        // from where the session's claims point.
+        None => match std::env::current_dir()
+            .ok()
+            .and_then(|d| find_enclosing_repo(&d))
+        {
+            Some(here) => here,
+            None => discover::infer_repo(&session_data)?,
+        },
     };
-    if !repo_path.join(".git").exists() {
-        bail!(
-            "{} is not a git repo (the session's original cwd may have moved; pass --repo)",
-            repo_path.display()
-        );
-    }
 
     let audit = reconcile::reconcile(&repo_path, &session_data)?;
     let name = session_path
