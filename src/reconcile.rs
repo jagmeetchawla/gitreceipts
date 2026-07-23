@@ -50,9 +50,12 @@ pub struct LedgerLine {
     /// late landing.
     pub probe: Option<String>,
     /// For a Late landing: Some(true) if the claimed content was found in
-    /// the next commit's blob; None if there was nothing to check against.
+    /// a later commit's blob; None if there was nothing to check against.
     /// (A failed check never reaches Late — the claim stays Never.)
     pub late_verified: Option<bool>,
+    /// For a Late landing: which commit it landed in, and how many commits
+    /// after its own interval.
+    pub landed_at: Option<(String, usize)>,
     /// For never-landed claims: why git never saw it, when we can tell.
     pub diagnosis: Option<&'static str>,
 }
@@ -440,6 +443,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 landing,
                 probe,
                 late_verified: None,
+                landed_at: None,
                 diagnosis: None,
             });
         }
@@ -451,43 +455,64 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             .collect();
     }
 
-    // Carry-forward: a claim edited just before a commit that only staged
-    // part of the work lands in the *next* commit. Let it clear one
-    // statement late — but a path match alone can be a coincidence, so we
-    // check the claimed content against the next commit's blob. Verified:
-    // Late, residue struck. Content absent: it did NOT land — stays red.
-    // Nothing to check against: Late, but the report says so.
-    for i in 0..audit.intervals.len().saturating_sub(1) {
+    // Forward sweep: a claim can be swept into ANY later commit, not just
+    // the next one — partial staging, batched commits, a file parked for a
+    // day. For every unlanded claim with content to check, walk every
+    // subsequent commit that touched the path and look for the claimed
+    // content in its blob. Found: verified late landing, and the matching
+    // residue there is explained away. Not found anywhere: the claim is
+    // genuinely broken — and we can now SAY so, because we checked.
+    let n = audit.intervals.len();
+    let mut sweeps: Vec<(usize, usize, String, usize)> = Vec::new(); // (i, line_idx, path, j)
+    for i in 0..n {
+        for (line_idx, line) in audit.intervals[i].ledger.iter().enumerate() {
+            if line.landing != Landing::Never {
+                continue;
+            }
+            let Some(probe) = &line.probe else { continue };
+            for (j, later) in audit.intervals.iter().enumerate().skip(i + 1) {
+                if !later.statement.iter().any(|c| c.path == line.path) {
+                    continue;
+                }
+                if gitio::blob_at(repo, &later.commit.hash, &line.path)
+                    .is_some_and(|blob| blob.contains(probe.as_str()))
+                {
+                    sweeps.push((i, line_idx, line.path.clone(), j));
+                    break;
+                }
+            }
+        }
+    }
+    for (i, line_idx, path, j) in sweeps {
+        let short = audit.intervals[j].commit.short.clone();
+        let line = &mut audit.intervals[i].ledger[line_idx];
+        line.landing = Landing::Late;
+        line.late_verified = Some(true);
+        line.landed_at = Some((short, j - i));
+        if let Some(pos) = audit.intervals[j]
+            .residue
+            .iter()
+            .position(|c| c.path == path)
+        {
+            audit.intervals[j].residue.remove(pos);
+        }
+    }
+
+    // Claims with nothing to verify against stay on the old conservative
+    // rule: next commit only, path match, labeled unverified.
+    for i in 0..n.saturating_sub(1) {
         let (head, rest) = audit.intervals.split_at_mut(i + 1);
         let (cur, next) = (&mut head[i], &mut rest[0]);
         for line in cur
             .ledger
             .iter_mut()
-            .filter(|l| l.landing == Landing::Never)
+            .filter(|l| l.landing == Landing::Never && l.probe.is_none())
         {
-            let Some(pos) = next.residue.iter().position(|c| c.path == line.path) else {
-                continue;
-            };
-            match (
-                &line.probe,
-                gitio::blob_at(repo, &next.commit.hash, &line.path),
-            ) {
-                (Some(probe), Some(blob)) => {
-                    if blob.contains(probe.as_str()) {
-                        line.landing = Landing::Late;
-                        line.late_verified = Some(true);
-                        next.residue.remove(pos);
-                    }
-                    // content absent: the claim genuinely never landed
-                }
-                (Some(_), None) => {
-                    // file gone at the next commit — the claim never landed
-                }
-                (None, _) => {
-                    line.landing = Landing::Late;
-                    line.late_verified = None;
-                    next.residue.remove(pos);
-                }
+            if let Some(pos) = next.residue.iter().position(|c| c.path == line.path) {
+                line.landing = Landing::Late;
+                line.late_verified = None;
+                line.landed_at = Some((next.commit.short.clone(), 1));
+                next.residue.remove(pos);
             }
         }
     }
@@ -499,12 +524,20 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             .iter_mut()
             .filter(|l| l.landing == Landing::Never)
         {
+            // The forward sweep already checked every later commit, so
+            // these are verified statements, not guesses.
+            let on_disk_with_content = line.probe.as_ref().is_some_and(|probe| {
+                std::fs::read_to_string(repo.join(&line.path))
+                    .is_ok_and(|now| now.contains(probe.as_str()))
+            });
             line.diagnosis = Some(if gitio::is_ignored(repo, &line.path) {
                 "gitignored — the write was real but git never saw it"
+            } else if on_disk_with_content {
+                "the content is on disk right now, still uncommitted — it never reached a commit"
             } else if history.contains(&line.path) {
-                "a tracked file, but this edit isn't in this commit or the next — drifted further, or edited away before landing"
+                "a tracked file, but this edit's content reached no later commit in this session — overwritten or reverted before landing"
             } else if repo.join(&line.path).exists() {
-                "on disk, never committed"
+                "on disk, never committed — and today's file no longer carries this edit"
             } else {
                 "deleted before any commit — written, used, thrown away"
             });

@@ -356,7 +356,7 @@ pub fn print(
         let late_note = if late.is_empty() {
             String::new()
         } else {
-            format!(" / {} landed next commit", late.len())
+            format!(" / {} landed late", late.len())
         };
         println!(
             "    {} claimed / {} landed{} / {} residue   ({} commands)",
@@ -367,18 +367,28 @@ pub fn print(
             interval.commands
         );
         for line in &late {
+            let (at, dist) = line
+                .landed_at
+                .as_ref()
+                .map(|(s, d)| (s.as_str(), *d))
+                .unwrap_or(("?", 1));
+            let commits = if dist == 1 { "commit" } else { "commits" };
             match line.late_verified {
                 Some(true) => println!(
                     "    {} {} {}",
-                    st.green("✓ landed next commit:"),
+                    st.green("✓ landed late:"),
                     line.path,
-                    st.dim("(claimed content found in that commit)")
+                    st.dim(&format!(
+                        "(content verified in {at}, {dist} {commits} later)"
+                    ))
                 ),
                 _ => println!(
                     "    {} {} {}",
-                    st.yellow("~ landed next commit:"),
+                    st.yellow("~ landed late:"),
                     line.path,
-                    st.yellow("(path match only — no content to verify against)")
+                    st.yellow(&format!(
+                        "(path match only in {at} — no content to verify against)"
+                    ))
                 ),
             }
         }

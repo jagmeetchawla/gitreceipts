@@ -336,3 +336,53 @@ fn coincidental_same_path_change_does_not_launder_a_lost_claim() {
         "and commit three's real residue stays visible"
     );
 }
+
+#[test]
+fn claim_swept_into_a_much_later_commit_is_found_and_verified() {
+    // The claimed file skips the next commit entirely and lands two
+    // commits later — the forward sweep finds it, verifies content, and
+    // strikes the residue where it landed.
+    let repo = TempRepo::new("latesweep");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    repo.write("c.txt", "x");
+    repo.git(&["add", "c.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
+    repo.write("b.txt", "x");
+    repo.git(&["add", "b.txt"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "three"],
+        Some("2026-01-01T10:01:00Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:10Z", "2026-01-01T10:00:11Z", "a.txt")
+        // claimed before commit one, but only committed in commit three
+        .write_claim("2026-01-01T10:00:12Z", "2026-01-01T10:00:13Z", "b.txt")
+        .write_claim("2026-01-01T10:00:25Z", "2026-01-01T10:00:26Z", "c.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:01:01Z",
+            "git commit -m one && git commit -m two && git commit -m three",
+        );
+    let audit = run(&repo, &s);
+
+    assert_eq!(audit.intervals.len(), 3);
+    let line = audit.intervals[0]
+        .ledger
+        .iter()
+        .find(|l| l.path == "b.txt")
+        .unwrap();
+    assert_eq!(line.landing, Landing::Late);
+    assert_eq!(line.late_verified, Some(true));
+    assert_eq!(line.landed_at.as_ref().unwrap().1, 2, "two commits later");
+    assert!(
+        audit.intervals[2].residue.iter().all(|c| c.path != "b.txt"),
+        "the landing explains the residue at commit three"
+    );
+    assert!(audit.intervals[0].balanced());
+}
