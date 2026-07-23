@@ -125,9 +125,9 @@ fn partially_staged_claim_clears_one_statement_late() {
     let root = repo.root.display().to_string();
 
     // both files edited before the first commit; only a.txt staged there,
-    // b.txt rides in the next commit
+    // b.txt rides in the next commit carrying the body the claim asserts
     repo.write("a.txt", "x");
-    repo.write("b.txt", "x");
+    repo.write("b.txt", &SessionBuilder::default_body("b.txt"));
     repo.git(&["add", "a.txt"]);
     repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
     repo.git(&["add", "b.txt"]);
@@ -345,13 +345,16 @@ fn claim_swept_into_a_much_later_commit_is_found_and_verified() {
     let repo = TempRepo::new("latesweep");
     let root = repo.root.display().to_string();
 
+    // b.txt lands in commit three carrying the SAME body the claim will
+    // assert, so the content sweep can verify it.
+    let b_body = SessionBuilder::default_body("b.txt");
     repo.write("a.txt", "x");
     repo.git(&["add", "a.txt"]);
     repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
     repo.write("c.txt", "x");
     repo.git(&["add", "c.txt"]);
     repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
-    repo.write("b.txt", "x");
+    repo.write("b.txt", &b_body);
     repo.git(&["add", "b.txt"]);
     repo.git_at(
         &["commit", "-q", "-m", "three"],
@@ -378,7 +381,6 @@ fn claim_swept_into_a_much_later_commit_is_found_and_verified() {
         .find(|l| l.path == "b.txt")
         .unwrap();
     assert_eq!(line.landing, Landing::Late);
-    assert_eq!(line.late_verified, Some(true));
     assert_eq!(line.landed_at.as_ref().unwrap().1, 2, "two commits later");
     assert!(
         audit.intervals[2].residue.iter().all(|c| c.path != "b.txt"),
@@ -500,51 +502,47 @@ fn rename_residue_is_attributed_to_the_git_mv_that_did_it() {
 }
 
 #[test]
-fn residue_named_only_in_command_output_attributes_with_the_weaker_reason() {
-    // A sed loop's command text never names its targets — but its captured
-    // output lists them. That still explains the change, with the reason
-    // saying the evidence came from output, not the command itself.
-    let repo = TempRepo::new("outattr");
+fn a_commits_own_output_listing_residue_does_not_attribute_it() {
+    // Round-2 review finding #1: `git commit`/`git status` output lists
+    // the very files in the statement. Pooling that output would attribute
+    // ANY co-committed unclaimed change to "a command named it" — laundering
+    // real residue to green. Attribution is command TEXT only, so a
+    // human-edited file committed alongside stays honest yellow residue.
+    let repo = TempRepo::new("commitout");
     let root = repo.root.display().to_string();
 
-    repo.write("docs/notes.md", "old token here");
+    repo.write("claimed.txt", "x");
+    repo.write("human_edit.txt", "not the agent");
     repo.git(&["add", "-A"]);
-    repo.git_at(
-        &["commit", "-q", "-m", "base"],
-        Some("2026-01-01T10:00:20Z"),
-    );
-    repo.write("docs/notes.md", "new token here");
-    repo.git(&["add", "-A"]);
-    repo.git_at(
-        &["commit", "-q", "-m", "sweep"],
-        Some("2026-01-01T10:00:40Z"),
-    );
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
 
     let mut s = SessionBuilder::new(&root);
     s.user_text("2026-01-01T10:00:00Z", "go")
-        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "docs/notes.md")
-        .bash_claim(
+        .write_claim(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:06Z",
+            "claimed.txt",
+        )
+        // the commit's captured output happens to list human_edit.txt
+        .bash_claim_with_output(
             "2026-01-01T10:00:19Z",
             "2026-01-01T10:00:21Z",
-            "git add -A && git commit -m base",
-        )
-        .bash_claim_with_output(
-            "2026-01-01T10:00:30Z",
-            "2026-01-01T10:00:41Z",
-            "for f in $(grep -rl token docs); do sed -i '' s/old/new/ $f; done && git commit -am sweep",
-            "rewrote: docs/notes.md",
+            "git add -A && git commit -m one",
+            " create mode 100644 human_edit.txt\n create mode 100644 claimed.txt",
         );
     let audit = run(&repo, &s);
 
-    let sweep = &audit.intervals[1];
-    assert!(sweep.residue.is_empty());
-    let (_, why) = sweep
-        .attributed_residue
-        .iter()
-        .find(|(c, _)| c.path == "docs/notes.md")
-        .unwrap();
-    assert!(why.contains("output"), "reason was: {why}");
-    assert_eq!(sweep.status(), Status::Green);
+    let interval = &audit.intervals[0];
+    assert!(
+        interval.residue.iter().any(|c| c.path == "human_edit.txt"),
+        "the human edit stays real residue, not attributed away"
+    );
+    assert!(interval.attributed_residue.is_empty());
+    assert_eq!(
+        interval.status(),
+        Status::ResidueOnly,
+        "yellow, not laundered to green"
+    );
 }
 
 #[test]
@@ -653,8 +651,9 @@ fn gitignored_claim_whose_content_persists_on_disk_is_resolved() {
     repo.write("a.txt", "x");
     repo.git(&["add", "-A"]);
     repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
-    // the claimed write persisted on disk; git never saw it
-    repo.write("out.txt", "x");
+    // the claimed write persisted on disk with the claimed body; git never
+    // saw it (gitignored)
+    repo.write("out.txt", &SessionBuilder::default_body("out.txt"));
 
     let mut s = SessionBuilder::new(&root);
     s.user_text("2026-01-01T10:00:00Z", "go")
@@ -821,5 +820,96 @@ fn a_commit_created_outside_the_reflog_joins_the_spine_from_history() {
     assert!(
         !mate.agent_committed,
         "someone else's work shows as an unclaimed keyframe, not this agent's"
+    );
+}
+
+#[test]
+fn a_broken_promise_is_not_resolved_by_a_substring_mention() {
+    // Round-2 review finding #2: `config.rs` never lands, and a later
+    // command `echo done > config.rs.log` merely CONTAINS the substring
+    // "config.rs". Whole-token matching + a real removal verb keep this red.
+    let repo = TempRepo::new("substr");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        // this edit's content never lands anywhere
+        .write_claim_content(
+            "2026-01-01T10:00:08Z",
+            "2026-01-01T10:00:09Z",
+            "config.rs",
+            "fn never_shipped() { unreachable!() }",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:15Z",
+            "2026-01-01T10:00:16Z",
+            "echo done > config.rs.log",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    let first = &audit.intervals[0];
+    let line = first.ledger.iter().find(|l| l.path == "config.rs").unwrap();
+    assert_eq!(line.landing, Landing::Never);
+    assert!(
+        line.resolution.is_none(),
+        "a substring mention must not resolve a broken promise: {:?}",
+        line.resolution
+    );
+    assert_eq!(first.status(), Status::Red);
+}
+
+#[test]
+fn a_trivial_probe_does_not_content_verify_a_late_landing() {
+    // Round-2 review finding #3: a one-char Edit like `}` would "match"
+    // almost any blob. Such a probe is below the specificity floor, so the
+    // claim cannot be content-verified and stays a broken promise.
+    let repo = TempRepo::new("tinyprobe");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+    // a later commit touches src.rs with a body that merely contains "}"
+    repo.write(
+        "src.rs",
+        "fn main() {}
+",
+    );
+    repo.git(&["add", "src.rs"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        // trivial probe claimed BEFORE commit one, "lands" nowhere real
+        .write_claim_content(
+            "2026-01-01T10:00:08Z",
+            "2026-01-01T10:00:09Z",
+            "src.rs",
+            "}",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add a.txt && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    let first = &audit.intervals[0];
+    let line = first.ledger.iter().find(|l| l.path == "src.rs").unwrap();
+    assert_ne!(
+        line.landing,
+        Landing::Late,
+        "a `}}` probe must not content-verify against any blob with a brace"
     );
 }

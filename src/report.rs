@@ -234,10 +234,7 @@ pub fn print(
     // what happened to every exception — the findings, not just counts
     let all_lines = || audit.intervals.iter().flat_map(|i| i.ledger.iter());
     let late_verified = all_lines()
-        .filter(|l| l.landing == crate::reconcile::Landing::Late && l.late_verified == Some(true))
-        .count();
-    let late_unverified = all_lines()
-        .filter(|l| l.landing == crate::reconcile::Landing::Late && l.late_verified.is_none())
+        .filter(|l| l.landing == crate::reconcile::Landing::Late)
         .count();
     let resolved = |needle: &str| {
         all_lines()
@@ -254,16 +251,9 @@ pub fn print(
     let residue_all = residue_total + attributed_total + dismissed_total;
 
     println!("  what happened to every exception:");
-    if late_verified + late_unverified > 0 {
-        let unv = if late_unverified > 0 {
-            format!(" ({late_unverified} path-match only)")
-        } else {
-            String::new()
-        };
+    if late_verified > 0 {
         println!(
-            "    · claims that landed late: {}, content-verified against the commit they landed in{}",
-            late_verified + late_unverified,
-            unv
+            "    · claims that landed late: {late_verified}, content-verified against the commit they landed in"
         );
     }
     if resolved_total > 0 {
@@ -501,24 +491,14 @@ pub fn print(
                 .map(|(s, d)| (s.as_str(), *d))
                 .unwrap_or(("?", 1));
             let commits = if dist == 1 { "commit" } else { "commits" };
-            match line.late_verified {
-                Some(true) => println!(
-                    "    {} {} {}",
-                    st.green("✓ landed late:"),
-                    line.path,
-                    st.dim(&format!(
-                        "(content verified in {at}, {dist} {commits} later)"
-                    ))
-                ),
-                _ => println!(
-                    "    {} {} {}",
-                    st.yellow("~ landed late:"),
-                    line.path,
-                    st.yellow(&format!(
-                        "(path match only in {at} — no content to verify against)"
-                    ))
-                ),
-            }
+            println!(
+                "    {} {} {}",
+                st.green("✓ landed late:"),
+                line.path,
+                st.dim(&format!(
+                    "(content verified in {at}, {dist} {commits} later)"
+                ))
+            );
         }
         for line in &resolved {
             println!(

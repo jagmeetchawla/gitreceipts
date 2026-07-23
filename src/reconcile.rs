@@ -49,12 +49,8 @@ pub struct LedgerLine {
     /// The content the last edit claimed to leave behind, for verifying a
     /// late landing.
     pub probe: Option<String>,
-    /// For a Late landing: Some(true) if the claimed content was found in
-    /// a later commit's blob; None if there was nothing to check against.
-    /// (A failed check never reaches Late — the claim stays Never.)
-    pub late_verified: Option<bool>,
-    /// For a Late landing: which commit it landed in, and how many commits
-    /// after its own interval.
+    /// For a Late landing: which commit it landed in (content-verified
+    /// there), and how many commits after its own interval.
     pub landed_at: Option<(String, usize)>,
     /// A benign explanation for a never-landed claim: superseded by the
     /// file's own later landed edits, deliberately removed by the
@@ -267,31 +263,72 @@ pub fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, S
         .max_by_key(|(root, _)| root.len())
 }
 
-/// Strings that would count as "this command named that file": the full
-/// relative path, its pre-rename path, and every parent directory of
-/// either that still contains a slash (so `git mv src/OldName
-/// src/NewName` covers the whole tree, but a bare top-level word
-/// cannot match by accident). Root-level files match by their full name.
-fn name_candidates(change: &FileChange) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut sides = vec![change.path.as_str()];
+/// A probe (claimed post-edit content) is specific enough to verify a
+/// landing by content only if it carries real signal — a one-character
+/// edit like `}` or `"` would "match" almost any blob.
+fn usable_probe(probe: &str) -> bool {
+    let t = probe.trim();
+    t.len() >= 12 && t.chars().any(|c| c.is_alphanumeric())
+}
+
+/// Split a shell command into path-like tokens: whitespace-separated,
+/// with surrounding quotes and trailing shell punctuation stripped. Used
+/// for WHOLE-TOKEN path matching, so `config.rs` never matches inside
+/// `config.rs.log`.
+fn command_tokens(command: &str) -> Vec<&str> {
+    command
+        .split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '=' | '(' | ')' | ';'))
+        .map(|t| t.trim_matches(|c: char| matches!(c, ',' | ':')))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// The paths this change is known by: its current path and its pre-rename
+/// path. Matching is done against whole command tokens, plus directory
+/// containment, so no substring accidents.
+fn change_paths(change: &FileChange) -> Vec<&str> {
+    let mut v = vec![change.path.as_str()];
     if let Some(old) = &change.old_path {
-        sides.push(old.as_str());
+        v.push(old.as_str());
     }
-    for side in sides {
-        out.push(side.to_string());
-        let mut parts: Vec<&str> = side.split('/').collect();
-        while parts.len() > 1 {
-            parts.pop();
-            let ancestor = parts.join("/");
-            // a bare top-level word ("src") could match prose by accident;
-            // an extension-bearing name ("MyApp.xcodeproj") cannot
-            if parts.len() >= 2 || ancestor.contains('.') {
-                out.push(ancestor);
-            }
+    v
+}
+
+/// Does `command` name `path` as a token — exactly, or via a directory it
+/// moved/removed (a token that is an ancestor directory of the path, as in
+/// `git mv src/OldName src/NewName` covering every child)?
+fn command_names_path(command: &str, path: &str) -> bool {
+    command_tokens(command).iter().any(|t| {
+        *t == path
+            || path.strip_prefix(t).is_some_and(|r| r.starts_with('/'))
+            || t.strip_prefix(path).is_some_and(|r| r.starts_with('/'))
+    })
+}
+
+const REMOVAL_VERBS: [&str; 3] = ["rm", "mv", "unlink"];
+
+/// Did some segment of `command` actually remove or move `path` — a
+/// removal verb (`rm`, `mv`, `git rm`, `git mv`, `git clean`) whose
+/// tokens name the path? Mentioning the name is not enough; a genuine
+/// broken promise must not resolve just because a later `echo` prints it.
+fn command_removes_path(command: &str, path: &str) -> bool {
+    for segment in command
+        .lines()
+        .flat_map(|l| l.split("&&"))
+        .flat_map(|l| l.split(';'))
+        .flat_map(|l| l.split('|'))
+    {
+        let first = segment.split_whitespace().next().unwrap_or("");
+        let subs = crate::extract::git_subcommands(segment);
+        let removes = REMOVAL_VERBS.contains(&first)
+            || subs
+                .iter()
+                .any(|s| matches!(s.as_str(), "rm" | "mv" | "clean"));
+        if removes && command_names_path(segment, path) {
+            return true;
         }
     }
-    out
+    false
 }
 
 fn grade_command(claim: &Claim, corroborated: bool) -> Grade {
@@ -411,9 +448,12 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     let mut ledgers: Vec<LedgerAcc> = (0..audit.intervals.len())
         .map(|_| BTreeMap::new())
         .collect();
-    // effectful command text and output per interval, for residue attribution
-    let mut cmd_corpus: Vec<String> = vec![String::new(); audit.intervals.len()];
-    let mut out_corpus: Vec<String> = vec![String::new(); audit.intervals.len()];
+    // Effectful command TEXT per interval, one entry per command, for
+    // residue attribution and deliberate-removal resolution. We do NOT
+    // pool captured output: a command's stdout listing a filename (git
+    // status, ls, a commit summary) is not evidence the command changed
+    // that file — only the command text naming a path is causal.
+    let mut cmd_corpus: Vec<Vec<String>> = vec![Vec::new(); audit.intervals.len()];
 
     for claim in &session.claims {
         match &claim.action {
@@ -438,7 +478,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                         let entry = ledgers[idx].entry(rel).or_insert((0, Vec::new(), None));
                         entry.0 += 1;
                         entry.1.push(claim.frame);
-                        if probe.is_some() {
+                        // Only keep a probe specific enough to verify a
+                        // landing by content — a one-char edit like "}"
+                        // would "match" almost any blob.
+                        if probe.as_deref().is_some_and(usable_probe) {
                             entry.2 = probe.clone();
                         }
                     }
@@ -463,12 +506,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                     audit.intervals[idx].commands += 1;
                     if radius.is_some() && !failed {
                         audit.intervals[idx].effectful_commands += 1;
-                        cmd_corpus[idx].push_str(command);
-                        cmd_corpus[idx].push('\n');
-                        if let Some(r) = &claim.receipt {
-                            out_corpus[idx].push_str(&r.text);
-                            out_corpus[idx].push('\n');
-                        }
+                        cmd_corpus[idx].push(command.clone());
                     }
                 }
                 // One Bash call can create several commits back to back; it
@@ -508,7 +546,6 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 frames,
                 landing,
                 probe,
-                late_verified: None,
                 landed_at: None,
                 resolution: None,
                 diagnosis: None,
@@ -554,7 +591,6 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         let short = audit.intervals[j].commit.short.clone();
         let line = &mut audit.intervals[i].ledger[line_idx];
         line.landing = Landing::Late;
-        line.late_verified = Some(true);
         line.landed_at = Some((short, j - i));
         if let Some(pos) = audit.intervals[j]
             .residue
@@ -564,25 +600,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             audit.intervals[j].residue.remove(pos);
         }
     }
-
-    // Claims with nothing to verify against stay on the old conservative
-    // rule: next commit only, path match, labeled unverified.
-    for i in 0..n.saturating_sub(1) {
-        let (head, rest) = audit.intervals.split_at_mut(i + 1);
-        let (cur, next) = (&mut head[i], &mut rest[0]);
-        for line in cur
-            .ledger
-            .iter_mut()
-            .filter(|l| l.landing == Landing::Never && l.probe.is_none())
-        {
-            if let Some(pos) = next.residue.iter().position(|c| c.path == line.path) {
-                line.landing = Landing::Late;
-                line.late_verified = None;
-                line.landed_at = Some((next.commit.short.clone(), 1));
-                next.residue.remove(pos);
-            }
-        }
-    }
+    // A late landing is ONLY ever content-verified — a pure path match to
+    // a later commit is not evidence the same edit landed (a coincidental
+    // change to that path would launder a lost claim). Claims we cannot
+    // verify stay Never and are judged by the resolution/diagnosis passes.
 
     // Dismiss residue that stopped mattering: the user has since
     // gitignored the path (local, global, or info/exclude — check-ignore
@@ -617,32 +638,24 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     }
 
     // Attribute what the commands account for: a residue file whose path
-    // (or pre-rename path, or a parent directory of either) is named in an
-    // effectful command this interval — or in that command's captured
-    // output — was changed by the shell, not behind anyone's back. The
-    // diff still isn't in the log, so this is claimed-grade evidence, and
-    // the line says which kind.
+    // (or pre-rename path, or a directory that moved it) is named as a
+    // whole token in an effectful command this interval was changed by the
+    // shell, not behind anyone's back. The diff still isn't in the log, so
+    // this is claimed-grade evidence. Matching is whole-token only, and
+    // against command TEXT only — a command's stdout listing a filename is
+    // not proof the command touched it.
     for (idx, interval) in audit.intervals.iter_mut().enumerate() {
+        let named = |c: &FileChange| {
+            change_paths(c)
+                .iter()
+                .any(|p| cmd_corpus[idx].iter().any(|cmd| command_names_path(cmd, p)))
+        };
         let (kept, attributed): (Vec<FileChange>, Vec<FileChange>) =
-            interval.residue.drain(..).partition(|c| {
-                !name_candidates(c)
-                    .iter()
-                    .any(|n| cmd_corpus[idx].contains(n) || out_corpus[idx].contains(n))
-            });
+            interval.residue.drain(..).partition(|c| !named(c));
         interval.residue = kept;
         interval.attributed_residue = attributed
             .into_iter()
-            .map(|c| {
-                let why = if name_candidates(&c)
-                    .iter()
-                    .any(|n| cmd_corpus[idx].contains(n))
-                {
-                    "named in this interval's commands"
-                } else {
-                    "named in a command's output this interval"
-                };
-                (c, why)
-            })
+            .map(|c| (c, "named in this interval's commands"))
             .collect();
     }
 
@@ -703,9 +716,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             .iter_mut()
             .filter(|l| l.landing == Landing::Never && l.resolution.is_none())
         {
-            let persisted = line.probe.as_ref().is_some_and(|probe| {
-                std::fs::read_to_string(repo.join(&line.path))
-                    .is_ok_and(|now| now.contains(probe.as_str()))
+            let persisted = line.probe.as_deref().is_some_and(|probe| {
+                usable_probe(probe)
+                    && std::fs::read_to_string(repo.join(&line.path))
+                        .is_ok_and(|now| now.contains(probe))
             });
             if persisted && gitio::is_ignored(repo, &line.path) {
                 line.resolution = Some(
@@ -716,32 +730,30 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         }
     }
 
-    // 3. Deliberately handled: from the claim's interval onward, the
-    //    session's own commands name the file (an rm, a replacement, a
-    //    cleanup). The disappearance was on purpose, and it is on record.
+    // 3. Deliberately removed: from the claim's interval onward, one of
+    //    the session's own commands actually removes or moves this exact
+    //    path (rm/mv/git rm/git mv/git clean naming it as a whole token).
+    //    A mere mention is not enough — a later `echo done > x.log` must
+    //    not resolve a genuinely lost `x`.
     for i in 0..n_intervals {
-        let mut resolutions: Vec<(usize, String)> = Vec::new();
+        let mut resolutions: Vec<usize> = Vec::new();
         for (line_idx, line) in audit.intervals[i].ledger.iter().enumerate() {
             if line.landing != Landing::Never || line.resolution.is_some() {
                 continue;
             }
-            let mut names = vec![line.path.clone()];
-            if let Some(base) = line.path.rsplit('/').next()
-                && base.len() >= 5
-            {
-                names.push(base.to_string());
-            }
-            let named = (i..n_intervals)
-                .any(|j| names.iter().any(|nm| cmd_corpus[j].contains(nm.as_str())));
-            if named {
-                resolutions.push((
-                    line_idx,
-                    "the session's own commands name this file after the claim — removed or replaced deliberately, not silently lost".to_string(),
-                ));
+            let removed = (i..n_intervals).any(|j| {
+                cmd_corpus[j]
+                    .iter()
+                    .any(|cmd| command_removes_path(cmd, &line.path))
+            });
+            if removed {
+                resolutions.push(line_idx);
             }
         }
-        for (line_idx, why) in resolutions {
-            audit.intervals[i].ledger[line_idx].resolution = Some(why);
+        for line_idx in resolutions {
+            audit.intervals[i].ledger[line_idx].resolution = Some(
+                "a later command in this session removes or moves this exact path — deleted or relocated deliberately, on record, not silently lost".to_string(),
+            );
         }
     }
 
@@ -754,9 +766,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         {
             // The forward sweep already checked every later commit, so
             // these are verified statements, not guesses.
-            let on_disk_with_content = line.probe.as_ref().is_some_and(|probe| {
-                std::fs::read_to_string(repo.join(&line.path))
-                    .is_ok_and(|now| now.contains(probe.as_str()))
+            let on_disk_with_content = line.probe.as_deref().is_some_and(|probe| {
+                usable_probe(probe)
+                    && std::fs::read_to_string(repo.join(&line.path))
+                        .is_ok_and(|now| now.contains(probe))
             });
             line.diagnosis = Some(if gitio::is_ignored(repo, &line.path) {
                 "gitignored — the write was real but git never saw it"

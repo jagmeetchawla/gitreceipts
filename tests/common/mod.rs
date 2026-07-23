@@ -146,9 +146,18 @@ impl SessionBuilder {
         self
     }
 
-    /// A Write claim for an absolute path under the session cwd.
+    /// A Write claim for an absolute path under the session cwd. The
+    /// default claimed content is a usable probe (>= 12 chars) unique to
+    /// the path, so content-verification against a commit is meaningful.
     pub fn write_claim(&mut self, ts: &str, result_ts: &str, rel: &str) -> &mut Self {
-        self.write_claim_content(ts, result_ts, rel, "x")
+        let body = format!("// body of {rel} :: placeholder content");
+        self.write_claim_content(ts, result_ts, rel, &body)
+    }
+
+    /// The default claimed body for a path — matches `write_claim`, so a
+    /// test can write the same bytes to disk / into a commit.
+    pub fn default_body(rel: &str) -> String {
+        format!("// body of {rel} :: placeholder content")
     }
 
     /// A Write claim with specific claimed content (the probe).
