@@ -6,12 +6,25 @@ the agent can't fabricate after the fact. **gitreceipts** reads your
 Claude Code session alongside the repo and reconciles the two, claim by
 claim, against that record. Not the agent's word. Git's.
 
+Reconciliation runs both directions, and both get billing:
+- **Claimed → didn't land** — the agent said it, git never got it. If
+  nothing explains it, that's a **broken promise**.
+- **Landed → not claimed** — git recorded a change no edit claim covers.
+  The interesting question is *who*, and git answers it: the **author**
+  and any **`Co-Authored-By:`** trailer on the commit. So the tool tells
+  you, by difference, what *another contributor* (or another agent)
+  changed versus what this session did — attribution for free.
+
 What it **verifies** — because git can witness it:
 - **File writes, edits, deletes** — the claimed content is checked
   against the actual commit blobs (content-level, not filename-level, so
   a coincidental change can't be mistaken for the claim landing).
 - **Commits** — matched to the real commit graph and reflog.
 - **Pushes** — checked against the remote-tracking refs.
+- **Who** — every commit's author and declared co-authors, straight from
+  git. Identity only: a name tells you *who committed*, never *how* (an
+  agent or a human hand). A `Co-Authored-By` trailer is present-only
+  evidence of an agent or a pair — never inferred from its absence.
 
 What it **surfaces** — the rest of the story, honestly labeled:
 - **Intent** — the prompts *you* typed, attached to the commit each one
@@ -37,13 +50,16 @@ intent → outcome
     · claims that landed late: 3, content-verified against the commit they landed in
     · claims that never landed, resolved: 4 — superseded by later landed edits: 2 ·
       removed deliberately by the session's own commands: 2
-    · unclaimed changes (residue): 31 — attributed to commands: 24 ·
-      dismissed as now ignored/untracked: 6 · unexplained: 1
-    · broken promises (never landed, nothing explains it): 0
+    · unclaimed changes (git recorded it, no matching edit claim): 31 —
+      this agent via a command: 24 · not this session's commit: 6 · unexplained: 1
+    · broken promises (claimed, never landed, nothing explains it): 0
+  who touched this repo (git identity — not how they authored):
+    · committed by: Ada Lovelace <ada@example.com>
+    · co-authored-by (declared in commits): Claude <noreply@anthropic.com>
 ```
 
-That last line is the point. Zero is not assumed — it is earned against
-the repo's own receipts.
+That last line above the identity block is the point. Zero is not
+assumed — it is earned against the repo's own receipts.
 
 ## How it works
 
