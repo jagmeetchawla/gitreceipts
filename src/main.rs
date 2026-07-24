@@ -13,7 +13,17 @@ use gitreceipts::report;
 #[command(
     name = "git-receipts",
     version,
-    about = "See what your agent actually did."
+    about = "See what your agent actually did.",
+    long_about = "\
+git receipts — see what your agent actually did.
+
+git is the oracle. A coding agent tells you what it did; git kept its own \
+record of what actually persisted — a log the agent can't fabricate after \
+the fact. gitreceipts reconciles the two, claim by claim, against that \
+record. Not the agent's word. Git's.
+
+Most useful when you can't reconstruct it by hand: unattended or overnight \
+runs you weren't watching, or work from a while ago you no longer remember."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -23,6 +33,35 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Audit one or more Claude Code sessions against a git repo.
+    #[command(
+        long_about = "\
+Audit one or more Claude Code sessions against a git repo.
+
+Reads the session log(s) and the repo, then reconciles per commit:
+  claimed vs landed  file edits verified content-level against commit blobs
+  broken promises    claims that never landed and nothing explains — the headline
+  unclaimed changes  git recorded it, no matching claim (attributed to a command,
+                     to another contributor by git identity, or left unexplained)
+  intent -> outcome  the prompts you typed, agent effort, blast radius
+
+Each commit is green when it balances, residue-only (!) as a warning, or red
+(x) for a broken promise. git is the oracle: what git can witness is verified;
+side-effects beyond it (network, deploy, out-of-repo writes) are surfaced as
+blast radius, never as proof.",
+        after_long_help = "\
+EXAMPLES:
+  git receipts audit --latest                audit the newest session for this repo
+  git receipts audit --all                   merge every session the store has for it
+  git receipts audit sess.jsonl --repo ~/app a specific session vs a specific repo
+  git receipts audit --latest --filter red   only the broken promises
+  git receipts audit --latest --verbose      per-commit anatomy (A/M/D/R + commands)
+  git receipts audit --latest --format html > audit.html    self-contained HTML report
+  git receipts audit --all --store /Volumes/studio/Users/me/.claude --repo /Volumes/studio/.../app
+                                             another machine's sessions from a mounted drive
+
+On a terminal the report auto-pages through $PAGER with color (like git);
+a pipe or redirect never pages. Use --no-pager to opt out."
+    )]
     Audit {
         /// Paths to session .jsonl files (or use --latest / --all).
         sessions: Vec<PathBuf>,
