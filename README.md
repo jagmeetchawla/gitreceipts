@@ -230,6 +230,11 @@ git receipts audit --all --store /Volumes/studio/Users/me/.claude --repo /Volume
 
 # export the reconciled audit as a versioned JSON receipt
 git receipts export --latest > receipt.json
+
+# audit and export share the same scoping switches
+git receipts export --latest --filter red        # only the broken-promise commits
+git receipts export --latest --commit 6d6cdc4     # one commit's block
+git receipts export --latest --with-output --compact   # every output, single line
 ```
 
 ## Receipts (JSON export)
@@ -246,6 +251,9 @@ interpret — far smaller than the raw session log it distills. The
 schema is versioned (`schema_version`), pretty-printed by default
 (`--compact` for a single line), and `--no-intent` drops the quoted
 prompt text while keeping every count, for a receipt you can share.
+`export` takes the same scoping switches as `audit` — `--filter` and
+`--commit` restrict which intervals it carries, while the summary stays
+whole-session.
 
 Every command is present in full. Captured output is included for
 **failed** commands by default — a failure's output is the one you
@@ -296,10 +304,15 @@ cargo fmt
 
 The pipeline is five stages, one module each: `ingest` (tolerant
 JSONL) → `causal` (parent-chain ordering) → `extract` (claims and
-receipts) → `reconcile` (the interval equation) → `report`. Scenario
-tests build real throwaway git repos and synthetic session logs, so
-every honesty rule above is pinned by a test that would catch its
-regression — including the adversarial ones (backdated commits,
+receipts) → `reconcile` (the interval equation) → a renderer. The two
+top-level commands, `audit` and `export`, share that pipeline and differ
+only at the end: `audit` renders the reconciled result for a human
+(`report` for the console, `html` for the page), `export` serializes the
+*same* facts as a versioned JSON `receipt`. Because they build on one
+`reconcile` pass, every headline number matches across console, HTML, and
+JSON. Scenario tests build real throwaway git repos and synthetic session
+logs, so every honesty rule above is pinned by a test that would catch
+its regression — including the adversarial ones (backdated commits,
 option-injection filenames, laundered path matches).
 
 ## Status
