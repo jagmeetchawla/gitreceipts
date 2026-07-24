@@ -6,7 +6,7 @@ use std::io::IsTerminal;
 use crate::extract::Session;
 use crate::fmt::{abbrev, redact_home, tilde};
 use crate::ingest::IngestStats;
-use crate::reconcile::{Audit, Status};
+use crate::reconcile::{Audit, Interval, Status};
 
 /// Follows the git convention: `auto` colors a terminal and strips colors
 /// from pipes; `always` keeps ANSI escapes flowing into `bat`, `less -R`,
@@ -124,7 +124,6 @@ pub fn print(
     opts: &Options,
 ) {
     let st = Style::new(opts.color);
-    let show_intent = opts.show_intent;
 
     println!("{}", st.bold(&format!("git receipts — {session_name}")));
     println!(
@@ -403,280 +402,8 @@ pub fn print(
     );
 
     for interval in &audit.intervals {
-        if !opts.filter.keeps(interval.status()) {
-            continue;
-        }
-        let never: Vec<_> = interval.never_landed().collect();
-        let resolved: Vec<_> = interval.resolved_never().collect();
-        let late: Vec<_> = interval.landed_late().collect();
-        let landed = interval.ledger.len() - never.len() - resolved.len() - late.len();
-        let mark = match interval.status() {
-            Status::Green => st.green("✔"),
-            Status::ResidueOnly => st.yellow("!"),
-            Status::Red => st.red("✘"),
-        };
-        let who = if interval.agent_committed {
-            ""
-        } else {
-            " [keyframe: not committed by agent]"
-        };
-        let ghost = if interval.commit.reachable {
-            ""
-        } else {
-            " [gone from branches — reflog only]"
-        };
-        let hist = if enriched && interval.commit.from_history {
-            " [created elsewhere]"
-        } else {
-            ""
-        };
-        let mut subject = interval.commit.subject.clone();
-        subject.truncate(56);
-        println!(
-            "{mark} {} {} {}{}{}{}",
-            interval.commit.short,
-            interval.commit.ts.format("%m-%d %H:%M"),
-            st.dim(&subject),
-            st.yellow(who),
-            st.yellow(ghost),
-            st.yellow(hist),
-        );
-        if interval.commit.clock_anomaly {
-            println!(
-                "    {}",
-                st.yellow(&format!(
-                    "⚠ clock anomaly: dated {}, but the reflog places it between in-window commits — dates on this commit cannot be trusted (backdated?)",
-                    interval.commit.committer_ts.format("%Y-%m-%d %H:%M")
-                ))
-            );
-        }
-        if show_intent && let Some(first) = interval.intents.first() {
-            let redacted = redact_home(first);
-            let mut shown: String = redacted.chars().take(76).collect();
-            if redacted.chars().count() > 76 {
-                shown.push('\u{2026}');
-            }
-            let more = if interval.intents.len() > 1 {
-                format!("  (+{} more)", interval.intents.len() - 1)
-            } else {
-                String::new()
-            };
-            println!(
-                "    {} {}{}",
-                st.cyan("\u{bb} intent:"),
-                shown,
-                st.dim(&more)
-            );
-        }
-        if interval.spine_jump {
-            println!(
-                "    {}",
-                st.yellow("⑂ spine jump: parent is not the previous commit (rebase/reset/branch)")
-            );
-        }
-        for s in &interval.superseded {
-            println!(
-                "    {} draft {} committed {} file{}, amended {}s later",
-                st.yellow("↻ amend:"),
-                s.short,
-                s.files,
-                if s.files == 1 { "" } else { "s" },
-                s.seconds_before_amend
-            );
-        }
-        let late_note = if late.is_empty() {
-            String::new()
-        } else {
-            format!(" / {} landed late", late.len())
-        };
-        let mut residue_notes = String::new();
-        if !resolved.is_empty() {
-            residue_notes.push_str(&format!(" (+{} resolved claims)", resolved.len()));
-        }
-        if !interval.attributed_residue.is_empty() {
-            residue_notes.push_str(&format!(
-                " (+{} command-attributed)",
-                interval.attributed_residue.len()
-            ));
-        }
-        if !interval.dismissed_residue.is_empty() {
-            residue_notes.push_str(&format!(
-                " (+{} dismissed)",
-                interval.dismissed_residue.len()
-            ));
-        }
-        println!(
-            "    {} claimed / {} landed{} / {} residue{}   ({} commands)",
-            interval.ledger.len(),
-            landed,
-            late_note,
-            interval.residue.len(),
-            residue_notes,
-            interval.commands
-        );
-
-        if opts.verbose {
-            let commit = if interval.agent_committed {
-                "committed by agent"
-            } else {
-                "not committed by agent"
-            };
-            let push = if interval.pushed {
-                "pushed"
-            } else {
-                "local only"
-            };
-            println!("    {}", st.dim(&format!("{commit} · {push}")));
-            if !interval.statement.is_empty() {
-                let n = |s: char| interval.statement.iter().filter(|c| c.status == s).count();
-                println!(
-                    "    {} {} added · {} modified · {} deleted · {} renamed",
-                    st.dim("files git recorded:"),
-                    n('A'),
-                    n('M'),
-                    n('D'),
-                    n('R') + n('C'),
-                );
-                for c in &interval.statement {
-                    let moved = c
-                        .old_path
-                        .as_ref()
-                        .map(|o| format!("  ← {o}"))
-                        .unwrap_or_default();
-                    println!(
-                        "      {} {}{}",
-                        st.dim(&format!("[{}]", c.status)),
-                        c.path,
-                        st.dim(&moved)
-                    );
-                }
-            }
-            for cr in &interval.commands_run {
-                let rad = cr
-                    .radius
-                    .map(|r| r.to_string())
-                    .unwrap_or_else(|| "read-only".into());
-                let mut flags = String::new();
-                if cr.committed {
-                    flags.push_str(" ✎commit");
-                }
-                if cr.pushed {
-                    flags.push_str(" ↑push");
-                }
-                if cr.failed {
-                    flags.push_str(" ✗failed");
-                }
-                println!(
-                    "      {} {}{}",
-                    st.dim(&format!("$ [{rad}]")),
-                    redact_home(&cr.summary),
-                    st.yellow(&flags)
-                );
-            }
-        }
-        for line in &late {
-            let (at, dist) = line
-                .landed_at
-                .as_ref()
-                .map(|(s, d)| (s.as_str(), *d))
-                .unwrap_or(("?", 1));
-            let commits = if dist == 1 { "commit" } else { "commits" };
-            println!(
-                "    {} {} {}",
-                st.green("✓ landed late:"),
-                line.path,
-                st.dim(&format!(
-                    "(content verified in {at}, {dist} {commits} later)"
-                ))
-            );
-        }
-        for line in &resolved {
-            println!(
-                "    {} {} ({} edit{}, f#{})",
-                st.yellow("◌ never landed, resolved:"),
-                line.path,
-                line.edits,
-                if line.edits == 1 { "" } else { "s" },
-                line.frames.first().copied().unwrap_or(0)
-            );
-            if let Some(w) = &line.resolution {
-                println!("      {}", st.dim(w));
-            }
-        }
-        for line in &never {
-            println!(
-                "    {} {} ({} edit{}, f#{})",
-                st.red("✘ never landed:"),
-                line.path,
-                line.edits,
-                if line.edits == 1 { "" } else { "s" },
-                line.frames.first().copied().unwrap_or(0)
-            );
-            if let Some(d) = line.diagnosis {
-                println!("      {}", st.dim(d));
-            }
-        }
-        for res in &interval.residue {
-            println!(
-                "    {} {} {}",
-                st.yellow("● residue:"),
-                res.path,
-                st.dim(&format!("[{}] changed, never claimed", res.status))
-            );
-        }
-        for (res, why) in &interval.attributed_residue {
-            let moved = res
-                .old_path
-                .as_ref()
-                .map(|o| format!(" (was {o})"))
-                .unwrap_or_default();
-            println!(
-                "    {} {}{} {}",
-                st.yellow("● residue (attributed):"),
-                res.path,
-                st.dim(&moved),
-                st.dim(&format!("[{}] — {why}", res.status))
-            );
-        }
-        for (res, why) in &interval.dismissed_residue {
-            println!(
-                "    {}",
-                st.dim(&format!(
-                    "○ residue dismissed: {} [{}] — {why}",
-                    res.path, res.status
-                ))
-            );
-        }
-        if !interval.residue.is_empty() {
-            let hint = if interval.effectful_commands > 0 {
-                format!(
-                    "likely command fallout — {} effectful commands ran in this interval",
-                    interval.effectful_commands
-                )
-            } else {
-                "no effectful commands ran — human edit?".to_string()
-            };
-            println!("      {}", st.dim(&hint));
-        }
-    }
-
-    if !audit.tail_claims.is_empty() {
-        println!();
-        println!(
-            "{}",
-            st.yellow(&format!(
-                "uncommitted tail: {} file claims after the last commit (unverifiable now)",
-                audit.tail_claims.len()
-            ))
-        );
-        let mut paths: Vec<&str> = audit.tail_claims.iter().map(|(p, _)| p.as_str()).collect();
-        paths.sort_unstable();
-        paths.dedup();
-        for p in paths.iter().take(10) {
-            println!("    · {p}");
-        }
-        if paths.len() > 10 {
-            println!("    · … {} more", paths.len() - 10);
+        if opts.filter.keeps(interval.status()) {
+            render_interval(&st, interval, opts, enriched);
         }
     }
 
@@ -702,4 +429,264 @@ pub fn print(
             pct(claims_landed, claims_total),
         ))
     );
+}
+
+/// Render one interval's block: the commit line, its tags, intent, the
+/// claimed/landed/residue counts, the optional verbose anatomy, and every
+/// reconciliation finding (late, resolved, never-landed, residue).
+fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bool) {
+    let never: Vec<_> = interval.never_landed().collect();
+    let resolved: Vec<_> = interval.resolved_never().collect();
+    let late: Vec<_> = interval.landed_late().collect();
+    let landed = interval.ledger.len() - never.len() - resolved.len() - late.len();
+    let mark = match interval.status() {
+        Status::Green => st.green("✔"),
+        Status::ResidueOnly => st.yellow("!"),
+        Status::Red => st.red("✘"),
+    };
+    let who = if interval.agent_committed {
+        ""
+    } else {
+        " [keyframe: not committed by agent]"
+    };
+    let ghost = if interval.commit.reachable {
+        ""
+    } else {
+        " [gone from branches — reflog only]"
+    };
+    let hist = if enriched && interval.commit.from_history {
+        " [created elsewhere]"
+    } else {
+        ""
+    };
+    let mut subject = interval.commit.subject.clone();
+    subject.truncate(56);
+    println!(
+        "{mark} {} {} {}{}{}{}",
+        interval.commit.short,
+        interval.commit.ts.format("%m-%d %H:%M"),
+        st.dim(&subject),
+        st.yellow(who),
+        st.yellow(ghost),
+        st.yellow(hist),
+    );
+    if interval.commit.clock_anomaly {
+        println!(
+                "    {}",
+                st.yellow(&format!(
+                    "⚠ clock anomaly: dated {}, but the reflog places it between in-window commits — dates on this commit cannot be trusted (backdated?)",
+                    interval.commit.committer_ts.format("%Y-%m-%d %H:%M")
+                ))
+            );
+    }
+    if opts.show_intent
+        && let Some(first) = interval.intents.first()
+    {
+        let redacted = redact_home(first);
+        let mut shown: String = redacted.chars().take(76).collect();
+        if redacted.chars().count() > 76 {
+            shown.push('\u{2026}');
+        }
+        let more = if interval.intents.len() > 1 {
+            format!("  (+{} more)", interval.intents.len() - 1)
+        } else {
+            String::new()
+        };
+        println!(
+            "    {} {}{}",
+            st.cyan("\u{bb} intent:"),
+            shown,
+            st.dim(&more)
+        );
+    }
+    if interval.spine_jump {
+        println!(
+            "    {}",
+            st.yellow("⑂ spine jump: parent is not the previous commit (rebase/reset/branch)")
+        );
+    }
+    for s in &interval.superseded {
+        println!(
+            "    {} draft {} committed {} file{}, amended {}s later",
+            st.yellow("↻ amend:"),
+            s.short,
+            s.files,
+            if s.files == 1 { "" } else { "s" },
+            s.seconds_before_amend
+        );
+    }
+    let late_note = if late.is_empty() {
+        String::new()
+    } else {
+        format!(" / {} landed late", late.len())
+    };
+    let mut residue_notes = String::new();
+    if !resolved.is_empty() {
+        residue_notes.push_str(&format!(" (+{} resolved claims)", resolved.len()));
+    }
+    if !interval.attributed_residue.is_empty() {
+        residue_notes.push_str(&format!(
+            " (+{} command-attributed)",
+            interval.attributed_residue.len()
+        ));
+    }
+    if !interval.dismissed_residue.is_empty() {
+        residue_notes.push_str(&format!(
+            " (+{} dismissed)",
+            interval.dismissed_residue.len()
+        ));
+    }
+    println!(
+        "    {} claimed / {} landed{} / {} residue{}   ({} commands)",
+        interval.ledger.len(),
+        landed,
+        late_note,
+        interval.residue.len(),
+        residue_notes,
+        interval.commands
+    );
+
+    if opts.verbose {
+        let commit = if interval.agent_committed {
+            "committed by agent"
+        } else {
+            "not committed by agent"
+        };
+        let push = if interval.pushed {
+            "pushed"
+        } else {
+            "local only"
+        };
+        println!("    {}", st.dim(&format!("{commit} · {push}")));
+        if !interval.statement.is_empty() {
+            let n = |s: char| interval.statement.iter().filter(|c| c.status == s).count();
+            println!(
+                "    {} {} added · {} modified · {} deleted · {} renamed",
+                st.dim("files git recorded:"),
+                n('A'),
+                n('M'),
+                n('D'),
+                n('R') + n('C'),
+            );
+            for c in &interval.statement {
+                let moved = c
+                    .old_path
+                    .as_ref()
+                    .map(|o| format!("  ← {o}"))
+                    .unwrap_or_default();
+                println!(
+                    "      {} {}{}",
+                    st.dim(&format!("[{}]", c.status)),
+                    c.path,
+                    st.dim(&moved)
+                );
+            }
+        }
+        for cr in &interval.commands_run {
+            let rad = cr
+                .radius
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "read-only".into());
+            let mut flags = String::new();
+            if cr.committed {
+                flags.push_str(" ✎commit");
+            }
+            if cr.pushed {
+                flags.push_str(" ↑push");
+            }
+            if cr.failed {
+                flags.push_str(" ✗failed");
+            }
+            println!(
+                "      {} {}{}",
+                st.dim(&format!("$ [{rad}]")),
+                redact_home(&cr.summary),
+                st.yellow(&flags)
+            );
+        }
+    }
+    for line in &late {
+        let (at, dist) = line
+            .landed_at
+            .as_ref()
+            .map(|(s, d)| (s.as_str(), *d))
+            .unwrap_or(("?", 1));
+        let commits = if dist == 1 { "commit" } else { "commits" };
+        println!(
+            "    {} {} {}",
+            st.green("✓ landed late:"),
+            line.path,
+            st.dim(&format!(
+                "(content verified in {at}, {dist} {commits} later)"
+            ))
+        );
+    }
+    for line in &resolved {
+        println!(
+            "    {} {} ({} edit{}, f#{})",
+            st.yellow("◌ never landed, resolved:"),
+            line.path,
+            line.edits,
+            if line.edits == 1 { "" } else { "s" },
+            line.frames.first().copied().unwrap_or(0)
+        );
+        if let Some(w) = &line.resolution {
+            println!("      {}", st.dim(w));
+        }
+    }
+    for line in &never {
+        println!(
+            "    {} {} ({} edit{}, f#{})",
+            st.red("✘ never landed:"),
+            line.path,
+            line.edits,
+            if line.edits == 1 { "" } else { "s" },
+            line.frames.first().copied().unwrap_or(0)
+        );
+        if let Some(d) = line.diagnosis {
+            println!("      {}", st.dim(d));
+        }
+    }
+    for res in &interval.residue {
+        println!(
+            "    {} {} {}",
+            st.yellow("● residue:"),
+            res.path,
+            st.dim(&format!("[{}] changed, never claimed", res.status))
+        );
+    }
+    for (res, why) in &interval.attributed_residue {
+        let moved = res
+            .old_path
+            .as_ref()
+            .map(|o| format!(" (was {o})"))
+            .unwrap_or_default();
+        println!(
+            "    {} {}{} {}",
+            st.yellow("● residue (attributed):"),
+            res.path,
+            st.dim(&moved),
+            st.dim(&format!("[{}] — {why}", res.status))
+        );
+    }
+    for (res, why) in &interval.dismissed_residue {
+        println!(
+            "    {}",
+            st.dim(&format!(
+                "○ residue dismissed: {} [{}] — {why}",
+                res.path, res.status
+            ))
+        );
+    }
+    if !interval.residue.is_empty() {
+        let hint = if interval.effectful_commands > 0 {
+            format!(
+                "likely command fallout — {} effectful commands ran in this interval",
+                interval.effectful_commands
+            )
+        } else {
+            "no effectful commands ran — human edit?".to_string()
+        };
+        println!("      {}", st.dim(&hint));
+    }
 }
