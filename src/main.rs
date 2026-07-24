@@ -1,11 +1,13 @@
 //! `git receipts` — see what your agent actually did.
 
+mod audit;
+mod pager;
+
 use std::path::PathBuf;
 
-use gitreceipts::{discover, extract, html, reconcile, report};
-
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
+use gitreceipts::report;
 
 #[derive(Parser)]
 #[command(
@@ -74,70 +76,6 @@ enum Cmd {
     },
 }
 
-/// Page the console report through `$PAGER` when writing to a terminal —
-/// git's own behavior, so colors survive and short reports don't linger.
-/// Returns the pager child (kept alive until [`finish_pager`]); `None`
-/// means output goes straight to stdout.
-#[cfg(unix)]
-fn start_pager(no_pager: bool) -> Option<std::process::Child> {
-    use std::io::IsTerminal;
-    use std::os::unix::io::AsRawFd;
-    use std::process::{Command, Stdio};
-
-    if no_pager || !std::io::stdout().is_terminal() {
-        return None;
-    }
-    let pager = std::env::var("GIT_PAGER")
-        .or_else(|_| std::env::var("PAGER"))
-        .unwrap_or_else(|_| "less".to_string());
-    if pager.trim().is_empty() || pager.trim() == "cat" {
-        return None;
-    }
-    // git's defaults: R = render ANSI color, F = quit if one screen,
-    // X = don't clear the screen on exit.
-    if std::env::var_os("LESS").is_none() {
-        unsafe { std::env::set_var("LESS", "FRX") };
-    }
-    let child = Command::new("sh")
-        .arg("-c")
-        .arg(&pager)
-        .stdin(Stdio::piped())
-        .spawn()
-        .ok()?;
-    // Redirect our stdout to the pager's stdin, so every println! flows to
-    // the pager without threading a writer through the report code.
-    let fd = child.stdin.as_ref()?.as_raw_fd();
-    unsafe { libc::dup2(fd, libc::STDOUT_FILENO) };
-    Some(child)
-}
-
-/// Close the pipe to the pager (both fd copies) so it sees EOF, then wait
-/// for the user to quit it.
-#[cfg(unix)]
-fn finish_pager(child: Option<std::process::Child>) {
-    use std::io::Write;
-    if let Some(mut child) = child {
-        let _ = std::io::stdout().flush();
-        drop(child.stdin.take());
-        unsafe { libc::close(libc::STDOUT_FILENO) };
-        let _ = child.wait();
-    }
-}
-
-#[cfg(not(unix))]
-fn start_pager(_no_pager: bool) -> Option<std::process::Child> {
-    None
-}
-#[cfg(not(unix))]
-fn finish_pager(_child: Option<std::process::Child>) {}
-
-/// Walk up from `dir` to the nearest directory containing `.git`.
-fn find_enclosing_repo(dir: &std::path::Path) -> Option<PathBuf> {
-    dir.ancestors()
-        .find(|a| a.join(".git").exists())
-        .map(|a| a.to_path_buf())
-}
-
 fn main() -> Result<()> {
     // A report exists to be piped (`| head`, `| less` quit early). Restore
     // default SIGPIPE so a closed pipe ends the process quietly instead of
@@ -162,7 +100,7 @@ fn main() -> Result<()> {
             expand,
             verbose,
             no_pager,
-        } => audit(
+        } => audit::run(
             sessions,
             latest,
             all,
@@ -179,117 +117,4 @@ fn main() -> Result<()> {
             },
         ),
     }
-}
-
-fn audit(
-    sessions: Vec<PathBuf>,
-    latest: bool,
-    all: bool,
-    repo: Option<PathBuf>,
-    store: Option<PathBuf>,
-    no_pager: bool,
-    mut opts: report::Options,
-) -> Result<()> {
-    let store = match store {
-        Some(s) => {
-            if !s.join("projects").is_dir() {
-                bail!(
-                    "{} has no projects/ directory — --store expects the .claude directory itself",
-                    s.display()
-                );
-            }
-            s
-        }
-        None => discover::default_store().context("cannot locate the home directory")?,
-    };
-    let anchor = || {
-        repo.clone()
-            .or_else(|| std::env::current_dir().ok())
-            .context("cannot determine a directory to search for sessions")
-    };
-    let session_paths: Vec<PathBuf> = match (sessions.is_empty(), latest, all) {
-        (false, false, false) => sessions,
-        (true, true, false) => vec![discover::latest_session(&store, &anchor()?)?],
-        (true, false, true) => discover::all_sessions(&store, &anchor()?)?,
-        (true, false, false) => bail!("pass session path(s), --latest, or --all"),
-        _ => bail!("pass session path(s), --latest, or --all — not a combination"),
-    };
-
-    let (ordered, stats) = discover::merge_sessions(&session_paths)?;
-    if ordered.is_empty() {
-        bail!("no execution events in the given session(s)");
-    }
-    let session_data = extract::extract(&ordered);
-
-    let repo_path = match repo {
-        Some(r) => {
-            if !r.join(".git").exists() {
-                bail!("{} is not a git repo", r.display());
-            }
-            r
-        }
-        // No --repo: prefer the repo we're standing in; otherwise infer
-        // from where the session's claims point.
-        None => match std::env::current_dir()
-            .ok()
-            .and_then(|d| find_enclosing_repo(&d))
-        {
-            Some(here) => here,
-            None => discover::infer_repo(&session_data)?,
-        },
-    };
-
-    let audit = reconcile::reconcile(&repo_path, &session_data)?;
-    let short = |p: &PathBuf| {
-        p.file_stem()
-            .and_then(|s| s.to_str())
-            .map(|s| s.chars().take(8).collect::<String>())
-            .unwrap_or_else(|| "session".to_string())
-    };
-    let name = match session_paths.as_slice() {
-        [one] => one
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("session")
-            .to_string(),
-        many => format!(
-            "{} sessions merged ({})",
-            many.len(),
-            many.iter().map(short).collect::<Vec<_>>().join(", ")
-        ),
-    };
-    let name = name.as_str();
-    match opts.format {
-        report::Format::Text => {
-            // On a terminal, page through $PAGER (git's behavior). The
-            // pager redirects stdout to a pipe, so auto color would strip
-            // itself — force color on for the pager unless explicitly off.
-            let pager = start_pager(no_pager);
-            if pager.is_some() && opts.color == report::ColorMode::Auto {
-                opts.color = report::ColorMode::Always;
-            }
-            report::print(
-                name,
-                &repo_path.display().to_string(),
-                &session_data,
-                &stats,
-                &audit,
-                &opts,
-            );
-            finish_pager(pager);
-        }
-        report::Format::Html => print!(
-            "{}",
-            html::render(
-                name,
-                &repo_path.display().to_string(),
-                &session_data,
-                &stats,
-                &audit,
-                opts.show_intent,
-                opts.expand,
-            )
-        ),
-    }
-    Ok(())
 }
