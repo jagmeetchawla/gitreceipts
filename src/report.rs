@@ -75,6 +75,15 @@ pub struct Options {
     /// output. The same depth the JSON receipt carries under `--with-output`
     /// — so console, HTML, and receipt can surface the same detail.
     pub with_output: bool,
+    /// Scope the spine to a single commit (full hash), `lspci -s` style. The
+    /// header, summary, and balance still cover the whole session; only the
+    /// listed intervals are restricted to this one commit.
+    pub commit: Option<String>,
+}
+
+/// The 7-char short form of a full commit hash, for display.
+fn short_hash(hash: &str) -> &str {
+    &hash[..hash.len().min(7)]
 }
 
 struct Style {
@@ -434,13 +443,17 @@ pub fn print(
     } else {
         String::new()
     };
-    let filter_note = match opts.filter {
-        Filter::All => String::new(),
-        Filter::Red => format!(" — showing only red ({red_n} of {total})"),
-        Filter::RedResidue => format!(
-            " — showing red + residue ({} of {total})",
-            red_n + residue_n
-        ),
+    let filter_note = if let Some(h) = &opts.commit {
+        format!(" — scoped to commit {} (1 of {total})", short_hash(h))
+    } else {
+        match opts.filter {
+            Filter::All => String::new(),
+            Filter::Red => format!(" — showing only red ({red_n} of {total})"),
+            Filter::RedResidue => format!(
+                " — showing red + residue ({} of {total})",
+                red_n + residue_n
+            ),
+        }
     };
     println!(
         "{}",
@@ -455,6 +468,11 @@ pub fn print(
     );
 
     for interval in &audit.intervals {
+        if let Some(h) = &opts.commit
+            && &interval.commit.hash != h
+        {
+            continue;
+        }
         if opts.filter.keeps(interval.status()) {
             render_interval(&st, interval, opts, enriched);
         }

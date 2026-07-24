@@ -46,6 +46,7 @@ pub fn render(
     show_intent: bool,
     expand: Expand,
     with_output: bool,
+    commit: Option<&str>,
 ) -> String {
     let total = audit.intervals.len();
     let green = audit.intervals.iter().filter(|i| i.balanced()).count();
@@ -169,6 +170,11 @@ pub fn render(
     );
 
     for iv in &audit.intervals {
+        if let Some(h) = commit
+            && iv.commit.hash != h
+        {
+            continue;
+        }
         render_interval(&mut b, iv, show_intent, enriched, expand, with_output);
     }
     b.push_str("</section>\n");

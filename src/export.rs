@@ -22,6 +22,7 @@ pub fn run(
     store: Option<PathBuf>,
     show_intent: bool,
     with_output: bool,
+    commit: Option<String>,
     pretty: bool,
 ) -> Result<()> {
     let Loaded {
@@ -32,6 +33,12 @@ pub fn run(
         audit,
     } = audit::load(sessions, latest, all, repo, store)?;
 
+    // Resolve --commit against the actual spine (fails on unknown/ambiguous).
+    let commit = match &commit {
+        Some(needle) => Some(audit::resolve_commit(&audit, needle)?),
+        None => None,
+    };
+
     let receipt = Receipt::build(
         &name,
         &repo_display,
@@ -40,6 +47,7 @@ pub fn run(
         &audit,
         show_intent,
         with_output,
+        commit.as_deref(),
     );
     println!("{}", receipt.to_json(pretty)?);
     Ok(())

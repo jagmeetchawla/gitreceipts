@@ -115,6 +115,12 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// --verbose for the console.
         #[arg(long)]
         with_output: bool,
+        /// Scope the drill-down to a single commit (short or full hash),
+        /// `lspci -s` style — see `git receipts list` for the hashes. The
+        /// header, summary, and balance still cover the whole session.
+        /// Implies --verbose for the console.
+        #[arg(long, value_name = "REF")]
+        commit: Option<String>,
         /// Don't page the console report through $PAGER, even on a
         /// terminal. (By default, like git, a terminal gets a colored
         /// pager; a pipe or redirect never does.)
@@ -171,6 +177,11 @@ EXAMPLES:
         /// text is always present regardless.
         #[arg(long)]
         with_output: bool,
+        /// Scope the receipt's intervals to a single commit (short or full
+        /// hash), `lspci -s` style. The summary still covers the whole
+        /// session; only the `intervals` array is restricted to this commit.
+        #[arg(long, value_name = "REF")]
+        commit: Option<String>,
         /// Emit single-line JSON instead of indented (for streaming/piping).
         #[arg(long)]
         compact: bool,
@@ -241,6 +252,7 @@ fn main() -> Result<()> {
             expand,
             verbose,
             with_output,
+            commit,
             no_pager,
         } => audit::run(
             sessions,
@@ -255,11 +267,13 @@ fn main() -> Result<()> {
                 filter,
                 format,
                 expand,
-                // --with-output has nothing to attach to without the
-                // per-commit anatomy, so it implies verbose for the console.
-                verbose: verbose || with_output,
+                // --with-output and --commit both need the per-commit anatomy,
+                // so either implies verbose for the console.
+                verbose: verbose || with_output || commit.is_some(),
                 with_output,
+                commit: None,
             },
+            commit,
         ),
         Cmd::Export {
             sessions,
@@ -269,6 +283,7 @@ fn main() -> Result<()> {
             store,
             no_intent,
             with_output,
+            commit,
             compact,
         } => export::run(
             sessions,
@@ -278,6 +293,7 @@ fn main() -> Result<()> {
             store,
             !no_intent,
             with_output,
+            commit,
             !compact,
         ),
         Cmd::List {

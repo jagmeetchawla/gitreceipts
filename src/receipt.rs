@@ -286,6 +286,7 @@ impl Receipt {
     /// `with_output` includes every command's captured output; by default
     /// only failed commands carry it (output is bulky and rebloats the receipt
     /// toward the raw log, but a failure's is worth keeping).
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         session_name: &str,
         repo: &str,
@@ -294,6 +295,7 @@ impl Receipt {
         audit: &Audit,
         show_intent: bool,
         with_output: bool,
+        commit: Option<&str>,
     ) -> Receipt {
         let window = match (session.first_ts, session.last_ts) {
             (Some(a), Some(b)) => {
@@ -308,9 +310,12 @@ impl Receipt {
             _ => None,
         };
 
+        // Scope the intervals to one commit when asked; the summary below is
+        // still computed over the whole session, matching the console.
         let intervals: Vec<IntervalReceipt> = audit
             .intervals
             .iter()
+            .filter(|i| commit.is_none_or(|h| i.commit.hash == h))
             .map(|i| interval_receipt(i, show_intent, with_output))
             .collect();
 

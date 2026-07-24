@@ -67,7 +67,16 @@ fn green_and_broken(name: &str) -> (TempRepo, SessionBuilder) {
 fn receipt_headline_numbers_mirror_the_audit() {
     let (repo, s) = green_and_broken("receipt-headline");
     let (session, stats, a) = audit(&repo, &s);
-    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
+    let r = Receipt::build(
+        "session",
+        "/tmp/receipt",
+        &session,
+        &stats,
+        &a,
+        true,
+        false,
+        None,
+    );
 
     assert_eq!(r.schema_version, SCHEMA_VERSION);
     assert_eq!(r.tool.name, "gitreceipts");
@@ -94,7 +103,16 @@ fn receipt_headline_numbers_mirror_the_audit() {
 fn broken_promise_is_flagged_at_the_ledger_line() {
     let (repo, s) = green_and_broken("receipt-ledger");
     let (session, stats, a) = audit(&repo, &s);
-    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
+    let r = Receipt::build(
+        "session",
+        "/tmp/receipt",
+        &session,
+        &stats,
+        &a,
+        true,
+        false,
+        None,
+    );
 
     let broken: Vec<&str> = r
         .intervals
@@ -116,7 +134,16 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
     let (repo, s) = green_and_broken("receipt-redact");
     let (session, stats, a) = audit(&repo, &s);
 
-    let shown = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
+    let shown = Receipt::build(
+        "session",
+        "/tmp/receipt",
+        &session,
+        &stats,
+        &a,
+        true,
+        false,
+        None,
+    );
     let redacted = Receipt::build(
         "session",
         "/tmp/receipt",
@@ -125,6 +152,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
         &a,
         false,
         false,
+        None,
     );
 
     let intent_strings =
@@ -143,7 +171,16 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
 fn receipt_round_trips_as_valid_json() {
     let (repo, s) = green_and_broken("receipt-json");
     let (session, stats, a) = audit(&repo, &s);
-    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
+    let r = Receipt::build(
+        "session",
+        "/tmp/receipt",
+        &session,
+        &stats,
+        &a,
+        true,
+        false,
+        None,
+    );
 
     for pretty in [true, false] {
         let json = r.to_json(pretty).unwrap();
@@ -189,7 +226,7 @@ fn command_text_is_full_and_output_is_opt_in() {
             .expect("the commit command run")
     };
 
-    let without = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false);
+    let without = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false, None);
     assert_eq!(cmd(&without), full_cmd, "full multi-line command retained");
     let no_output = without
         .intervals
@@ -198,7 +235,7 @@ fn command_text_is_full_and_output_is_opt_in() {
         .all(|c| c.output.is_none());
     assert!(no_output, "output omitted by default");
 
-    let with = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, true);
+    let with = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, true, None);
     let out = with
         .intervals
         .iter()
@@ -207,6 +244,30 @@ fn command_text_is_full_and_output_is_opt_in() {
         .expect("output present under --with-output");
     assert_eq!(out.text, "created commit abc123");
     assert!(!out.is_error);
+}
+
+#[test]
+fn commit_scope_filters_intervals_but_keeps_the_whole_session_summary() {
+    let (repo, s) = green_and_broken("receipt-scope");
+    let (session, stats, a) = audit(&repo, &s);
+    let target = a.intervals[0].commit.hash.clone();
+
+    let r = Receipt::build(
+        "s",
+        "/tmp/r",
+        &session,
+        &stats,
+        &a,
+        true,
+        false,
+        Some(&target),
+    );
+    // Only the scoped commit is in the intervals array…
+    assert_eq!(r.intervals.len(), 1);
+    assert_eq!(r.intervals[0].commit.hash, target);
+    // …but the summary still describes the whole session (2 commits).
+    assert_eq!(r.summary.commits, 2);
+    assert_eq!(r.summary.broken_promises, 1);
 }
 
 #[test]
@@ -244,7 +305,7 @@ fn a_failed_command_carries_output_by_default() {
     let (session, stats, a) = audit(&repo, &s);
 
     // Default (with_output = false): only the failed command carries output.
-    let r = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false);
+    let r = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false, None);
     let with_out: Vec<(&str, bool)> = r
         .intervals
         .iter()

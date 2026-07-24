@@ -26,6 +26,28 @@ pub struct Loaded {
     pub audit: Audit,
 }
 
+/// Resolve a commit ref (a short or full hash prefix, `lspci -s` style) to the
+/// unique full hash of a spine interval, or fail with a helpful message.
+pub fn resolve_commit(audit: &Audit, needle: &str) -> Result<String> {
+    let needle = needle.to_ascii_lowercase();
+    let matches: Vec<&str> = audit
+        .intervals
+        .iter()
+        .map(|i| i.commit.hash.as_str())
+        .filter(|h| h.starts_with(&needle))
+        .collect();
+    match matches.as_slice() {
+        [] => bail!(
+            "no commit matching '{needle}' in the audited spine — run `git receipts list` to see the commits"
+        ),
+        [one] => Ok((*one).to_string()),
+        many => bail!(
+            "'{needle}' is ambiguous — it matches {} commits; use more of the hash",
+            many.len()
+        ),
+    }
+}
+
 /// Walk up from `dir` to the nearest directory containing `.git`.
 fn find_enclosing_repo(dir: &Path) -> Option<PathBuf> {
     dir.ancestors()
@@ -33,6 +55,7 @@ fn find_enclosing_repo(dir: &Path) -> Option<PathBuf> {
         .map(|a| a.to_path_buf())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     sessions: Vec<PathBuf>,
     latest: bool,
@@ -41,6 +64,7 @@ pub fn run(
     store: Option<PathBuf>,
     no_pager: bool,
     mut opts: report::Options,
+    commit: Option<String>,
 ) -> Result<()> {
     let loaded = load(sessions, latest, all, repo, store)?;
     let Loaded {
@@ -50,6 +74,11 @@ pub fn run(
         stats,
         audit,
     } = &loaded;
+
+    // Resolve --commit against the actual spine (fails on unknown/ambiguous).
+    if let Some(needle) = &commit {
+        opts.commit = Some(resolve_commit(audit, needle)?);
+    }
 
     match opts.format {
         report::Format::Text => {
@@ -74,6 +103,7 @@ pub fn run(
                 opts.show_intent,
                 opts.expand,
                 opts.with_output,
+                opts.commit.as_deref(),
             )
         ),
     }
