@@ -208,3 +208,54 @@ fn command_text_is_full_and_output_is_opt_in() {
     assert_eq!(out.text, "created commit abc123");
     assert!(!out.is_error);
 }
+
+#[test]
+fn a_failed_command_carries_output_by_default() {
+    let repo = TempRepo::new("receipt-failout");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", &SessionBuilder::default_body("a.txt"));
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "land a"],
+        Some("2026-04-01T10:05:00Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-04-01T10:00:00Z", "go")
+        .write_claim("2026-04-01T10:01:00Z", "2026-04-01T10:01:01Z", "a.txt")
+        // one command that succeeds, one that fails
+        .bash_claim_with_output(
+            "2026-04-01T10:02:00Z",
+            "2026-04-01T10:02:01Z",
+            "npm run build",
+            "build ok",
+        )
+        .bash_claim_failed(
+            "2026-04-01T10:03:00Z",
+            "2026-04-01T10:03:01Z",
+            "npm test",
+            "FAIL: 1 test failed",
+        )
+        .bash_claim(
+            "2026-04-01T10:04:00Z",
+            "2026-04-01T10:05:01Z",
+            "git add -A && git commit -m 'land a'",
+        );
+    let (session, stats, a) = audit(&repo, &s);
+
+    // Default (with_output = false): only the failed command carries output.
+    let r = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false);
+    let with_out: Vec<(&str, bool)> = r
+        .intervals
+        .iter()
+        .flat_map(|i| i.commands.runs.iter())
+        .filter_map(|c| c.output.as_ref().map(|o| (c.command.as_str(), o.is_error)))
+        .collect();
+    assert_eq!(
+        with_out.len(),
+        1,
+        "only the failed command carries output by default"
+    );
+    assert!(with_out[0].0.contains("npm test"));
+    assert!(with_out[0].1, "and it is flagged is_error");
+}

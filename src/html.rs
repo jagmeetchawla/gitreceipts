@@ -574,7 +574,9 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output:
         if c.failed {
             b.push_str("<span class=\"radtag fail\">failed</span>");
         }
-        if with_output {
+        // Expand a command to full text + output when asked (--with-output)
+        // or when it failed — the failure's output is always worth showing.
+        if with_output || c.failed {
             // Full command, then its captured output in a scrollable block.
             let _ = write!(
                 b,

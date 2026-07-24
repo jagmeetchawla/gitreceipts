@@ -203,8 +203,9 @@ pub struct CommandRunReceipt {
     pub committed: bool,
     pub pushed: bool,
     pub failed: bool,
-    /// Captured output — present only under `--with-output`. This is the
-    /// agent's own receipt for the un-verifiable tail, not proof.
+    /// Captured output — the agent's own receipt for the un-verifiable tail,
+    /// not proof. Present for failed commands by default, and for every
+    /// command under `--with-output`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<CommandOutput>,
 }
@@ -282,8 +283,9 @@ pub struct Tail {
 impl Receipt {
     /// Build the receipt from a completed audit. `show_intent` false drops the
     /// quoted prompt text (matching `--no-intent`) while keeping every count.
-    /// `with_output` includes each command's captured output; off by default,
-    /// because output is bulky and rebloats the receipt toward the raw log.
+    /// `with_output` includes every command's captured output; by default
+    /// only failed commands carry it (output is bulky and rebloats the receipt
+    /// toward the raw log, but a failure's is worth keeping).
     pub fn build(
         session_name: &str,
         repo: &str,
@@ -484,7 +486,10 @@ fn interval_receipt(i: &Interval, show_intent: bool, with_output: bool) -> Inter
                     committed: r.committed,
                     pushed: r.pushed,
                     failed: r.failed,
-                    output: if with_output {
+                    // Output when asked (--with-output) or when the command
+                    // failed — a failure's output is the receipt you always
+                    // want, and it's low-volume.
+                    output: if with_output || r.failed {
                         r.output.as_ref().map(|o| CommandOutput {
                             is_error: o.is_error,
                             text: redact_home(&o.text),

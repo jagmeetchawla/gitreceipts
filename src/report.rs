@@ -781,7 +781,9 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
             if cr.failed {
                 flags.push_str(" ✗failed");
             }
-            if opts.with_output {
+            // Show a command in full with its output when asked (--with-output)
+            // or when it FAILED — a failure's output is the one you always want.
+            if opts.with_output || cr.failed {
                 // Full command (possibly multi-line), then its captured
                 // output — the depth the JSON receipt carries.
                 let full = redact_home(&cr.command);

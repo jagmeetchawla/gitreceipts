@@ -240,10 +240,12 @@ schema is versioned (`schema_version`), pretty-printed by default
 (`--compact` for a single line), and `--no-intent` drops the quoted
 prompt text while keeping every count, for a receipt you can share.
 
-Every command is present in full; its captured output is omitted by
-default (bulky, and it rebloats the receipt toward the raw log) and
-included with `--with-output` — the agent's own receipt for the
-un-verifiable tail (network calls, deploys), capped at 64 KB each.
+Every command is present in full. Captured output is included for
+**failed** commands by default — a failure's output is the one you
+always want — and for *every* command with `--with-output` (bulky, and
+it rebloats the receipt toward the raw log). It's the agent's own
+receipt for the un-verifiable tail (network calls, deploys), capped at
+64 KB each.
 
 v0.1 reads Claude Code session logs (the JSONL under
 `~/.claude/projects/`). Sessions are found for the repo *and its parent

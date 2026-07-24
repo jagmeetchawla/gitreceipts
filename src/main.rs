@@ -109,9 +109,10 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// modified/deleted/renamed and the commands that ran.
         #[arg(short, long)]
         verbose: bool,
-        /// Show each command in full with its captured output, in the
-        /// console and HTML alike — the same depth `export --with-output`
-        /// puts in the JSON receipt. Implies --verbose for the console.
+        /// Show every command in full with its captured output, console and
+        /// HTML alike. By default only FAILED commands expand this way (their
+        /// output is the one you always want); this shows it for all. Implies
+        /// --verbose for the console.
         #[arg(long)]
         with_output: bool,
         /// Don't page the console report through $PAGER, even on a
@@ -164,9 +165,10 @@ EXAMPLES:
         /// before committing or sharing a receipt.
         #[arg(long)]
         no_intent: bool,
-        /// Include each command's captured output (its stdout/stderr as
-        /// logged). Off by default — output is bulky and rebloats the
-        /// receipt; the command text is always present regardless.
+        /// Include every command's captured output (stdout/stderr as logged).
+        /// By default only FAILED commands carry output — output is bulky and
+        /// rebloats the receipt, but a failure's is worth keeping. The command
+        /// text is always present regardless.
         #[arg(long)]
         with_output: bool,
         /// Emit single-line JSON instead of indented (for streaming/piping).

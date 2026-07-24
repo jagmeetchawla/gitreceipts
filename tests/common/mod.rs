@@ -254,6 +254,28 @@ impl SessionBuilder {
         command: &str,
         output: &str,
     ) -> &mut Self {
+        self.bash_claim_result(ts, result_ts, command, output, false)
+    }
+
+    /// A Bash claim whose tool_result is an error (is_error: true).
+    pub fn bash_claim_failed(
+        &mut self,
+        ts: &str,
+        result_ts: &str,
+        command: &str,
+        output: &str,
+    ) -> &mut Self {
+        self.bash_claim_result(ts, result_ts, command, output, true)
+    }
+
+    fn bash_claim_result(
+        &mut self,
+        ts: &str,
+        result_ts: &str,
+        command: &str,
+        output: &str,
+        is_error: bool,
+    ) -> &mut Self {
         let cmd = Self::json_escape(command);
         let out = Self::json_escape(output);
         let a = self.uuid("a");
@@ -272,7 +294,7 @@ impl SessionBuilder {
             result_ts,
             &u.clone(),
             &format!(
-                r#"{{"content":[{{"type":"tool_result","tool_use_id":"{t}","is_error":false,"content":"{out}"}}]}}"#
+                r#"{{"content":[{{"type":"tool_result","tool_use_id":"{t}","is_error":{is_error},"content":"{out}"}}]}}"#
             ),
         );
         self
