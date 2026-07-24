@@ -491,8 +491,8 @@ pub fn print(
         println!(
             "{}",
             st.dim(&format!(
-                "{:<9} {:<52}  {}",
-                "commit", "subject", "landed/claimed  notes"
+                "{:<9} {:<48} {:>7} {:>7} {:>7} {:>7}",
+                "commit", "subject", "claimed", "landed", "residue", "broken"
             ))
         );
         for interval in &audit.intervals {
@@ -533,8 +533,8 @@ pub fn print(
 }
 
 /// One `--oneline` spine row: the commit's short hash (the handle for
-/// `--commit`), its status mark, subject, landed/claimed count, and
-/// broken (✘N) / residue (●N) hints. Column-aligned to the header above.
+/// `--commit`), status mark, subject, and four aligned count columns —
+/// claimed, landed, residue, broken. Column-aligned to the header above.
 fn render_oneline_row(st: &Style, iv: &Interval) {
     let (mark, paint): (&str, fn(&Style, &str) -> String) = match iv.status() {
         Status::Green => ("✔", Style::green),
@@ -549,26 +549,32 @@ fn render_oneline_row(st: &Style, iv: &Interval) {
         .count();
     let n_broken = iv.never_landed().count();
     let residue = iv.residue.len();
-    // char-safe truncate + pad so the count column aligns (byte ops panic
+    // char-safe truncate + pad so the count columns align (byte ops panic
     // mid-multibyte — a real crash found dogfooding).
-    let subject: String = iv.commit.subject.chars().take(52).collect();
-    let pad = 52usize.saturating_sub(subject.chars().count());
-    let mut hints = String::new();
-    if n_broken > 0 {
-        hints.push_str(&format!("  {}", st.red(&format!("✘{n_broken}"))));
-    }
-    if residue > 0 {
-        hints.push_str(&format!("  {}", st.yellow(&format!("●{residue}"))));
-    }
+    let subject: String = iv.commit.subject.chars().take(48).collect();
+    let pad = 48usize.saturating_sub(subject.chars().count());
+
+    // Right-aligned 7-wide count cells; a zero is dimmed so non-zero counts
+    // (residue in yellow, broken in red) draw the eye.
+    let neutral = |n: usize| {
+        let s = format!("{n:>7}");
+        if n == 0 { st.dim(&s) } else { s }
+    };
+    let flagged = |n: usize, paint: fn(&Style, &str) -> String| {
+        let s = format!("{n:>7}");
+        if n == 0 { st.dim(&s) } else { paint(st, &s) }
+    };
+
     println!(
-        "{} {} {}{}  {}/{}{}",
+        "{} {} {}{} {} {} {} {}",
         st.cyan(&iv.commit.short),
         paint(st, mark),
         subject,
         " ".repeat(pad),
-        landed,
-        claimed,
-        hints,
+        neutral(claimed),
+        neutral(landed),
+        flagged(residue, Style::yellow),
+        flagged(n_broken, Style::red),
     );
 }
 
