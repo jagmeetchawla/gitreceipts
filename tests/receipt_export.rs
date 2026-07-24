@@ -67,7 +67,7 @@ fn green_and_broken(name: &str) -> (TempRepo, SessionBuilder) {
 fn receipt_headline_numbers_mirror_the_audit() {
     let (repo, s) = green_and_broken("receipt-headline");
     let (session, stats, a) = audit(&repo, &s);
-    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true);
+    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
 
     assert_eq!(r.schema_version, SCHEMA_VERSION);
     assert_eq!(r.tool.name, "gitreceipts");
@@ -94,7 +94,7 @@ fn receipt_headline_numbers_mirror_the_audit() {
 fn broken_promise_is_flagged_at_the_ledger_line() {
     let (repo, s) = green_and_broken("receipt-ledger");
     let (session, stats, a) = audit(&repo, &s);
-    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true);
+    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
 
     let broken: Vec<&str> = r
         .intervals
@@ -116,8 +116,16 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
     let (repo, s) = green_and_broken("receipt-redact");
     let (session, stats, a) = audit(&repo, &s);
 
-    let shown = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true);
-    let redacted = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, false);
+    let shown = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
+    let redacted = Receipt::build(
+        "session",
+        "/tmp/receipt",
+        &session,
+        &stats,
+        &a,
+        false,
+        false,
+    );
 
     let intent_strings =
         |r: &Receipt| -> usize { r.intervals.iter().map(|i| i.intents.len()).sum() };
@@ -135,7 +143,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
 fn receipt_round_trips_as_valid_json() {
     let (repo, s) = green_and_broken("receipt-json");
     let (session, stats, a) = audit(&repo, &s);
-    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true);
+    let r = Receipt::build("session", "/tmp/receipt", &session, &stats, &a, true, false);
 
     for pretty in [true, false] {
         let json = r.to_json(pretty).unwrap();
@@ -144,4 +152,59 @@ fn receipt_round_trips_as_valid_json() {
         assert_eq!(parsed["summary"]["broken_promises"], 1);
         assert!(parsed["intervals"].is_array());
     }
+}
+
+#[test]
+fn command_text_is_full_and_output_is_opt_in() {
+    let repo = TempRepo::new("receipt-output");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", &SessionBuilder::default_body("a.txt"));
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "land a"],
+        Some("2026-03-01T10:05:00Z"),
+    );
+
+    // A multi-line command whose display summary (first meaningful line) is a
+    // strict prefix of the full text — so we can tell truncation from whole.
+    let full_cmd = "cd repo\n# stage and commit\ngit add -A && git commit -m 'land a'";
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-03-01T10:00:00Z", "go")
+        .write_claim("2026-03-01T10:01:00Z", "2026-03-01T10:01:01Z", "a.txt")
+        .bash_claim_with_output(
+            "2026-03-01T10:04:00Z",
+            "2026-03-01T10:05:01Z",
+            full_cmd,
+            "created commit abc123",
+        );
+    let (session, stats, a) = audit(&repo, &s);
+
+    // The full command survives — comment line and all — not just a summary.
+    let cmd = |r: &Receipt| -> String {
+        r.intervals
+            .iter()
+            .flat_map(|i| i.commands.runs.iter())
+            .map(|c| c.command.clone())
+            .find(|c| c.contains("git commit"))
+            .expect("the commit command run")
+    };
+
+    let without = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false);
+    assert_eq!(cmd(&without), full_cmd, "full multi-line command retained");
+    let no_output = without
+        .intervals
+        .iter()
+        .flat_map(|i| i.commands.runs.iter())
+        .all(|c| c.output.is_none());
+    assert!(no_output, "output omitted by default");
+
+    let with = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, true);
+    let out = with
+        .intervals
+        .iter()
+        .flat_map(|i| i.commands.runs.iter())
+        .find_map(|c| c.output.as_ref())
+        .expect("output present under --with-output");
+    assert_eq!(out.text, "created commit abc123");
+    assert!(!out.is_error);
 }

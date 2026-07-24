@@ -1,7 +1,7 @@
 //! The data types the interval equation produces — the audit result and
 //! everything hanging off it. No logic here beyond trivial accessors.
 
-use crate::extract::Radius;
+use crate::extract::{Radius, Receipt};
 use crate::gitio::{FileChange, SpineCommit};
 
 /// Evidence grade for an effectful claim.
@@ -62,12 +62,18 @@ pub struct Superseded {
 /// One effectful command that ran in an interval, for the drill-down.
 #[derive(Debug)]
 pub struct CommandRun {
-    /// First line of the command, truncated for display.
-    pub summary: String,
+    /// The full command text. The console/HTML views truncate it to a
+    /// one-line summary (`fmt::command_summary`); the JSON receipt keeps it
+    /// whole — it is the actual claim, and the only evidence for the
+    /// un-verifiable tail (network calls, deploys).
+    pub command: String,
     pub radius: Option<Radius>,
     pub committed: bool,
     pub pushed: bool,
     pub failed: bool,
+    /// The command's captured output, when the log carried one. Held for the
+    /// receipt's opt-in `--with-output`; the reports never render it.
+    pub output: Option<Receipt>,
 }
 
 #[derive(Debug)]

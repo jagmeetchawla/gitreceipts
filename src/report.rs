@@ -4,7 +4,7 @@
 use std::io::IsTerminal;
 
 use crate::extract::Session;
-use crate::fmt::{abbrev, redact_home, tilde};
+use crate::fmt::{abbrev, command_summary, redact_home, tilde};
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Interval, Status};
 
@@ -664,7 +664,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
             println!(
                 "      {} {}{}",
                 st.dim(&format!("$ [{rad}]")),
-                redact_home(&cr.summary),
+                redact_home(&command_summary(&cr.command)),
                 st.yellow(&flags)
             );
         }

@@ -14,6 +14,7 @@
 use serde::Serialize;
 
 use crate::extract::Session;
+use crate::fmt::redact_home;
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Interval, Landing, Status};
 
@@ -194,12 +195,25 @@ pub struct Commands {
 
 #[derive(Debug, Serialize)]
 pub struct CommandRunReceipt {
-    pub summary: String,
+    /// The full command text (the reports show a one-line summary; the
+    /// receipt keeps it whole).
+    pub command: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub radius: Option<String>,
     pub committed: bool,
     pub pushed: bool,
     pub failed: bool,
+    /// Captured output — present only under `--with-output`. This is the
+    /// agent's own receipt for the un-verifiable tail, not proof.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<CommandOutput>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandOutput {
+    pub is_error: bool,
+    /// Capped at 64 KB upstream (in extract).
+    pub text: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -268,6 +282,8 @@ pub struct Tail {
 impl Receipt {
     /// Build the receipt from a completed audit. `show_intent` false drops the
     /// quoted prompt text (matching `--no-intent`) while keeping every count.
+    /// `with_output` includes each command's captured output; off by default,
+    /// because output is bulky and rebloats the receipt toward the raw log.
     pub fn build(
         session_name: &str,
         repo: &str,
@@ -275,6 +291,7 @@ impl Receipt {
         stats: &IngestStats,
         audit: &Audit,
         show_intent: bool,
+        with_output: bool,
     ) -> Receipt {
         let window = match (session.first_ts, session.last_ts) {
             (Some(a), Some(b)) => {
@@ -292,7 +309,7 @@ impl Receipt {
         let intervals: Vec<IntervalReceipt> = audit
             .intervals
             .iter()
-            .map(|i| interval_receipt(i, show_intent))
+            .map(|i| interval_receipt(i, show_intent, with_output))
             .collect();
 
         let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
@@ -377,7 +394,10 @@ impl Receipt {
             },
             source: Source {
                 session: session_name.to_string(),
-                repo: repo.to_string(),
+                // Collapse home to ~ everywhere a path can carry it — the
+                // receipt is meant to be committed/shared, and this matches
+                // the console's privacy default.
+                repo: redact_home(repo),
                 window,
                 branches: session.branches.clone(),
                 ingest: Ingest {
@@ -395,12 +415,12 @@ impl Receipt {
                     .tail_claims
                     .iter()
                     .map(|(path, edits)| FileClaim {
-                        path: path.clone(),
+                        path: redact_home(path),
                         edits: *edits,
                     })
                     .collect(),
                 intents: if show_intent {
-                    audit.tail_intents.clone()
+                    audit.tail_intents.iter().map(|s| redact_home(s)).collect()
                 } else {
                     Vec::new()
                 },
@@ -409,7 +429,7 @@ impl Receipt {
                 .out_of_repo
                 .iter()
                 .map(|(path, edits)| FileClaim {
-                    path: path.clone(),
+                    path: redact_home(path),
                     edits: *edits,
                 })
                 .collect(),
@@ -426,7 +446,7 @@ impl Receipt {
     }
 }
 
-fn interval_receipt(i: &Interval, show_intent: bool) -> IntervalReceipt {
+fn interval_receipt(i: &Interval, show_intent: bool, with_output: bool) -> IntervalReceipt {
     let c = &i.commit;
     IntervalReceipt {
         commit: CommitReceipt {
@@ -448,7 +468,7 @@ fn interval_receipt(i: &Interval, show_intent: bool) -> IntervalReceipt {
         pushed: i.pushed,
         spine_jump: i.spine_jump,
         intents: if show_intent {
-            i.intents.clone()
+            i.intents.iter().map(|s| redact_home(s)).collect()
         } else {
             Vec::new()
         },
@@ -459,11 +479,19 @@ fn interval_receipt(i: &Interval, show_intent: bool) -> IntervalReceipt {
                 .commands_run
                 .iter()
                 .map(|r| CommandRunReceipt {
-                    summary: r.summary.clone(),
+                    command: redact_home(&r.command),
                     radius: r.radius.as_ref().map(|rad| rad.to_string()),
                     committed: r.committed,
                     pushed: r.pushed,
                     failed: r.failed,
+                    output: if with_output {
+                        r.output.as_ref().map(|o| CommandOutput {
+                            is_error: o.is_error,
+                            text: redact_home(&o.text),
+                        })
+                    } else {
+                        None
+                    },
                 })
                 .collect(),
         },

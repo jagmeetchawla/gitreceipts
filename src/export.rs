@@ -13,6 +13,7 @@ use gitreceipts::receipt::Receipt;
 
 use crate::audit::{self, Loaded};
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     sessions: Vec<PathBuf>,
     latest: bool,
@@ -20,6 +21,7 @@ pub fn run(
     repo: Option<PathBuf>,
     store: Option<PathBuf>,
     show_intent: bool,
+    with_output: bool,
     pretty: bool,
 ) -> Result<()> {
     let Loaded {
@@ -30,7 +32,15 @@ pub fn run(
         audit,
     } = audit::load(sessions, latest, all, repo, store)?;
 
-    let receipt = Receipt::build(&name, &repo_display, &session, &stats, &audit, show_intent);
+    let receipt = Receipt::build(
+        &name,
+        &repo_display,
+        &session,
+        &stats,
+        &audit,
+        show_intent,
+        with_output,
+    );
     println!("{}", receipt.to_json(pretty)?);
     Ok(())
 }

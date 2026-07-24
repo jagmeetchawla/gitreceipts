@@ -215,24 +215,13 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                         audit.intervals[idx].effectful_commands += 1;
                         cmd_corpus[idx].push(command.clone());
                     }
-                    // Show the first line that actually does something —
-                    // skip `cd`, comments, and blanks that a scripted Bash
-                    // call opens with.
-                    let meaningful = command.lines().map(str::trim).find(|l| {
-                        !l.is_empty() && !l.starts_with('#') && *l != "cd" && !l.starts_with("cd ")
-                    });
-                    let summary: String = meaningful
-                        .or_else(|| command.lines().map(str::trim).find(|l| !l.is_empty()))
-                        .unwrap_or("")
-                        .chars()
-                        .take(140)
-                        .collect();
                     audit.intervals[idx].commands_run.push(CommandRun {
-                        summary,
+                        command: command.clone(),
                         radius: *radius,
                         committed: commit_count > 0,
                         pushed: has_push,
                         failed,
+                        output: claim.receipt.clone(),
                     });
                 }
                 let mut corroborated = false;

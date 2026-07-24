@@ -20,6 +20,23 @@ pub fn redact_home(s: &str) -> String {
     }
 }
 
+/// A one-line display summary of a shell command: the first line that
+/// actually does something — skipping `cd`, comments, and the blank lines a
+/// scripted Bash call opens with — truncated to fit a report row. The full
+/// command is preserved in the data model (and the JSON receipt); this is
+/// only for the console/HTML views.
+pub fn command_summary(command: &str) -> String {
+    command
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#') && *l != "cd" && !l.starts_with("cd "))
+        .or_else(|| command.lines().map(str::trim).find(|l| !l.is_empty()))
+        .unwrap_or("")
+        .chars()
+        .take(140)
+        .collect()
+}
+
 /// Abbreviate a large count: 4_997_300 → "5.0M", 125_368 → "125K".
 pub fn abbrev(n: u64) -> String {
     match n {

@@ -133,7 +133,8 @@ EXAMPLES:
   git receipts export --latest > receipt.json     newest session, pretty JSON
   git receipts export --latest --compact          single-line JSON, for streaming
   git receipts export --all --repo ~/app          every session for a repo, merged
-  git receipts export --latest --no-intent        drop quoted prompts, keep counts"
+  git receipts export --latest --no-intent        drop quoted prompts, keep counts
+  git receipts export --latest --with-output       include each command's output"
     )]
     Export {
         /// Paths to session .jsonl files (or use --latest / --all).
@@ -157,6 +158,11 @@ EXAMPLES:
         /// before committing or sharing a receipt.
         #[arg(long)]
         no_intent: bool,
+        /// Include each command's captured output (its stdout/stderr as
+        /// logged). Off by default — output is bulky and rebloats the
+        /// receipt; the command text is always present regardless.
+        #[arg(long)]
+        with_output: bool,
         /// Emit single-line JSON instead of indented (for streaming/piping).
         #[arg(long)]
         compact: bool,
@@ -210,7 +216,17 @@ fn main() -> Result<()> {
             repo,
             store,
             no_intent,
+            with_output,
             compact,
-        } => export::run(sessions, latest, all, repo, store, !no_intent, !compact),
+        } => export::run(
+            sessions,
+            latest,
+            all,
+            repo,
+            store,
+            !no_intent,
+            with_output,
+            !compact,
+        ),
     }
 }
