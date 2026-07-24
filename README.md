@@ -61,6 +61,30 @@ intent → outcome
 That last line above the identity block is the point. Zero is not
 assumed — it is earned against the repo's own receipts.
 
+## Why git — and where it stops
+
+For a coding agent the **deliverable is code, and code lives in git.**
+Everything else the agent does — reading, searching, building, testing,
+`curl`-ing a doc, installing a dep — is scaffolding *toward* that code,
+not the product. So git isn't a narrow corner of the work; it's the
+output, the thing that survives the session. Even most side-effects
+leave their durable form in git: a deploy is ephemeral, but the
+pipeline or script that ran it is a commit. And the trend runs the
+tool's way — GitOps, infra-as-code, config-as-code keep moving
+deliverables *into* git.
+
+Two frontiers it honestly does **not** cross:
+- **Transient side-effects** — a network call, a deploy, a write
+  outside the repo. git can't witness the effect, so it's shown as
+  blast radius plus the command's own captured output, never as proof.
+  (The *source* — the code that did it — usually is in git.)
+- **Data as the deliverable** — when the product is processed or
+  synthesized *data*, git usually doesn't hold it: it lives in a data
+  store, a database, or a `.gitignored` directory. git-lfs doesn't
+  close this — it keeps only a pointer, so the tool sees *that* the
+  file changed, not *what* the data is. For data work the tool audits
+  the pipeline code; it can't verify the dataset, and it says so.
+
 ## How it works
 
 Think of it as bank reconciliation for agent work:
