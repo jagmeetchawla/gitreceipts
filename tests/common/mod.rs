@@ -31,9 +31,18 @@ impl TempRepo {
 
     /// Run git with a pinned author+committer date, so tests control the
     /// commit timestamps the spine is built from.
+    ///
+    /// Tests are hermetic: global and system git config are neutralized
+    /// (via `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM=/dev/null`) so a
+    /// developer's `commit.gpgsign`, signing agent, or `core.hooksPath`
+    /// can't hang or fail a temp-repo commit.
     pub fn git_at(&self, args: &[&str], date: Option<&str>) {
         let mut cmd = Command::new("git");
-        cmd.arg("-C").arg(&self.root).args(args);
+        cmd.arg("-C")
+            .arg(&self.root)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .args(args);
         if let Some(d) = date {
             cmd.env("GIT_AUTHOR_DATE", d).env("GIT_COMMITTER_DATE", d);
         }
