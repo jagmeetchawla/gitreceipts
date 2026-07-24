@@ -75,11 +75,17 @@ deliverables *into* git.
 
 Where it stops, honestly:
 - **Side-effects whose source is still code** — CI/CD (the workflow
-  YAML), infrastructure (the Terraform/Pulumi), a scripted deploy or
-  API client. The *source of truth* is committed and audited; only the
-  *run* — the pipeline execution, the `apply`, the request — happens
-  off-machine, shown as blast radius plus captured output, not proof.
-  For declarative IaC the git source literally *is* the intended state.
+  YAML), infrastructure (the Terraform/Pulumi), an automated test
+  suite, a scripted deploy or API client. The *source of truth* is
+  committed and audited; only the *run* — the pipeline, the `apply`,
+  the test execution, the request — happens off-process, shown as blast
+  radius plus captured output, not proof. For declarative IaC the git
+  source literally *is* the intended state. A committed test suite is
+  the best case — it's not just source, it's a re-runnable verifier —
+  but git can only witness that a test **landed**, never that it
+  **passed** (that's self-reported output) or that it's **meaningful**
+  (a committed `assert!(true)` lands fine): landing is git's to prove,
+  green-ness and quality are the reviewer's.
 - **The irreducible tail** — a one-shot side-effecting command: a
   manual `curl -X POST`, a `psql UPDATE`, an `aws s3 cp`, never
   scripted, leaving nothing in git. No post-hoc audit of git can *ever*
