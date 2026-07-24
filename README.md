@@ -6,6 +6,18 @@ the agent can't fabricate after the fact. **gitreceipts** reads your
 Claude Code session alongside the repo and reconciles the two, claim by
 claim, against that record. Not the agent's word. Git's.
 
+**When you'd reach for it** — two moments especially, both where you
+can't just reconstruct what happened by hand:
+- **Unattended runs.** Overnight autonomy, long agentic sessions,
+  background or scheduled agents — you weren't watching, and you can't
+  replay what you didn't see. You come back to a stack of commits and
+  need a trustworthy account of what actually happened.
+- **Looking back.** Work from a while ago, where your own memory has
+  faded and the raw session — tens of megabytes, if it even survived —
+  is impractical to trawl. git still holds the truth; gitreceipts
+  distills what you *asked* and what the agent *did* into a receipt you
+  can actually read.
+
 Reconciliation runs both directions, and both get billing:
 - **Claimed → didn't land** — the agent said it, git never got it. If
   nothing explains it, that's a **broken promise**.
