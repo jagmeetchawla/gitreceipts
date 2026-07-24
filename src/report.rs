@@ -577,6 +577,16 @@ pub fn list(
     }
     println!();
 
+    // Column header, aligned to the rows below: hash(7) + mark(1) fold into a
+    // 9-wide "commit", then the 52-wide subject, then the counts and notes.
+    println!(
+        "{}",
+        st.dim(&format!(
+            "{:<9} {:<52}  {}",
+            "commit", "subject", "landed/claimed  notes"
+        ))
+    );
+
     for iv in &audit.intervals {
         if !filter.keeps(iv.status()) {
             continue;
