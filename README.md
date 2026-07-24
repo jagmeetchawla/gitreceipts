@@ -243,9 +243,9 @@ ledger is a later layer, not a v0.1 concern.
 Everything runs locally; nothing leaves your machine. The report
 prints repo-relative paths (your home directory collapses to `~`),
 branch names, commit subjects, and — because intent matters — the
-prompts you typed, attached to the commits they drove. Prompts are
-where pasted secrets live, so `--no-intent` drops the quoted text
-while keeping the counts. Session files are treated as untrusted
+prompts you typed, attached to the commits they drove. Use
+`--no-intent` to drop the quoted text while keeping the counts, e.g.
+before sharing a report. Session files are treated as untrusted
 input: paths from the log never reach git as options, traversal is
 rejected, and a multi-gigabyte line won't take down the process.
 

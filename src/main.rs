@@ -87,8 +87,8 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
         color: report::ColorMode,
         /// Suppress the quoted prompt text on intent lines (counts stay).
-        /// Prompts are where pasted secrets live; use this before sharing
-        /// a report from a session you don't fully remember.
+        /// Use this before sharing a report from a session you don't
+        /// fully remember.
         #[arg(long)]
         no_intent: bool,
         /// Which intervals to list: all, red (broken promises only), or
