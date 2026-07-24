@@ -512,8 +512,9 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
     } else {
         ""
     };
-    let mut subject = interval.commit.subject.clone();
-    subject.truncate(56);
+    // char-safe: byte truncate() panics mid-multibyte (emoji/accent in a
+    // commit subject) — a real crash found dogfooding.
+    let subject: String = interval.commit.subject.chars().take(56).collect();
     println!(
         "{mark} {} {} {}{}{}{}",
         interval.commit.short,

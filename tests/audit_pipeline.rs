@@ -10,7 +10,7 @@ mod common;
 
 use common::{SessionBuilder, TempRepo};
 use gitreceipts::reconcile::{Landing, Status};
-use gitreceipts::{causal, extract, html, ingest, reconcile};
+use gitreceipts::{causal, extract, html, ingest, reconcile, report};
 
 fn build_session(root: &str) -> SessionBuilder {
     let mut s = SessionBuilder::new(root);
@@ -309,5 +309,57 @@ fn command_text_home_paths_are_redacted_in_html() {
     assert!(
         !out.contains(&home),
         "raw home path must not appear in the report"
+    );
+}
+
+#[test]
+fn multibyte_commit_subject_does_not_panic_the_console_report() {
+    // A commit subject with a multibyte char (em-dash, 3 bytes) straddling
+    // the 56-byte truncation boundary crashed byte-based `truncate()` —
+    // found by dogfooding a real repo. The console render must be char-safe.
+    let repo = TempRepo::new("multibyte");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    let subject = format!("{}\u{2014}tail past the truncation window", "x".repeat(55));
+    repo.commit_as("t", "t@t", "2026-01-01T10:00:20+00:00", &subject, None);
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add -A && git commit -m x",
+        );
+    let path = repo.root.join("s.jsonl");
+    s.save(&path);
+    let (records, stats) = ingest::ingest(&path).unwrap();
+    let session = extract::extract(&causal::order(records));
+    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+
+    report::print(
+        "sess",
+        &root,
+        &session,
+        &stats,
+        &audit,
+        &report::Options {
+            color: report::ColorMode::Never,
+            show_intent: true,
+            filter: report::Filter::All,
+            format: report::Format::Text,
+            expand: report::Expand::Auto,
+            verbose: true,
+        },
+    );
+    let _ = html::render(
+        "sess",
+        &root,
+        &session,
+        &stats,
+        &audit,
+        true,
+        report::Expand::All,
     );
 }
