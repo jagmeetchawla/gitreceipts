@@ -184,13 +184,13 @@ planned.
 ## Usage
 
 ```sh
-# list the commit spine — one line per commit, lspci-style
-git receipts list --latest
-
 # audit the most recent session for the repo you're in
 git receipts audit --latest
 
-# scope to a single commit (short hash from `list`) — lspci -s style
+# the commit spine, one line per commit (git log --oneline style)
+git receipts audit --latest --oneline
+
+# scope to a single commit (short hash from --oneline) — lspci -s style
 git receipts audit --latest --commit 6d6cdc4
 git receipts export --latest --commit 6d6cdc4
 

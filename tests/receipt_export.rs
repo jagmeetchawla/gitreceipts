@@ -76,6 +76,7 @@ fn receipt_headline_numbers_mirror_the_audit() {
         true,
         false,
         None,
+        gitreceipts::report::Filter::All,
     );
 
     assert_eq!(r.schema_version, SCHEMA_VERSION);
@@ -112,6 +113,7 @@ fn broken_promise_is_flagged_at_the_ledger_line() {
         true,
         false,
         None,
+        gitreceipts::report::Filter::All,
     );
 
     let broken: Vec<&str> = r
@@ -143,6 +145,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
         true,
         false,
         None,
+        gitreceipts::report::Filter::All,
     );
     let redacted = Receipt::build(
         "session",
@@ -153,6 +156,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
         false,
         false,
         None,
+        gitreceipts::report::Filter::All,
     );
 
     let intent_strings =
@@ -180,6 +184,7 @@ fn receipt_round_trips_as_valid_json() {
         true,
         false,
         None,
+        gitreceipts::report::Filter::All,
     );
 
     for pretty in [true, false] {
@@ -226,7 +231,17 @@ fn command_text_is_full_and_output_is_opt_in() {
             .expect("the commit command run")
     };
 
-    let without = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false, None);
+    let without = Receipt::build(
+        "s",
+        "/tmp/r",
+        &session,
+        &stats,
+        &a,
+        true,
+        false,
+        None,
+        gitreceipts::report::Filter::All,
+    );
     assert_eq!(cmd(&without), full_cmd, "full multi-line command retained");
     let no_output = without
         .intervals
@@ -235,7 +250,17 @@ fn command_text_is_full_and_output_is_opt_in() {
         .all(|c| c.output.is_none());
     assert!(no_output, "output omitted by default");
 
-    let with = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, true, None);
+    let with = Receipt::build(
+        "s",
+        "/tmp/r",
+        &session,
+        &stats,
+        &a,
+        true,
+        true,
+        None,
+        gitreceipts::report::Filter::All,
+    );
     let out = with
         .intervals
         .iter()
@@ -261,6 +286,7 @@ fn commit_scope_filters_intervals_but_keeps_the_whole_session_summary() {
         true,
         false,
         Some(&target),
+        gitreceipts::report::Filter::All,
     );
     // Only the scoped commit is in the intervals array…
     assert_eq!(r.intervals.len(), 1);
@@ -305,7 +331,17 @@ fn a_failed_command_carries_output_by_default() {
     let (session, stats, a) = audit(&repo, &s);
 
     // Default (with_output = false): only the failed command carries output.
-    let r = Receipt::build("s", "/tmp/r", &session, &stats, &a, true, false, None);
+    let r = Receipt::build(
+        "s",
+        "/tmp/r",
+        &session,
+        &stats,
+        &a,
+        true,
+        false,
+        None,
+        gitreceipts::report::Filter::All,
+    );
     let with_out: Vec<(&str, bool)> = r
         .intervals
         .iter()

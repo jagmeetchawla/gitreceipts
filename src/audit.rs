@@ -38,7 +38,7 @@ pub fn resolve_commit(audit: &Audit, needle: &str) -> Result<String> {
         .collect();
     match matches.as_slice() {
         [] => bail!(
-            "no commit matching '{needle}' in the audited spine — run `git receipts list` to see the commits"
+            "no commit matching '{needle}' in the audited spine — run `git receipts audit --oneline` to see the commits"
         ),
         [one] => Ok((*one).to_string()),
         many => bail!(

@@ -17,6 +17,7 @@ use crate::extract::Session;
 use crate::fmt::redact_home;
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Interval, Landing, Status};
+use crate::report::Filter;
 
 /// Receipt schema version, independent of the tool version. Pre-1.0 and
 /// expected to evolve: the shape is not yet stable, so consumers should not
@@ -296,6 +297,7 @@ impl Receipt {
         show_intent: bool,
         with_output: bool,
         commit: Option<&str>,
+        filter: Filter,
     ) -> Receipt {
         let window = match (session.first_ts, session.last_ts) {
             (Some(a), Some(b)) => {
@@ -310,12 +312,14 @@ impl Receipt {
             _ => None,
         };
 
-        // Scope the intervals to one commit when asked; the summary below is
-        // still computed over the whole session, matching the console.
+        // Scope the intervals to one commit and/or a status filter when asked;
+        // the summary below is still computed over the whole session, matching
+        // the console.
         let intervals: Vec<IntervalReceipt> = audit
             .intervals
             .iter()
             .filter(|i| commit.is_none_or(|h| i.commit.hash == h))
+            .filter(|i| filter.keeps(i.status()))
             .map(|i| interval_receipt(i, show_intent, with_output))
             .collect();
 

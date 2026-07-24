@@ -32,7 +32,7 @@ pub enum Filter {
 }
 
 impl Filter {
-    fn keeps(self, status: Status) -> bool {
+    pub fn keeps(self, status: Status) -> bool {
         match self {
             Filter::All => true,
             Filter::Red => status == Status::Red,
@@ -79,6 +79,9 @@ pub struct Options {
     /// header, summary, and balance still cover the whole session; only the
     /// listed intervals are restricted to this one commit.
     pub commit: Option<String>,
+    /// Terse spine: one line per commit after the session summary, instead of
+    /// the full per-commit drill-down (like `git log --oneline`).
+    pub oneline: bool,
 }
 
 /// The 7-char short form of a full commit hash, for display.
@@ -144,6 +147,20 @@ pub fn print(
         tilde(repo),
         session.branches.join(", ")
     );
+
+    // Scoped to one commit (--commit): show only that commit's block — none of
+    // the session-wide summary above it. lspci -s: just the addressed device.
+    if let Some(h) = &opts.commit {
+        let enriched = audit.intervals.iter().any(|i| !i.commit.from_history);
+        for interval in &audit.intervals {
+            if &interval.commit.hash == h {
+                println!();
+                render_interval(&st, interval, opts, enriched);
+            }
+        }
+        return;
+    }
+
     if let (Some(a), Some(b)) = (session.first_ts, session.last_ts) {
         let dur = b - a;
         println!(
@@ -467,14 +484,27 @@ pub fn print(
         ))
     );
 
-    for interval in &audit.intervals {
-        if let Some(h) = &opts.commit
-            && &interval.commit.hash != h
-        {
-            continue;
+    // --commit scoping returned early above, so `opts.commit` is None here.
+    if opts.oneline {
+        // Terse spine: a column header, then one line per commit — the
+        // session summary above already gives the totals (git log --oneline).
+        println!(
+            "{}",
+            st.dim(&format!(
+                "{:<9} {:<52}  {}",
+                "commit", "subject", "landed/claimed  notes"
+            ))
+        );
+        for interval in &audit.intervals {
+            if opts.filter.keeps(interval.status()) {
+                render_oneline_row(&st, interval);
+            }
         }
-        if opts.filter.keeps(interval.status()) {
-            render_interval(&st, interval, opts, enriched);
+    } else {
+        for interval in &audit.intervals {
+            if opts.filter.keeps(interval.status()) {
+                render_interval(&st, interval, opts, enriched);
+            }
         }
     }
 
@@ -502,130 +532,44 @@ pub fn print(
     );
 }
 
-/// The `list` view: a two-line session summary, then one line per commit in
-/// the spine — the address bus. Each row is the commit's short hash (the
-/// handle you pass to `--commit`), its status mark, subject, landed/claimed
-/// count, and residue/broken hints. Terse and pipeable, like `lspci`.
-pub fn list(
-    session_name: &str,
-    repo: &str,
-    session: &Session,
-    audit: &Audit,
-    color: ColorMode,
-    filter: Filter,
-) {
-    let st = Style::new(color);
-    let total = audit.intervals.len();
-    let green = audit.intervals.iter().filter(|i| i.balanced()).count();
-    let residue_n = audit
-        .intervals
+/// One `--oneline` spine row: the commit's short hash (the handle for
+/// `--commit`), its status mark, subject, landed/claimed count, and
+/// broken (✘N) / residue (●N) hints. Column-aligned to the header above.
+fn render_oneline_row(st: &Style, iv: &Interval) {
+    let (mark, paint): (&str, fn(&Style, &str) -> String) = match iv.status() {
+        Status::Green => ("✔", Style::green),
+        Status::ResidueOnly => ("!", Style::yellow),
+        Status::Red => ("✘", Style::red),
+    };
+    let claimed = iv.ledger.len();
+    let landed = iv
+        .ledger
         .iter()
-        .filter(|i| i.status() == Status::ResidueOnly)
-        .count();
-    let red_n = audit
-        .intervals
-        .iter()
-        .filter(|i| i.status() == Status::Red)
-        .count();
-    let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
-    let claims_landed: usize = audit
-        .intervals
-        .iter()
-        .flat_map(|i| i.ledger.iter())
         .filter(|l| l.landing != crate::reconcile::Landing::Never)
         .count();
-    let broken: usize = audit
-        .intervals
-        .iter()
-        .flat_map(|i| i.never_landed())
-        .count();
-    let pct = |n: usize, d: usize| {
-        if d == 0 {
-            100.0
-        } else {
-            100.0 * n as f64 / d as f64
-        }
-    };
-
-    println!("{}", st.bold(&format!("git receipts — {session_name}")));
-    println!(
-        "repo: {}   branches seen: {}",
-        tilde(repo),
-        session.branches.join(", ")
-    );
-    println!(
-        "{total} commits · {} · {} · {} · {claims_landed}/{claims_total} claims landed ({:.0}%) · {}",
-        st.green(&format!("{green} green")),
-        st.yellow(&format!("{residue_n} residue")),
-        st.red(&format!("{red_n} red")),
-        pct(claims_landed, claims_total),
-        if broken == 0 {
-            st.green("0 broken promises")
-        } else {
-            st.red(&format!("{broken} broken promises"))
-        },
-    );
-    let tk = &session.tokens;
-    if tk.requests > 0 {
-        println!(
-            "{} prompts · {} commands · ~{} output tokens {}",
-            audit.prompts,
-            audit.commands,
-            abbrev(tk.output),
-            st.dim("(est.)")
-        );
+    let n_broken = iv.never_landed().count();
+    let residue = iv.residue.len();
+    // char-safe truncate + pad so the count column aligns (byte ops panic
+    // mid-multibyte — a real crash found dogfooding).
+    let subject: String = iv.commit.subject.chars().take(52).collect();
+    let pad = 52usize.saturating_sub(subject.chars().count());
+    let mut hints = String::new();
+    if n_broken > 0 {
+        hints.push_str(&format!("  {}", st.red(&format!("✘{n_broken}"))));
     }
-    println!();
-
-    // Column header, aligned to the rows below: hash(7) + mark(1) fold into a
-    // 9-wide "commit", then the 52-wide subject, then the counts and notes.
-    println!(
-        "{}",
-        st.dim(&format!(
-            "{:<9} {:<52}  {}",
-            "commit", "subject", "landed/claimed  notes"
-        ))
-    );
-
-    for iv in &audit.intervals {
-        if !filter.keeps(iv.status()) {
-            continue;
-        }
-        let (mark, paint): (&str, fn(&Style, &str) -> String) = match iv.status() {
-            Status::Green => ("✔", Style::green),
-            Status::ResidueOnly => ("!", Style::yellow),
-            Status::Red => ("✘", Style::red),
-        };
-        let claimed = iv.ledger.len();
-        let landed = iv
-            .ledger
-            .iter()
-            .filter(|l| l.landing != crate::reconcile::Landing::Never)
-            .count();
-        let n_broken = iv.never_landed().count();
-        let residue = iv.residue.len();
-        // char-safe truncate + pad so the count column aligns (byte ops panic
-        // mid-multibyte — a real crash found dogfooding).
-        let subject: String = iv.commit.subject.chars().take(52).collect();
-        let pad = 52usize.saturating_sub(subject.chars().count());
-        let mut hints = String::new();
-        if n_broken > 0 {
-            hints.push_str(&format!("  {}", st.red(&format!("✘{n_broken}"))));
-        }
-        if residue > 0 {
-            hints.push_str(&format!("  {}", st.yellow(&format!("●{residue}"))));
-        }
-        println!(
-            "{} {} {}{}  {}/{}{}",
-            st.cyan(&iv.commit.short),
-            paint(&st, mark),
-            subject,
-            " ".repeat(pad),
-            landed,
-            claimed,
-            hints,
-        );
+    if residue > 0 {
+        hints.push_str(&format!("  {}", st.yellow(&format!("●{residue}"))));
     }
+    println!(
+        "{} {} {}{}  {}/{}{}",
+        st.cyan(&iv.commit.short),
+        paint(st, mark),
+        subject,
+        " ".repeat(pad),
+        landed,
+        claimed,
+        hints,
+    );
 }
 
 /// Render one interval's block: the commit line, its tags, intent, the

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use gitreceipts::receipt::Receipt;
+use gitreceipts::report::Filter;
 
 use crate::audit::{self, Loaded};
 
@@ -21,6 +22,7 @@ pub fn run(
     repo: Option<PathBuf>,
     store: Option<PathBuf>,
     show_intent: bool,
+    filter: Filter,
     with_output: bool,
     commit: Option<String>,
     pretty: bool,
@@ -48,6 +50,7 @@ pub fn run(
         show_intent,
         with_output,
         commit.as_deref(),
+        filter,
     );
     println!("{}", receipt.to_json(pretty)?);
     Ok(())

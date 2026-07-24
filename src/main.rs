@@ -2,7 +2,6 @@
 
 mod audit;
 mod export;
-mod list;
 mod pager;
 
 use std::path::PathBuf;
@@ -53,6 +52,8 @@ blast radius, never as proof.",
         after_long_help = "\
 EXAMPLES:
   git receipts audit --latest                audit the newest session for this repo
+  git receipts audit --latest --oneline      the commit spine, one line per commit
+  git receipts audit --latest --commit 6d6cdc4  drill into a single commit
   git receipts audit --all                   merge every session the store has for it
   git receipts audit sess.jsonl --repo ~/app a specific session vs a specific repo
   git receipts audit --latest --filter red   only the broken promises
@@ -105,6 +106,11 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// (findings open, balanced collapsed), all, or none.
         #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
         expand: report::Expand,
+        /// Terse spine: the session summary, then one line per commit —
+        /// short hash, status, subject, landed/claimed — instead of the full
+        /// per-commit drill-down. Like `git log --oneline`. Console only.
+        #[arg(long)]
+        oneline: bool,
         /// Console: print each commit's full anatomy — files added/
         /// modified/deleted/renamed and the commands that ran.
         #[arg(short, long)]
@@ -116,7 +122,7 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         #[arg(long)]
         with_output: bool,
         /// Scope the drill-down to a single commit (short or full hash),
-        /// `lspci -s` style — see `git receipts list` for the hashes. The
+        /// `lspci -s` style — see `audit --oneline` for the hashes. The
         /// header, summary, and balance still cover the whole session.
         /// Implies --verbose for the console.
         #[arg(long, value_name = "REF")]
@@ -171,6 +177,11 @@ EXAMPLES:
         /// before committing or sharing a receipt.
         #[arg(long)]
         no_intent: bool,
+        /// Which intervals to include: all, red (broken promises only), or
+        /// red-residue (red plus unclaimed-change intervals). The summary
+        /// still covers the whole session.
+        #[arg(long, value_enum, default_value_t = report::Filter::All)]
+        filter: report::Filter,
         /// Include every command's captured output (stdout/stderr as logged).
         /// By default only FAILED commands carry output — output is bulky and
         /// rebloats the receipt, but a failure's is worth keeping. The command
@@ -185,46 +196,6 @@ EXAMPLES:
         /// Emit single-line JSON instead of indented (for streaming/piping).
         #[arg(long)]
         compact: bool,
-    },
-    /// List the commit spine — one line per commit, with a session summary.
-    #[command(
-        long_about = "\
-List the commit spine — one line per commit, like `lspci` over the address bus.
-
-Prints a two-line session summary, then one row per commit: its short hash,
-status (✔ green · ! residue · ✘ red), subject, landed/claimed count, and any
-broken (✘N) or residue (●N) hints. The short hash is the handle you pass to
-`audit --commit <ref>` or `export --commit <ref>` to drill into one commit.",
-        after_long_help = "\
-EXAMPLES:
-  git receipts list --latest                 the spine for the newest session
-  git receipts list --latest --filter red    only commits with broken promises
-  git receipts list --all --repo ~/app       every session for a repo, merged"
-    )]
-    List {
-        /// Paths to session .jsonl files (or use --latest / --all).
-        sessions: Vec<PathBuf>,
-        /// List the spine for the most recent session for the repo.
-        #[arg(long)]
-        latest: bool,
-        /// Merge every session the store still has for this repo.
-        #[arg(long)]
-        all: bool,
-        /// Repo to reconcile against (default: cwd recorded in the session).
-        #[arg(long)]
-        repo: Option<PathBuf>,
-        /// Claude data directory holding the session store (default: ~/.claude).
-        #[arg(long)]
-        store: Option<PathBuf>,
-        /// When to emit ANSI colors: auto, always, or never.
-        #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
-        color: report::ColorMode,
-        /// Which commits to list: all, red (broken promises), or red-residue.
-        #[arg(long, value_enum, default_value_t = report::Filter::All)]
-        filter: report::Filter,
-        /// Don't page through $PAGER, even on a terminal.
-        #[arg(long)]
-        no_pager: bool,
     },
 }
 
@@ -250,6 +221,7 @@ fn main() -> Result<()> {
             filter,
             format,
             expand,
+            oneline,
             verbose,
             with_output,
             commit,
@@ -272,6 +244,7 @@ fn main() -> Result<()> {
                 verbose: verbose || with_output || commit.is_some(),
                 with_output,
                 commit: None,
+                oneline,
             },
             commit,
         ),
@@ -282,6 +255,7 @@ fn main() -> Result<()> {
             repo,
             store,
             no_intent,
+            filter,
             with_output,
             commit,
             compact,
@@ -292,19 +266,10 @@ fn main() -> Result<()> {
             repo,
             store,
             !no_intent,
+            filter,
             with_output,
             commit,
             !compact,
         ),
-        Cmd::List {
-            sessions,
-            latest,
-            all,
-            repo,
-            store,
-            color,
-            filter,
-            no_pager,
-        } => list::run(sessions, latest, all, repo, store, no_pager, color, filter),
     }
 }
