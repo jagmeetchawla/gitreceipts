@@ -302,9 +302,19 @@ pub fn print(
             parts.join(" · ")
         );
     }
+    // Split the genuine residue by WHO: a change in a keyframe (a commit
+    // this session did not make) is another contributor's, attributed by
+    // git identity; residue inside an agent commit is unexplained.
+    let not_session: usize = audit
+        .intervals
+        .iter()
+        .filter(|i| !i.agent_committed)
+        .map(|i| i.residue.len())
+        .sum();
+    let unexplained: usize = residue_total - not_session;
     if residue_all > 0 {
         println!(
-            "    · unclaimed changes (git recorded it, no matching edit claim): {residue_all} — this agent, via a command: {attributed_total} · not this session's commit: {dismissed_total} dismissed, {residue_total} unexplained",
+            "    · unclaimed changes (git recorded it, no matching edit claim): {residue_all} — this agent via a command: {attributed_total} · not this session's commit (another contributor): {not_session} · unexplained, inside an agent commit: {unexplained} · dismissed as now ignored/untracked: {dismissed_total}",
         );
     }
     println!(
@@ -732,13 +742,20 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         );
     }
     if !interval.residue.is_empty() {
-        let hint = if interval.effectful_commands > 0 {
+        let hint = if !interval.agent_committed {
+            // a whole commit this session didn't make — attribute it to
+            // the committer git records, not "human edit".
+            format!(
+                "not this session's commit — committed by {}",
+                interval.commit.author
+            )
+        } else if interval.effectful_commands > 0 {
             format!(
                 "likely command fallout — {} effectful commands ran in this interval",
                 interval.effectful_commands
             )
         } else {
-            "no effectful commands ran — human edit?".to_string()
+            "no effectful commands ran in this agent commit — possibly a human edit".to_string()
         };
         println!("      {}", st.dim(&hint));
     }

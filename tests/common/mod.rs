@@ -50,6 +50,38 @@ impl TempRepo {
         assert!(status.success(), "git {args:?} failed");
     }
 
+    /// Commit as a specific author/committer, with an optional
+    /// `Co-Authored-By` trailer — for multi-author / multi-agent fixtures.
+    /// Staged content must already be added.
+    pub fn commit_as(
+        &self,
+        author: &str,
+        email: &str,
+        date: &str,
+        msg: &str,
+        co_author: Option<&str>,
+    ) {
+        let body = match co_author {
+            Some(co) => format!("{msg}\n\nCo-Authored-By: {co}"),
+            None => msg.to_string(),
+        };
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&self.root)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_AUTHOR_NAME", author)
+            .env("GIT_AUTHOR_EMAIL", email)
+            .env("GIT_COMMITTER_NAME", author)
+            .env("GIT_COMMITTER_EMAIL", email)
+            .env("GIT_AUTHOR_DATE", date)
+            .env("GIT_COMMITTER_DATE", date)
+            .args(["commit", "-q", "-m", &body])
+            .status()
+            .unwrap();
+        assert!(status.success(), "commit_as {author} failed");
+    }
+
     pub fn write(&self, rel: &str, content: &str) {
         let path = self.root.join(rel);
         if let Some(parent) = path.parent() {

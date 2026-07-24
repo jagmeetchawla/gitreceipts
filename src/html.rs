@@ -219,6 +219,15 @@ fn render_summary(
         .map(|i| i.dismissed_residue.len())
         .sum();
     let residue: usize = audit.intervals.iter().map(|i| i.residue.len()).sum();
+    // residue in a keyframe is another contributor's; inside an agent
+    // commit it is unexplained.
+    let not_session: usize = audit
+        .intervals
+        .iter()
+        .filter(|i| !i.agent_committed)
+        .map(|i| i.residue.len())
+        .sum();
+    let unexplained = residue - not_session;
 
     b.push_str("<div class=\"outcome\"><h3>intent → outcome</h3>");
     let _ = write!(
@@ -255,7 +264,7 @@ fn render_summary(
     }
     let _ = write!(
         b,
-        "<div class=\"line dim\">· unclaimed changes (git recorded it, no matching edit claim): {} — this agent, via a command: {attributed} · not this session's commit: {dismissed} dismissed, {residue} unexplained</div>",
+        "<div class=\"line dim\">· unclaimed changes (git recorded it, no matching edit claim): {} — this agent via a command: {attributed} · not this session's commit (another contributor): {not_session} · unexplained, inside an agent commit: {unexplained} · dismissed as now ignored/untracked: {dismissed}</div>",
         residue + attributed + dismissed
     );
     let cls = if broken == 0 { "ok" } else { "bad" };

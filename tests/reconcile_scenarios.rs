@@ -955,3 +955,77 @@ fn committer_identity_and_co_authors_are_surfaced() {
         "Co-Authored-By trailer parsed"
     );
 }
+
+#[test]
+fn multi_author_keyframe_residue_attributes_to_the_committer() {
+    // A teammate's commit (a keyframe this session never made) shows its
+    // changes as unclaimed residue attributed to the committer git records
+    // — not "unexplained", and not this agent.
+    let repo = TempRepo::new("multiauthor");
+    let root = repo.root.display().to_string();
+
+    // Ada's commit — the audited session made this one
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.commit_as(
+        "Ada Lovelace",
+        "ada@studio.dev",
+        "2026-01-01T10:00:20+00:00",
+        "scaffold",
+        Some("Claude <noreply@anthropic.com>"),
+    );
+    // Bjarne's commit — a teammate on another agent; this session never
+    // touched it
+    repo.write("b.txt", "y");
+    repo.git(&["add", "-A"]);
+    repo.commit_as(
+        "Bjarne Stroustrup",
+        "bjarne@studio.dev",
+        "2026-01-01T10:00:40+00:00",
+        "add auth",
+        Some("Codex <codex@openai.com>"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add -A && git commit -m scaffold",
+        );
+    let audit = run(&repo, &s);
+
+    assert_eq!(audit.intervals.len(), 2);
+    // Ada's commit: this session's work
+    assert!(audit.intervals[0].agent_committed);
+    assert!(audit.intervals[0].commit.author.contains("Ada"));
+    // Bjarne's commit: a keyframe, residue attributed to him by identity
+    let bj = &audit.intervals[1];
+    assert!(!bj.agent_committed, "teammate commit is a keyframe");
+    assert!(bj.commit.author.contains("Bjarne Stroustrup"));
+    assert_eq!(
+        bj.commit.co_authors,
+        vec!["Codex <codex@openai.com>".to_string()]
+    );
+    assert!(
+        bj.residue.iter().any(|c| c.path == "b.txt"),
+        "the teammate's file is unclaimed residue"
+    );
+
+    // distinct committers + co-authors are both surfaced
+    let authors: std::collections::HashSet<&str> = audit
+        .intervals
+        .iter()
+        .map(|i| i.commit.author.as_str())
+        .collect();
+    assert!(authors.iter().any(|a| a.contains("Ada")));
+    assert!(authors.iter().any(|a| a.contains("Bjarne")));
+    let coauthors: std::collections::HashSet<&str> = audit
+        .intervals
+        .iter()
+        .flat_map(|i| i.commit.co_authors.iter().map(String::as_str))
+        .collect();
+    assert!(coauthors.iter().any(|c| c.contains("Claude")));
+    assert!(coauthors.iter().any(|c| c.contains("Codex")));
+}
