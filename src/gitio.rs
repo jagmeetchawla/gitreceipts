@@ -34,6 +34,13 @@ pub struct SpineCommit {
     /// was created elsewhere and pulled in — useful attribution. With no
     /// reflog at all it is simply how every commit is known.
     pub from_history: bool,
+    /// Who git records as the author: "Name <email>". Identity, not
+    /// authorship method — a name never tells you agent-vs-hand-coded.
+    pub author: String,
+    /// `Co-Authored-By:` trailer values from the commit message, e.g.
+    /// "Claude Opus 4.8 <noreply@anthropic.com>". Present-only evidence of
+    /// co-authorship (an agent, a pair); absence proves nothing.
+    pub co_authors: Vec<String>,
 }
 
 impl SpineCommit {
@@ -70,6 +77,15 @@ pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Split the `Co-Authored-By` trailer values (git joins them with 0x1f).
+fn parse_co_authors(raw: &str) -> Vec<String> {
+    raw.split('\u{1f}')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 /// The commit spine for a session window.
 ///
 /// PRIMARY: commit history (`git log --all`), windowed on committer date —
@@ -89,7 +105,7 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
             "log",
             "-g",
             "--date=iso-strict",
-            "--format=%H%x00%h%x00%cI%x00%gd%x00%P%x00%gs%x00%s",
+            "--format=%H%x00%h%x00%cI%x00%gd%x00%P%x00%gs%x00%an%x00%ae%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)%x00%s",
         ],
     )?;
     let reachable_raw = git(repo, &["rev-list", "--branches", "--tags", "HEAD"])?;
@@ -109,8 +125,14 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
             Some(gdate),
             Some(parents),
             Some(gs),
+            Some(aname),
+            Some(aemail),
+            Some(co_raw),
             Some(subject),
         ) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
@@ -157,6 +179,8 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
                 reachable: reachable.contains(hash),
                 clock_anomaly: false,
                 from_history: false,
+                author: format!("{aname} <{aemail}>"),
+                co_authors: parse_co_authors(co_raw),
             },
             inside,
         ));
@@ -189,18 +213,35 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
     let known: std::collections::HashSet<String> = commits.iter().map(|c| c.hash.clone()).collect();
     let hist_raw = git(
         repo,
-        &["log", "--all", "--format=%H%x00%h%x00%cI%x00%P%x00%s"],
+        &[
+            "log",
+            "--all",
+            "--format=%H%x00%h%x00%cI%x00%P%x00%an%x00%ae%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)%x00%s",
+        ],
     )?;
     let mut extra: Vec<SpineCommit> = Vec::new();
     for line in hist_raw.lines() {
         let mut parts = line.split(NUL);
-        let (Some(hash), Some(short), Some(cdate), Some(parents), Some(subject)) = (
+        let (
+            Some(hash),
+            Some(short),
+            Some(cdate),
+            Some(parents),
+            Some(aname),
+            Some(aemail),
+            Some(co_raw),
+            Some(subject),
+        ) = (
             parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
-        ) else {
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        )
+        else {
             continue;
         };
         if known.contains(hash) {
@@ -224,6 +265,8 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
             reachable: reachable.contains(hash),
             clock_anomaly: false,
             from_history: true,
+            author: format!("{aname} <{aemail}>"),
+            co_authors: parse_co_authors(co_raw),
         });
     }
     extra.sort_by_key(|c| c.ts);

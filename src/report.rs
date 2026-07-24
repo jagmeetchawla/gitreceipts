@@ -304,20 +304,59 @@ pub fn print(
     }
     if residue_all > 0 {
         println!(
-            "    · unclaimed changes (residue): {residue_all} — attributed to commands: {attributed_total} · dismissed as now ignored/untracked: {dismissed_total} · unexplained: {residue_total}",
+            "    · unclaimed changes (git recorded it, no matching edit claim): {residue_all} — this agent, via a command: {attributed_total} · not this session's commit: {dismissed_total} dismissed, {residue_total} unexplained",
         );
     }
     println!(
         "    · {}",
         if broken == 0 {
-            st.green("broken promises (never landed, nothing explains it): 0")
+            st.green("broken promises (claimed, never landed, nothing explains it): 0")
                 .to_string()
         } else {
             st.red(&format!(
-                "broken promises (never landed, nothing explains it): {broken}"
+                "broken promises (claimed, never landed, nothing explains it): {broken}"
             ))
         }
     );
+
+    // Who touched this repo — attribution for free, straight from git.
+    // Identity only: a name never says agent-vs-hand-coded; a Co-Authored-By
+    // trailer is present-only evidence of an agent/pair, never inferred from
+    // absence.
+    let keyframes = audit
+        .intervals
+        .iter()
+        .filter(|i| !i.agent_committed)
+        .count();
+    let mut authors: Vec<&str> = audit
+        .intervals
+        .iter()
+        .map(|i| i.commit.author.as_str())
+        .collect();
+    authors.sort_unstable();
+    authors.dedup();
+    let mut coauthors: Vec<&str> = audit
+        .intervals
+        .iter()
+        .flat_map(|i| i.commit.co_authors.iter().map(String::as_str))
+        .collect();
+    coauthors.sort_unstable();
+    coauthors.dedup();
+    println!("  who touched this repo (git identity — not how they authored):");
+    println!("    · committed by: {}", authors.join(" · "));
+    if !coauthors.is_empty() {
+        println!(
+            "    · co-authored-by (declared in commits): {}",
+            coauthors.join(" · ")
+        );
+    }
+    if keyframes > 0 {
+        println!(
+            "    · {keyframes} commit{} not made by this session — another contributor",
+            if keyframes == 1 { "" } else { "s" }
+        );
+    }
+
     println!("  side effects beyond the repo's history:");
     let side = |n: usize, text: String| {
         if n > 0 {
@@ -444,10 +483,14 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         Status::ResidueOnly => st.yellow("!"),
         Status::Red => st.red("✘"),
     };
+    // A keyframe is not this session's commit — name who git says made it.
     let who = if interval.agent_committed {
-        ""
+        String::new()
     } else {
-        " [keyframe: not committed by agent]"
+        format!(
+            " [keyframe: not this session — committed by {}]",
+            interval.commit.author
+        )
     };
     let ghost = if interval.commit.reachable {
         ""
@@ -466,10 +509,20 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         interval.commit.short,
         interval.commit.ts.format("%m-%d %H:%M"),
         st.dim(&subject),
-        st.yellow(who),
+        st.yellow(&who),
         st.yellow(ghost),
         st.yellow(hist),
     );
+    // Co-Authored-By is declared evidence of co-authorship (an agent, a
+    // pair). Present-only — never inferred from absence. Per-commit detail
+    // goes in --verbose; the summary carries the session-wide picture.
+    if opts.verbose && !interval.commit.co_authors.is_empty() {
+        println!(
+            "    {} {}",
+            st.dim("co-authored-by:"),
+            st.dim(&interval.commit.co_authors.join(", "))
+        );
+    }
     if interval.commit.clock_anomaly {
         println!(
                 "    {}",

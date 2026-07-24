@@ -255,14 +255,54 @@ fn render_summary(
     }
     let _ = write!(
         b,
-        "<div class=\"line dim\">· unclaimed changes (residue): {} — attributed to commands: {attributed} · dismissed as now ignored/untracked: {dismissed} · unexplained: {residue}</div>",
+        "<div class=\"line dim\">· unclaimed changes (git recorded it, no matching edit claim): {} — this agent, via a command: {attributed} · not this session's commit: {dismissed} dismissed, {residue} unexplained</div>",
         residue + attributed + dismissed
     );
     let cls = if broken == 0 { "ok" } else { "bad" };
     let _ = write!(
         b,
-        "<div class=\"line bottomline {cls}\">· broken promises (never landed, nothing explains it): {broken}</div>"
+        "<div class=\"line bottomline {cls}\">· broken promises (claimed, never landed, nothing explains it): {broken}</div>"
     );
+
+    // who touched this repo — attribution for free, straight from git
+    let keyframes = audit
+        .intervals
+        .iter()
+        .filter(|i| !i.agent_committed)
+        .count();
+    let mut authors: Vec<&str> = audit
+        .intervals
+        .iter()
+        .map(|i| i.commit.author.as_str())
+        .collect();
+    authors.sort_unstable();
+    authors.dedup();
+    let mut coauthors: Vec<&str> = audit
+        .intervals
+        .iter()
+        .flat_map(|i| i.commit.co_authors.iter().map(String::as_str))
+        .collect();
+    coauthors.sort_unstable();
+    coauthors.dedup();
+    b.push_str("<div class=\"heading\">who touched this repo <span class=\"dim\">(git identity — not how they authored)</span></div>");
+    let _ = write!(
+        b,
+        "<div class=\"line dim\">· committed by: {}</div>",
+        esc(&authors.join(" \u{00b7} "))
+    );
+    if !coauthors.is_empty() {
+        let _ = write!(
+            b,
+            "<div class=\"line dim\">· co-authored-by (declared): {}</div>",
+            esc(&coauthors.join(" \u{00b7} "))
+        );
+    }
+    if keyframes > 0 {
+        let _ = write!(
+            b,
+            "<div class=\"line dim\">· {keyframes} commit(s) not made by this session \u{2014} another contributor</div>"
+        );
+    }
     b.push_str("</div>\n");
 }
 
@@ -328,7 +368,14 @@ fn render_interval(
     if iv.agent_committed {
         b.push_str("<span class=\"badge ok\">committed by agent</span>");
     } else {
-        b.push_str("<span class=\"badge\">not committed by agent (keyframe)</span>");
+        let _ = write!(
+            b,
+            "<span class=\"badge\">keyframe \u{2014} committed by {}</span>",
+            esc(&iv.commit.author)
+        );
+    }
+    for co in &iv.commit.co_authors {
+        let _ = write!(b, "<span class=\"badge\">co-authored-by {}</span>", esc(co));
     }
     if iv.pushed {
         b.push_str("<span class=\"badge ok\">pushed (as of last fetch)</span>");

@@ -913,3 +913,45 @@ fn a_trivial_probe_does_not_content_verify_a_late_landing() {
         "a `}}` probe must not content-verify against any blob with a brace"
     );
 }
+
+#[test]
+fn committer_identity_and_co_authors_are_surfaced() {
+    // git records who committed and any Co-Authored-By trailer; the audit
+    // carries both onto the interval. Identity only — never inferred as
+    // agent-vs-hand-coded.
+    let repo = TempRepo::new("coauthor");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", "x");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(
+        &[
+            "commit",
+            "-q",
+            "-m",
+            "do the thing\n\nCo-Authored-By: Robo Agent <robo@example.invalid>",
+        ],
+        Some("2026-01-01T10:00:20Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add -A && git commit -m 'do the thing'",
+        );
+    let audit = run(&repo, &s);
+
+    let c = &audit.intervals[0].commit;
+    assert!(
+        c.author.contains("test"),
+        "author identity captured: {}",
+        c.author
+    );
+    assert_eq!(
+        c.co_authors,
+        vec!["Robo Agent <robo@example.invalid>".to_string()],
+        "Co-Authored-By trailer parsed"
+    );
+}
