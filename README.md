@@ -73,11 +73,18 @@ pipeline or script that ran it is a commit. And the trend runs the
 tool's way — GitOps, infra-as-code, config-as-code keep moving
 deliverables *into* git.
 
-Two frontiers it honestly does **not** cross:
-- **Transient side-effects** — a network call, a deploy, a write
-  outside the repo. git can't witness the effect, so it's shown as
-  blast radius plus the command's own captured output, never as proof.
-  (The *source* — the code that did it — usually is in git.)
+Where it stops, honestly:
+- **Side-effects whose source is still code** — CI/CD (the workflow
+  YAML), infrastructure (the Terraform/Pulumi), a scripted deploy or
+  API client. The *source of truth* is committed and audited; only the
+  *run* — the pipeline execution, the `apply`, the request — happens
+  off-machine, shown as blast radius plus captured output, not proof.
+  For declarative IaC the git source literally *is* the intended state.
+- **The irreducible tail** — a one-shot side-effecting command: a
+  manual `curl -X POST`, a `psql UPDATE`, an `aws s3 cp`, never
+  scripted, leaving nothing in git. No post-hoc audit of git can *ever*
+  verify these. The tool flags them by blast radius so you know
+  *something reached outside* — a review signal, honestly not a receipt.
 - **Data as the deliverable** — when the product is processed or
   synthesized *data*, git doesn't hold the data itself (it lives in a
   store, a database, or a `.gitignored` dir; git-lfs keeps only a
