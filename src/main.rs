@@ -2,6 +2,7 @@
 
 mod audit;
 mod export;
+mod list;
 mod pager;
 
 use std::path::PathBuf;
@@ -172,6 +173,46 @@ EXAMPLES:
         #[arg(long)]
         compact: bool,
     },
+    /// List the commit spine — one line per commit, with a session summary.
+    #[command(
+        long_about = "\
+List the commit spine — one line per commit, like `lspci` over the address bus.
+
+Prints a two-line session summary, then one row per commit: its short hash,
+status (✔ green · ! residue · ✘ red), subject, landed/claimed count, and any
+broken (✘N) or residue (●N) hints. The short hash is the handle you pass to
+`audit --commit <ref>` or `export --commit <ref>` to drill into one commit.",
+        after_long_help = "\
+EXAMPLES:
+  git receipts list --latest                 the spine for the newest session
+  git receipts list --latest --filter red    only commits with broken promises
+  git receipts list --all --repo ~/app       every session for a repo, merged"
+    )]
+    List {
+        /// Paths to session .jsonl files (or use --latest / --all).
+        sessions: Vec<PathBuf>,
+        /// List the spine for the most recent session for the repo.
+        #[arg(long)]
+        latest: bool,
+        /// Merge every session the store still has for this repo.
+        #[arg(long)]
+        all: bool,
+        /// Repo to reconcile against (default: cwd recorded in the session).
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Claude data directory holding the session store (default: ~/.claude).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// When to emit ANSI colors: auto, always, or never.
+        #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
+        color: report::ColorMode,
+        /// Which commits to list: all, red (broken promises), or red-residue.
+        #[arg(long, value_enum, default_value_t = report::Filter::All)]
+        filter: report::Filter,
+        /// Don't page through $PAGER, even on a terminal.
+        #[arg(long)]
+        no_pager: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -237,5 +278,15 @@ fn main() -> Result<()> {
             with_output,
             !compact,
         ),
+        Cmd::List {
+            sessions,
+            latest,
+            all,
+            repo,
+            store,
+            color,
+            filter,
+            no_pager,
+        } => list::run(sessions, latest, all, repo, store, no_pager, color, filter),
     }
 }
