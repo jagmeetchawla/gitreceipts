@@ -1,12 +1,30 @@
 //! The `audit` subcommand: discover the sessions and repo, merge and
 //! extract, reconcile, then render (console, optionally paged, or HTML).
+//!
+//! [`load`] is the shared pipeline up to the reconciled [`Audit`]; both this
+//! subcommand and `export` build on it, differing only in how they present
+//! the result.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use gitreceipts::extract::Session;
+use gitreceipts::ingest::IngestStats;
+use gitreceipts::reconcile::Audit;
 use gitreceipts::{discover, extract, html, reconcile, report};
 
 use crate::pager::{finish_pager, start_pager};
+
+/// A completed audit plus the header context every presenter needs.
+pub struct Loaded {
+    /// Display name for the report header.
+    pub name: String,
+    /// The repo path, as a string for display.
+    pub repo_display: String,
+    pub session: Session,
+    pub stats: IngestStats,
+    pub audit: Audit,
+}
 
 /// Walk up from `dir` to the nearest directory containing `.git`.
 fn find_enclosing_repo(dir: &Path) -> Option<PathBuf> {
@@ -15,7 +33,6 @@ fn find_enclosing_repo(dir: &Path) -> Option<PathBuf> {
         .map(|a| a.to_path_buf())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn run(
     sessions: Vec<PathBuf>,
     latest: bool,
@@ -25,6 +42,52 @@ pub fn run(
     no_pager: bool,
     mut opts: report::Options,
 ) -> Result<()> {
+    let loaded = load(sessions, latest, all, repo, store)?;
+    let Loaded {
+        name,
+        repo_display,
+        session,
+        stats,
+        audit,
+    } = &loaded;
+
+    match opts.format {
+        report::Format::Text => {
+            // On a terminal, page through $PAGER (git's behavior). The pager
+            // redirects stdout to a pipe, so auto color would strip itself —
+            // force color on for the pager unless explicitly off.
+            let pager = start_pager(no_pager);
+            if pager.is_some() && opts.color == report::ColorMode::Auto {
+                opts.color = report::ColorMode::Always;
+            }
+            report::print(name, repo_display, session, stats, audit, &opts);
+            finish_pager(pager);
+        }
+        report::Format::Html => print!(
+            "{}",
+            html::render(
+                name,
+                repo_display,
+                session,
+                stats,
+                audit,
+                opts.show_intent,
+                opts.expand,
+            )
+        ),
+    }
+    Ok(())
+}
+
+/// Run the pipeline — discover sessions and repo, merge, extract, reconcile —
+/// and return the reconciled audit with its header context.
+pub fn load(
+    sessions: Vec<PathBuf>,
+    latest: bool,
+    all: bool,
+    repo: Option<PathBuf>,
+    store: Option<PathBuf>,
+) -> Result<Loaded> {
     let store = match store {
         Some(s) => {
             if !s.join("projects").is_dir() {
@@ -75,35 +138,13 @@ pub fn run(
     };
 
     let audit = reconcile::reconcile(&repo_path, &session_data)?;
-    let name = session_name(&session_paths);
-    let repo_display = repo_path.display().to_string();
-
-    match opts.format {
-        report::Format::Text => {
-            // On a terminal, page through $PAGER (git's behavior). The pager
-            // redirects stdout to a pipe, so auto color would strip itself —
-            // force color on for the pager unless explicitly off.
-            let pager = start_pager(no_pager);
-            if pager.is_some() && opts.color == report::ColorMode::Auto {
-                opts.color = report::ColorMode::Always;
-            }
-            report::print(&name, &repo_display, &session_data, &stats, &audit, &opts);
-            finish_pager(pager);
-        }
-        report::Format::Html => print!(
-            "{}",
-            html::render(
-                &name,
-                &repo_display,
-                &session_data,
-                &stats,
-                &audit,
-                opts.show_intent,
-                opts.expand,
-            )
-        ),
-    }
-    Ok(())
+    Ok(Loaded {
+        name: session_name(&session_paths),
+        repo_display: repo_path.display().to_string(),
+        session: session_data,
+        stats,
+        audit,
+    })
 }
 
 /// A display name for the report header: the session stem, or a summary

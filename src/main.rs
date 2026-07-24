@@ -1,6 +1,7 @@
 //! `git receipts` — see what your agent actually did.
 
 mod audit;
+mod export;
 mod pager;
 
 use std::path::PathBuf;
@@ -113,6 +114,53 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         #[arg(long)]
         no_pager: bool,
     },
+    /// Export the reconciled audit as a versioned JSON receipt.
+    #[command(
+        long_about = "\
+Export the reconciled audit as a versioned JSON receipt.
+
+Runs the same pipeline as `audit`, then emits the result as machine-readable
+JSON instead of a human report — the same facts the verbose console/HTML
+views show: per-commit statement, ledger, residue, commands, and intents,
+plus the header context, token estimate, evidence grades, blast radii, and
+the git-identity roll-up. Every headline number matches the report.
+
+This is the interchange artifact: commit it beside the code, feed it to
+another program, or hand it to a model to interpret. The schema is versioned
+(`schema_version`); redirect it to a file with `> receipt.json`.",
+        after_long_help = "\
+EXAMPLES:
+  git receipts export --latest > receipt.json     newest session, pretty JSON
+  git receipts export --latest --compact          single-line JSON, for streaming
+  git receipts export --all --repo ~/app          every session for a repo, merged
+  git receipts export --latest --no-intent        drop quoted prompts, keep counts"
+    )]
+    Export {
+        /// Paths to session .jsonl files (or use --latest / --all).
+        sessions: Vec<PathBuf>,
+        /// Export the most recent session for the repo.
+        #[arg(long)]
+        latest: bool,
+        /// Export every session the store still has for this repo and its
+        /// parent directories, merged into one ledger.
+        #[arg(long)]
+        all: bool,
+        /// Repo to reconcile against (default: cwd recorded in the session).
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Claude data directory holding the session store (default:
+        /// ~/.claude). Point at a mounted drive to audit another machine's
+        /// sessions: --store /Volumes/studio/Users/me/.claude
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Omit the quoted prompt text from intents (counts stay). Use this
+        /// before committing or sharing a receipt.
+        #[arg(long)]
+        no_intent: bool,
+        /// Emit single-line JSON instead of indented (for streaming/piping).
+        #[arg(long)]
+        compact: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -155,5 +203,14 @@ fn main() -> Result<()> {
                 verbose,
             },
         ),
+        Cmd::Export {
+            sessions,
+            latest,
+            all,
+            repo,
+            store,
+            no_intent,
+            compact,
+        } => export::run(sessions, latest, all, repo, store, !no_intent, !compact),
     }
 }

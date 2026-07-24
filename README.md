@@ -215,7 +215,25 @@ git receipts audit --latest --format html > audit.html
 
 # audit another machine's sessions from a mounted drive
 git receipts audit --all --store /Volumes/studio/Users/me/.claude --repo /Volumes/studio/Users/me/code/myapp
+
+# export the reconciled audit as a versioned JSON receipt
+git receipts export --latest > receipt.json
 ```
+
+## Receipts (JSON export)
+
+`git receipts export` runs the same pipeline as `audit` and emits the
+result as machine-readable JSON — the same facts the verbose report
+shows (per-commit statement, ledger, residue, commands, intents) plus
+the header context, token estimate, evidence grades, blast radii, and
+the git-identity roll-up. Every headline number matches the report.
+
+This is the interchange artifact: a compact, verified receipt you can
+commit beside the code, feed to another program, or hand to a model to
+interpret — far smaller than the raw session log it distills. The
+schema is versioned (`schema_version`), pretty-printed by default
+(`--compact` for a single line), and `--no-intent` drops the quoted
+prompt text while keeping every count, for a receipt you can share.
 
 v0.1 reads Claude Code session logs (the JSONL under
 `~/.claude/projects/`). Sessions are found for the repo *and its parent

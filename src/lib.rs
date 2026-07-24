@@ -13,6 +13,7 @@ pub mod fmt;
 pub mod gitio;
 pub mod html;
 pub mod ingest;
+pub mod receipt;
 pub mod reconcile;
 pub mod report;
 pub mod schema;
