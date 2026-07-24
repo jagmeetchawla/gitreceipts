@@ -108,6 +108,11 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// modified/deleted/renamed and the commands that ran.
         #[arg(short, long)]
         verbose: bool,
+        /// Show each command in full with its captured output, in the
+        /// console and HTML alike — the same depth `export --with-output`
+        /// puts in the JSON receipt. Implies --verbose for the console.
+        #[arg(long)]
+        with_output: bool,
         /// Don't page the console report through $PAGER, even on a
         /// terminal. (By default, like git, a terminal gets a colored
         /// pager; a pipe or redirect never does.)
@@ -192,6 +197,7 @@ fn main() -> Result<()> {
             format,
             expand,
             verbose,
+            with_output,
             no_pager,
         } => audit::run(
             sessions,
@@ -206,7 +212,10 @@ fn main() -> Result<()> {
                 filter,
                 format,
                 expand,
-                verbose,
+                // --with-output has nothing to attach to without the
+                // per-commit anatomy, so it implies verbose for the console.
+                verbose: verbose || with_output,
+                with_output,
             },
         ),
         Cmd::Export {

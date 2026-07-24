@@ -210,6 +210,11 @@ git receipts audit --latest --color=always | less -R
 # suppress quoted prompt text before sharing a screenshot
 git receipts audit --latest --no-intent
 
+# show every command in full with its captured output — same depth in the
+# console, the HTML report, and the JSON receipt (implies --verbose here)
+git receipts audit --latest --with-output
+git receipts audit --latest --format html --with-output > audit.html
+
 # write a self-contained HTML report (theme-aware, no external assets)
 git receipts audit --latest --format html > audit.html
 

@@ -73,6 +73,7 @@ pub fn run(
                 audit,
                 opts.show_intent,
                 opts.expand,
+                opts.with_output,
             )
         ),
     }

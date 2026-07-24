@@ -45,6 +45,7 @@ pub fn render(
     audit: &Audit,
     show_intent: bool,
     expand: Expand,
+    with_output: bool,
 ) -> String {
     let total = audit.intervals.len();
     let green = audit.intervals.iter().filter(|i| i.balanced()).count();
@@ -168,7 +169,7 @@ pub fn render(
     );
 
     for iv in &audit.intervals {
-        render_interval(&mut b, iv, show_intent, enriched, expand);
+        render_interval(&mut b, iv, show_intent, enriched, expand, with_output);
     }
     b.push_str("</section>\n");
 
@@ -321,6 +322,7 @@ fn render_interval(
     show_intent: bool,
     enriched: bool,
     expand: Expand,
+    with_output: bool,
 ) {
     let (cls, mark) = match iv.status() {
         Status::Green => ("green", "\u{2714}"),
@@ -431,7 +433,7 @@ fn render_interval(
     }
 
     render_statement(b, iv);
-    render_commands(b, iv);
+    render_commands(b, iv, with_output);
 
     // ---- reconciliation findings ---------------------------------------
     for l in &late {
@@ -542,8 +544,10 @@ fn render_statement(b: &mut String, iv: &crate::reconcile::Interval) {
     b.push_str("</div>");
 }
 
-/// The effectful commands the agent ran in this interval.
-fn render_commands(b: &mut String, iv: &crate::reconcile::Interval) {
+/// The effectful commands the agent ran in this interval. With `with_output`,
+/// each command is shown in full with its captured output — the same depth
+/// the JSON receipt carries under `--with-output`.
+fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool) {
     if iv.commands_run.is_empty() {
         return;
     }
@@ -570,11 +574,33 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval) {
         if c.failed {
             b.push_str("<span class=\"radtag fail\">failed</span>");
         }
-        let _ = write!(
-            b,
-            "<code>{}</code></div>",
-            esc(&redact_home(&command_summary(&c.command)))
-        );
+        if with_output {
+            // Full command, then its captured output in a scrollable block.
+            let _ = write!(
+                b,
+                "<code class=\"cmdfull\">{}</code>",
+                esc(&redact_home(&c.command))
+            );
+            if let Some(receipt) = &c.output {
+                let cls = if receipt.is_error {
+                    "cmdout err"
+                } else {
+                    "cmdout"
+                };
+                let _ = write!(
+                    b,
+                    "<pre class=\"{cls}\">{}</pre>",
+                    esc(&redact_home(&receipt.text))
+                );
+            }
+            b.push_str("</div>");
+        } else {
+            let _ = write!(
+                b,
+                "<code>{}</code></div>",
+                esc(&redact_home(&command_summary(&c.command)))
+            );
+        }
     }
     b.push_str("</div>");
 }

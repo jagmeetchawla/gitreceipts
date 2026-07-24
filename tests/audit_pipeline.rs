@@ -164,6 +164,7 @@ fn html_report_is_self_contained_and_well_formed() {
         &audit,
         true,
         gitreceipts::report::Expand::Auto,
+        false,
     );
 
     assert!(out.starts_with("<!doctype html>"));
@@ -212,6 +213,7 @@ fn html_report_escapes_hostile_content() {
         &audit,
         true,
         gitreceipts::report::Expand::Auto,
+        false,
     );
 
     assert!(
@@ -257,6 +259,7 @@ fn html_drilldown_shows_statement_commands_and_push_status() {
         &audit,
         true,
         gitreceipts::report::Expand::All,
+        false,
     );
 
     assert!(out.contains("<details"), "intervals are collapsible");
@@ -304,6 +307,7 @@ fn command_text_home_paths_are_redacted_in_html() {
         &audit,
         true,
         gitreceipts::report::Expand::All,
+        false,
     );
 
     assert!(
@@ -351,6 +355,7 @@ fn multibyte_commit_subject_does_not_panic_the_console_report() {
             format: report::Format::Text,
             expand: report::Expand::Auto,
             verbose: true,
+            with_output: false,
         },
     );
     let _ = html::render(
@@ -361,5 +366,6 @@ fn multibyte_commit_subject_does_not_panic_the_console_report() {
         &audit,
         true,
         report::Expand::All,
+        false,
     );
 }

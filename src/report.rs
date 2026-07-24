@@ -71,6 +71,10 @@ pub struct Options {
     /// Console: print each commit's full anatomy — the statement's
     /// added/modified/deleted/renamed files and the commands that ran.
     pub verbose: bool,
+    /// Show each command in full (not a one-line summary) with its captured
+    /// output. The same depth the JSON receipt carries under `--with-output`
+    /// — so console, HTML, and receipt can surface the same detail.
+    pub with_output: bool,
 }
 
 struct Style {
@@ -661,12 +665,40 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
             if cr.failed {
                 flags.push_str(" ✗failed");
             }
-            println!(
-                "      {} {}{}",
-                st.dim(&format!("$ [{rad}]")),
-                redact_home(&command_summary(&cr.command)),
-                st.yellow(&flags)
-            );
+            if opts.with_output {
+                // Full command (possibly multi-line), then its captured
+                // output — the depth the JSON receipt carries.
+                let full = redact_home(&cr.command);
+                let mut lines = full.lines();
+                let first = lines.next().unwrap_or("");
+                println!(
+                    "      {} {}{}",
+                    st.dim(&format!("$ [{rad}]")),
+                    first,
+                    st.yellow(&flags)
+                );
+                for line in lines {
+                    println!("        {line}");
+                }
+                if let Some(receipt) = &cr.output {
+                    let marker = if receipt.is_error {
+                        "⤷ error"
+                    } else {
+                        "⤷ output"
+                    };
+                    println!("        {}", st.dim(marker));
+                    for line in redact_home(&receipt.text).lines() {
+                        println!("        {}", st.dim(&format!("  {line}")));
+                    }
+                }
+            } else {
+                println!(
+                    "      {} {}{}",
+                    st.dim(&format!("$ [{rad}]")),
+                    redact_home(&command_summary(&cr.command)),
+                    st.yellow(&flags)
+                );
+            }
         }
     }
     for line in &late {

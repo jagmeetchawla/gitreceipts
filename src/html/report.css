@@ -72,8 +72,12 @@ h1 .cmd { color: var(--accent); }
 .st { font-weight: 700; width: 1rem; text-align: center; border-radius: 2px; font-size: 0.72rem; flex: none; }
 .st.add { color: var(--green); } .st.mod { color: var(--intent); }
 .st.del { color: var(--red); } .st.ren { color: var(--amber); }
-.crow { font-size: 0.78rem; display: flex; gap: 0.4rem; align-items: baseline; overflow-wrap: anywhere; padding: 0.05rem 0; }
+.crow { font-size: 0.78rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; overflow-wrap: anywhere; padding: 0.05rem 0; }
 .crow code { color: var(--ink); }
+/* --with-output: full command on its own line (newlines preserved), then output */
+.crow code.cmdfull { flex-basis: 100%; white-space: pre-wrap; margin-top: 0.1rem; }
+.cmdout { flex-basis: 100%; margin: 0.25rem 0 0.5rem; padding: 0.45rem 0.6rem; background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; font-size: 0.72rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; color: var(--dim); }
+.cmdout.err { color: var(--red); border-color: currentColor; }
 .radtag { font-size: 0.65rem; padding: 0 0.35rem; border-radius: 2px; white-space: nowrap; flex: none; border: 1px solid var(--rule); color: var(--dim); }
 .radtag.local-fs { color: var(--intent); } .radtag.local-git { color: var(--intent); }
 .radtag.remote-git { color: var(--amber); border-color: currentColor; }
