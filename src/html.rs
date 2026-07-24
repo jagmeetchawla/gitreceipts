@@ -12,6 +12,7 @@
 use std::fmt::Write as _;
 
 use crate::extract::Session;
+use crate::fmt::{abbrev, redact_home, tilde};
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Landing, Status};
 use crate::report::Expand;
@@ -30,13 +31,6 @@ fn esc(s: &str) -> String {
         }
     }
     out
-}
-
-fn tilde(path: &str) -> String {
-    std::env::home_dir()
-        .map(|h| h.display().to_string())
-        .and_then(|h| path.strip_prefix(&h).map(|rest| format!("~{rest}")))
-        .unwrap_or_else(|| path.to_string())
 }
 
 const STYLE: &str = include_str!("html/report.css");
@@ -239,10 +233,10 @@ fn render_summary(
             "<div class=\"line\">agent effort: {} commands · ~{} output tokens across {} requests \
              <span class=\"dim\">(est. from the log — approximate, not billing; ~{} input, ~{} cached)</span></div>",
             audit.commands,
-            crate::report::abbrev(tk.output),
+            abbrev(tk.output),
             tk.requests,
-            crate::report::abbrev(tk.input),
-            crate::report::abbrev(tk.cache_read),
+            abbrev(tk.input),
+            abbrev(tk.cache_read),
         );
     }
     b.push_str("<div class=\"heading\">what happened to every exception</div>");
@@ -361,7 +355,7 @@ fn render_interval(
         let _ = write!(
             b,
             "<div class=\"line intent\">\u{00bb} intent: {}{}</div>",
-            esc(&crate::report::redact_home(first)),
+            esc(&redact_home(first)),
             esc(&more)
         );
     }
@@ -520,11 +514,7 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval) {
         if c.failed {
             b.push_str("<span class=\"radtag fail\">failed</span>");
         }
-        let _ = write!(
-            b,
-            "<code>{}</code></div>",
-            esc(&crate::report::redact_home(&c.summary))
-        );
+        let _ = write!(b, "<code>{}</code></div>", esc(&redact_home(&c.summary)));
     }
     b.push_str("</div>");
 }

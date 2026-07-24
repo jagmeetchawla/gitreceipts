@@ -9,6 +9,7 @@
 pub mod causal;
 pub mod discover;
 pub mod extract;
+pub mod fmt;
 pub mod gitio;
 pub mod html;
 pub mod ingest;
