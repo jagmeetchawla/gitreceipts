@@ -1,14 +1,38 @@
 # `git receipts` — see what your agent actually did.
 
-A coding agent tells you what it did. Your git history tells you what
-persisted. **gitreceipts** reconciles the two: it reads an agent
-session log alongside the repo the agent worked in, and produces a
-ledger — commit by commit — of what was claimed, what landed, what
-changed without being claimed, and what happened to every exception.
+**The name is the thesis: git is the oracle.** A coding agent tells you
+what it did; git kept its own record of what actually persisted — a log
+the agent can't fabricate after the fact. **gitreceipts** reads your
+Claude Code session alongside the repo and reconciles the two, claim by
+claim, against that record. Not the agent's word. Git's.
+
+What it **verifies** — because git can witness it:
+- **File writes, edits, deletes** — the claimed content is checked
+  against the actual commit blobs (content-level, not filename-level, so
+  a coincidental change can't be mistaken for the claim landing).
+- **Commits** — matched to the real commit graph and reflog.
+- **Pushes** — checked against the remote-tracking refs.
+
+What it **surfaces** — the rest of the story, honestly labeled:
+- **Intent** — the prompts *you* typed, attached to the commit each one
+  drove, so every commit reads *ask → what landed*.
+- **Agent effort** — commands issued and an estimated token count
+  (deduplicated per request; marked *estimated, not billing*).
+- **Blast radius** — how far each command reached: `local-fs →
+  local-git → remote-git → network`. This is the honest boundary:
+  a network call or a deploy leaves nothing in git, so its captured
+  output is shown as the agent's *own receipt* — never dressed up as
+  proof. git receipts audits what git can prove, and flags what it can't.
+
+The headline number is **broken promises**: a claim that never landed
+and nothing explains. It is *earned*, claim by claim, not assumed —
+verified against later commits, reconciled with the session's own
+commands, checked against the working tree.
 
 ```
 intent → outcome
   173 prompts drove 52 commits; 214/219 claimed files landed (98%), 49 intervals fully balanced
+  agent effort: 412 commands · ~5.0M output tokens across 3,413 requests (est., not billing)
   what happened to every exception:
     · claims that landed late: 3, content-verified against the commit they landed in
     · claims that never landed, resolved: 4 — superseded by later landed edits: 2 ·
@@ -18,8 +42,8 @@ intent → outcome
     · broken promises (never landed, nothing explains it): 0
 ```
 
-That last line is the point. Zero is not assumed — it is earned, claim
-by claim, against the repo's own receipts.
+That last line is the point. Zero is not assumed — it is earned against
+the repo's own receipts.
 
 ## How it works
 
