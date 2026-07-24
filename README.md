@@ -79,11 +79,16 @@ Two frontiers it honestly does **not** cross:
   blast radius plus the command's own captured output, never as proof.
   (The *source* — the code that did it — usually is in git.)
 - **Data as the deliverable** — when the product is processed or
-  synthesized *data*, git usually doesn't hold it: it lives in a data
-  store, a database, or a `.gitignored` directory. git-lfs doesn't
-  close this — it keeps only a pointer, so the tool sees *that* the
-  file changed, not *what* the data is. For data work the tool audits
-  the pipeline code; it can't verify the dataset, and it says so.
+  synthesized *data*, git doesn't hold the data itself (it lives in a
+  store, a database, or a `.gitignored` dir; git-lfs keeps only a
+  pointer). But real data work is *scripted* — a Python job, a SQL/dbt
+  model, a notebook — and that pipeline **is** code in git, fully
+  audited. The data is a reproducible build-output of it, the way a
+  binary is of source. So the tool verifies the process that produces
+  the data; it doesn't verify the dataset — the same way it can't
+  confirm a build's binary, only that you committed the build. The one
+  true blind spot is *un-versioned, ad-hoc* data munging — the
+  non-reproducible habit good engineering avoids anyway.
 
 ## How it works
 
