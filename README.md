@@ -103,6 +103,19 @@ Where it stops, honestly:
   true blind spot is *un-versioned, ad-hoc* data munging — the
   non-reproducible habit good engineering avoids anyway.
 
+And the deepest limit of all — the one on the *claims* side, not git's.
+The repo is shared, durable, complete; **session logs are local,
+ephemeral, and partial.** You have only your own agent's logs, and even
+those expire, rotate, or vanish with a wiped machine — teammates' and
+other harnesses' logs you don't have at all. So gitreceipts **verifies
+the claims it has, period.** *Absence of a claim is not absence of
+action — it's absence of a log.* "broken promises: 0" means zero *among
+the claims you gave it*, not across the repo's whole history. A commit
+with no session log is never guessed at — it's named by its git author
+and marked *not audited*. That asymmetry is also why git is the right
+anchor: you check the fragile, suspect side (claims) against the durable,
+shared side (git) — never the reverse.
+
 ## How it works
 
 Think of it as bank reconciliation for agent work:
