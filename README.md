@@ -93,7 +93,11 @@ git receipts audit --latest --filter red
 # broken promises + unexplained residue
 git receipts audit --latest --filter red-residue
 
-# keep colors through a pipe
+# on a terminal the report auto-pages through $PAGER (like git),
+# colors intact — no flags needed. To opt out:
+git receipts audit --latest --no-pager
+
+# force colors through your own pipe (bat, less -R, a saved transcript)
 git receipts audit --latest --color=always | less -R
 
 # suppress quoted prompt text before sharing a screenshot
