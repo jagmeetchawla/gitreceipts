@@ -3,6 +3,8 @@
 
 use std::io::IsTerminal;
 
+use chrono::{DateTime, Utc};
+
 use crate::extract::Session;
 use crate::fmt::{abbrev, command_summary, redact_home, tilde};
 use crate::ingest::IngestStats;
@@ -82,6 +84,10 @@ pub struct Options {
     /// Terse spine: one line per commit after the session summary, instead of
     /// the full per-commit drill-down (like `git log --oneline`).
     pub oneline: bool,
+    /// Print each commit's full conversation (every prompt and assistant
+    /// message) — the whole chat, not just intent + summary. Most useful
+    /// scoped with `--commit`; the whole session gets long.
+    pub full: bool,
 }
 
 /// The 7-char short form of a full commit hash, for display.
@@ -152,10 +158,14 @@ pub fn print(
     // the session-wide summary above it. lspci -s: just the addressed device.
     if let Some(h) = &opts.commit {
         let enriched = audit.intervals.iter().any(|i| !i.commit.from_history);
-        for interval in &audit.intervals {
+        for (i, interval) in audit.intervals.iter().enumerate() {
             if &interval.commit.hash == h {
                 println!();
                 render_interval(&st, interval, opts, enriched);
+                if opts.full && opts.show_intent {
+                    let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
+                    render_conversation(&st, session, after, Some(interval.commit.ts));
+                }
             }
         }
         return;
@@ -501,9 +511,13 @@ pub fn print(
             }
         }
     } else {
-        for interval in &audit.intervals {
+        for (i, interval) in audit.intervals.iter().enumerate() {
             if opts.filter.keeps(interval.status()) {
                 render_interval(&st, interval, opts, enriched);
+                if opts.full && opts.show_intent {
+                    let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
+                    render_conversation(&st, session, after, Some(interval.commit.ts));
+                }
             }
         }
     }
@@ -530,6 +544,38 @@ pub fn print(
             pct(claims_landed, claims_total),
         ))
     );
+}
+
+/// `--full`: the commit's whole conversation — every prompt and assistant
+/// message in the interval's span `(after, until]`, in order. The verbose
+/// counterpart to the intent/summary bookends.
+fn render_conversation(
+    st: &Style,
+    session: &Session,
+    after: Option<DateTime<Utc>>,
+    until: Option<DateTime<Utc>>,
+) {
+    let turns = session.conversation(after, until);
+    if turns.is_empty() {
+        return;
+    }
+    println!(
+        "    {}",
+        st.cyan(&format!("conversation ({} turns):", turns.len()))
+    );
+    for t in turns {
+        let who = if t.user {
+            st.bold("you  ")
+        } else {
+            st.dim("agent")
+        };
+        let text = redact_home(t.text);
+        let mut lines = text.lines();
+        println!("      {} {}", who, lines.next().unwrap_or(""));
+        for line in lines {
+            println!("            {line}");
+        }
+    }
 }
 
 /// One `--oneline` spine row: the commit's short hash (the handle for

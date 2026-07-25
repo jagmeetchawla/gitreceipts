@@ -111,6 +111,11 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// per-commit drill-down. Like `git log --oneline`. Console only.
         #[arg(long)]
         oneline: bool,
+        /// Print each commit's full conversation (every prompt and assistant
+        /// message), not just intent + summary. Most useful scoped with
+        /// --commit — the whole session gets long. Implies --verbose.
+        #[arg(long)]
+        full: bool,
         /// Console: print each commit's full anatomy — files added/
         /// modified/deleted/renamed and the commands that ran.
         #[arg(short, long)]
@@ -153,7 +158,9 @@ EXAMPLES:
   git receipts export --latest --compact          single-line JSON, for streaming
   git receipts export --all --repo ~/app          every session for a repo, merged
   git receipts export --latest --no-intent        drop quoted prompts, keep counts
-  git receipts export --latest --with-output       include each command's output"
+  git receipts export --latest --with-output       include each command's output
+  git receipts export --latest --full             the whole chat + all output
+  git receipts export --latest --commit 6d6cdc4 --full   one commit's conversation"
     )]
     Export {
         /// Paths to session .jsonl files (or use --latest / --all).
@@ -193,6 +200,11 @@ EXAMPLES:
         /// session; only the `intervals` array is restricted to this commit.
         #[arg(long, value_name = "REF")]
         commit: Option<String>,
+        /// The maximal export: add the full chat transcript (every prompt and
+        /// assistant message, in order) and imply --with-output. With --commit,
+        /// the transcript is scoped to that commit's conversation.
+        #[arg(long)]
+        full: bool,
         /// Emit single-line JSON instead of indented (for streaming/piping).
         #[arg(long)]
         compact: bool,
@@ -222,6 +234,7 @@ fn main() -> Result<()> {
             format,
             expand,
             oneline,
+            full,
             verbose,
             with_output,
             commit,
@@ -239,12 +252,13 @@ fn main() -> Result<()> {
                 filter,
                 format,
                 expand,
-                // --with-output and --commit both need the per-commit anatomy,
-                // so either implies verbose for the console.
-                verbose: verbose || with_output || commit.is_some(),
+                // --with-output, --commit, and --full all need the per-commit
+                // anatomy, so any of them implies verbose for the console.
+                verbose: verbose || with_output || full || commit.is_some(),
                 with_output,
                 commit: None,
                 oneline,
+                full,
             },
             commit,
         ),
@@ -258,6 +272,7 @@ fn main() -> Result<()> {
             filter,
             with_output,
             commit,
+            full,
             compact,
         } => export::run(
             sessions,
@@ -269,6 +284,7 @@ fn main() -> Result<()> {
             filter,
             with_output,
             commit,
+            full,
             !compact,
         ),
     }

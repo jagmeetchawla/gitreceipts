@@ -47,6 +47,7 @@ pub fn render(
     expand: Expand,
     with_output: bool,
     commit: Option<&str>,
+    full: bool,
 ) -> String {
     let total = audit.intervals.len();
     let green = audit.intervals.iter().filter(|i| i.balanced()).count();
@@ -169,13 +170,28 @@ pub fn render(
         audit.intervals.iter().filter(|i| i.agent_committed).count(),
     );
 
-    for iv in &audit.intervals {
+    for (i, iv) in audit.intervals.iter().enumerate() {
         if let Some(h) = commit
             && iv.commit.hash != h
         {
             continue;
         }
-        render_interval(&mut b, iv, show_intent, enriched, expand, with_output);
+        // --full: the interval's conversation, in its span (after, commit ts].
+        let convo = if full && show_intent {
+            let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
+            session.conversation(after, Some(iv.commit.ts))
+        } else {
+            Vec::new()
+        };
+        render_interval(
+            &mut b,
+            iv,
+            show_intent,
+            enriched,
+            expand,
+            with_output,
+            &convo,
+        );
     }
     b.push_str("</section>\n");
 
@@ -322,6 +338,7 @@ fn render_summary(
     b.push_str("</div>\n");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_interval(
     b: &mut String,
     iv: &crate::reconcile::Interval,
@@ -329,6 +346,7 @@ fn render_interval(
     enriched: bool,
     expand: Expand,
     with_output: bool,
+    convo: &[crate::extract::Turn],
 ) {
     let (cls, mark) = match iv.status() {
         Status::Green => ("green", "\u{2714}"),
@@ -519,6 +537,23 @@ fn render_interval(
              <div class=\"agent-summary\">{}</div></div>",
             esc(&redact_home(summary))
         );
+    }
+    // --full: the whole conversation that produced this commit.
+    if !convo.is_empty() {
+        let _ = write!(
+            b,
+            "<div class=\"section\"><div class=\"section-h\">conversation ({} turns)</div>",
+            convo.len()
+        );
+        for t in convo {
+            let who = if t.user { "you" } else { "agent" };
+            let _ = write!(
+                b,
+                "<div class=\"turn {who}\"><span class=\"who\">{who}</span><div class=\"msg\">{}</div></div>",
+                esc(&redact_home(t.text))
+            );
+        }
+        b.push_str("</div>");
     }
     b.push_str("</div></details>\n");
 }

@@ -102,6 +102,14 @@ pub struct Tokens {
     pub cache_creation: u64,
 }
 
+/// One turn of the conversation — a user prompt or an assistant message —
+/// borrowed from the session for the `--full` transcript.
+pub struct Turn<'a> {
+    pub user: bool,
+    pub ts: Option<DateTime<Utc>>,
+    pub text: &'a str,
+}
+
 #[derive(Debug, Default)]
 pub struct Session {
     pub claims: Vec<Claim>,
@@ -113,6 +121,44 @@ pub struct Session {
     pub last_ts: Option<DateTime<Utc>>,
     pub cwds: Vec<String>,
     pub branches: Vec<String>,
+}
+
+impl Session {
+    /// The conversation — prompts and assistant narrations merged in time
+    /// order — within the half-open window `(after, until]`. `None` bounds are
+    /// unbounded; with both `None` (whole session) undated turns are kept, but
+    /// a bounded (scoped) window drops them since they can't be placed.
+    pub fn conversation(
+        &self,
+        after: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) -> Vec<Turn<'_>> {
+        let in_window = |ts: Option<DateTime<Utc>>| match ts {
+            Some(t) => after.is_none_or(|a| t > a) && until.is_none_or(|u| t <= u),
+            None => after.is_none() && until.is_none(),
+        };
+        let mut turns: Vec<Turn> = Vec::new();
+        for p in &self.prompts {
+            if in_window(p.ts) {
+                turns.push(Turn {
+                    user: true,
+                    ts: p.ts,
+                    text: &p.text,
+                });
+            }
+        }
+        for n in &self.narrations {
+            if in_window(n.ts) {
+                turns.push(Turn {
+                    user: false,
+                    ts: n.ts,
+                    text: &n.text,
+                });
+            }
+        }
+        turns.sort_by_key(|t| t.ts);
+        turns
+    }
 }
 
 fn parse_ts(rec: &Record) -> Option<DateTime<Utc>> {

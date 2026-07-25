@@ -104,6 +104,7 @@ pub fn run(
                 opts.expand,
                 opts.with_output,
                 opts.commit.as_deref(),
+                opts.full,
             )
         ),
     }

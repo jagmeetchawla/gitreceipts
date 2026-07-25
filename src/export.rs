@@ -25,6 +25,7 @@ pub fn run(
     filter: Filter,
     with_output: bool,
     commit: Option<String>,
+    full: bool,
     pretty: bool,
 ) -> Result<()> {
     let Loaded {
@@ -48,9 +49,12 @@ pub fn run(
         &stats,
         &audit,
         show_intent,
-        with_output,
+        // --full is the maximal export: the whole chat AND every command's
+        // output.
+        with_output || full,
         commit.as_deref(),
         filter,
+        full,
     );
     println!("{}", receipt.to_json(pretty)?);
     Ok(())

@@ -80,6 +80,12 @@ h1 .cmd { color: var(--accent); }
 .cmdout.err { color: var(--red); border-color: currentColor; }
 /* the agent's own post-commit summary — prose, newlines preserved */
 .agent-summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; line-height: 1.5; color: var(--ink); background: var(--bg); border-left: 3px solid var(--intent); border-radius: 3px; padding: 0.5rem 0.7rem; max-height: 22rem; overflow: auto; }
+/* --full: the commit's whole conversation */
+.turn { display: flex; gap: 0.5rem; padding: 0.25rem 0; align-items: baseline; }
+.turn .who { flex: none; width: 3.2rem; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: right; }
+.turn.you .who { color: var(--intent); } .turn.agent .who { color: var(--dim); }
+.turn .msg { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; line-height: 1.5; }
+.turn.you .msg { color: var(--ink); } .turn.agent .msg { color: var(--dim); }
 .radtag { font-size: 0.65rem; padding: 0 0.35rem; border-radius: 2px; white-space: nowrap; flex: none; border: 1px solid var(--rule); color: var(--dim); }
 .radtag.local-fs { color: var(--intent); } .radtag.local-git { color: var(--intent); }
 .radtag.remote-git { color: var(--amber); border-color: currentColor; }

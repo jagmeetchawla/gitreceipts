@@ -194,6 +194,9 @@ git receipts audit --latest --oneline
 git receipts audit --latest --commit 6d6cdc4
 git receipts export --latest --commit 6d6cdc4
 
+# read a commit's whole conversation (every prompt + assistant message)
+git receipts audit --latest --commit 6d6cdc4 --full
+
 # audit every session the store still has for this repo, merged into
 # one ledger (forked sessions deduplicate; concurrent sessions union)
 git receipts audit --all
@@ -235,6 +238,11 @@ git receipts export --latest > receipt.json
 git receipts export --latest --filter red        # only the broken-promise commits
 git receipts export --latest --commit 6d6cdc4     # one commit's block
 git receipts export --latest --with-output --compact   # every output, single line
+
+# --full: the maximal receipt — the whole chat transcript + every command's
+# output. Scope it to one commit's conversation with --commit.
+git receipts export --latest --full > full-receipt.json
+git receipts export --latest --commit 6d6cdc4 --full
 ```
 
 ## Receipts (JSON export)
@@ -253,7 +261,11 @@ schema is versioned (`schema_version`), pretty-printed by default
 prompt text while keeping every count, for a receipt you can share.
 `export` takes the same scoping switches as `audit` — `--filter` and
 `--commit` restrict which intervals it carries, while the summary stays
-whole-session.
+whole-session. `--full` is the maximal export: it adds the complete
+chat transcript (every prompt and assistant message, in order) and
+every command's output. With `--commit`, the transcript is scoped to
+that commit's own conversation — and the same `--full` works in `audit`
+to read one commit's whole exchange inline.
 
 Every command is present in full. Captured output is included for
 **failed** commands by default — a failure's output is the one you

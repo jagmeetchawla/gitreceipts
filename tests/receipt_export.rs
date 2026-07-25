@@ -77,6 +77,7 @@ fn receipt_headline_numbers_mirror_the_audit() {
         false,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
 
     assert_eq!(r.schema_version, SCHEMA_VERSION);
@@ -114,6 +115,7 @@ fn broken_promise_is_flagged_at_the_ledger_line() {
         false,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
 
     let broken: Vec<&str> = r
@@ -146,6 +148,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
         false,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
     let redacted = Receipt::build(
         "session",
@@ -157,6 +160,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
         false,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
 
     let intent_strings =
@@ -185,6 +189,7 @@ fn receipt_round_trips_as_valid_json() {
         false,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
 
     for pretty in [true, false] {
@@ -241,6 +246,7 @@ fn command_text_is_full_and_output_is_opt_in() {
         false,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
     assert_eq!(cmd(&without), full_cmd, "full multi-line command retained");
     let no_output = without
@@ -260,6 +266,7 @@ fn command_text_is_full_and_output_is_opt_in() {
         true,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
     let out = with
         .intervals
@@ -287,6 +294,7 @@ fn commit_scope_filters_intervals_but_keeps_the_whole_session_summary() {
         false,
         Some(&target),
         gitreceipts::report::Filter::All,
+        false,
     );
     // Only the scoped commit is in the intervals array…
     assert_eq!(r.intervals.len(), 1);
@@ -341,6 +349,7 @@ fn a_failed_command_carries_output_by_default() {
         false,
         None,
         gitreceipts::report::Filter::All,
+        false,
     );
     let with_out: Vec<(&str, bool)> = r
         .intervals
@@ -355,4 +364,41 @@ fn a_failed_command_carries_output_by_default() {
     );
     assert!(with_out[0].0.contains("npm test"));
     assert!(with_out[0].1, "and it is flagged is_error");
+}
+
+#[test]
+fn full_adds_the_transcript_scoped_by_commit() {
+    let (repo, s) = green_and_broken("receipt-full");
+    let (session, stats, a) = audit(&repo, &s);
+    let build = |commit: Option<&str>, full: bool| {
+        Receipt::build(
+            "s",
+            "/tmp/r",
+            &session,
+            &stats,
+            &a,
+            true,
+            false,
+            commit,
+            gitreceipts::report::Filter::All,
+            full,
+        )
+    };
+
+    // No --full: no transcript.
+    assert!(build(None, false).transcript.is_none());
+
+    // --full, whole session: both prompts present.
+    let whole = build(None, true).transcript.expect("transcript");
+    assert!(whole.iter().any(|m| m.text.contains("make a")));
+    assert!(whole.iter().any(|m| m.text.contains("make b and c")));
+
+    // --full scoped to the second commit: only its window's prompt.
+    let second = a.intervals[1].commit.hash.clone();
+    let scoped = build(Some(&second), true).transcript.expect("transcript");
+    assert!(scoped.iter().any(|m| m.text.contains("make b and c")));
+    assert!(
+        !scoped.iter().any(|m| m.text.contains("make a")),
+        "the first commit's prompt is outside the second commit's window"
+    );
 }

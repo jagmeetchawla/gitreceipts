@@ -11,6 +11,7 @@
 //! plus the header context, token estimate, evidence grades, blast radii, and
 //! the git-identity roll-up.
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::extract::Session;
@@ -37,6 +38,22 @@ pub struct Receipt {
     /// File claims that resolve outside the audited repo (scratch dirs, other
     /// repos, memory files) — reported, never scored.
     pub out_of_repo: Vec<FileClaim>,
+    /// The full chat — every prompt and assistant message, in order — present
+    /// only under `--full`. Scoped to the commit's interval when `--commit` is
+    /// also given, otherwise the whole session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<Vec<ChatMessage>>,
+}
+
+/// One turn of the conversation, for the `--full` transcript.
+#[derive(Debug, Serialize)]
+pub struct ChatMessage {
+    /// "user" | "assistant".
+    pub role: &'static str,
+    /// RFC 3339.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts: Option<String>,
+    pub text: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -302,6 +319,7 @@ impl Receipt {
         with_output: bool,
         commit: Option<&str>,
         filter: Filter,
+        full: bool,
     ) -> Receipt {
         let window = match (session.first_ts, session.last_ts) {
             (Some(a), Some(b)) => {
@@ -448,6 +466,11 @@ impl Receipt {
                     edits: *edits,
                 })
                 .collect(),
+            transcript: if full && show_intent {
+                Some(transcript(session, audit, commit))
+            } else {
+                None
+            },
         }
     }
 
@@ -459,6 +482,32 @@ impl Receipt {
             serde_json::to_string(self)
         }
     }
+}
+
+/// The full chat as `ChatMessage`s. Scoped to a commit's interval span
+/// `(previous commit, this commit]` when `commit` is set (the conversation
+/// that produced it), else the whole session.
+fn transcript(session: &Session, audit: &Audit, commit: Option<&str>) -> Vec<ChatMessage> {
+    let (after, until): (Option<DateTime<Utc>>, Option<DateTime<Utc>>) = match commit {
+        Some(h) => match audit.intervals.iter().position(|i| i.commit.hash == h) {
+            Some(0) => (None, Some(audit.intervals[0].commit.ts)),
+            Some(k) => (
+                Some(audit.intervals[k - 1].commit.ts),
+                Some(audit.intervals[k].commit.ts),
+            ),
+            None => (None, None),
+        },
+        None => (None, None),
+    };
+    session
+        .conversation(after, until)
+        .into_iter()
+        .map(|t| ChatMessage {
+            role: if t.user { "user" } else { "assistant" },
+            ts: t.ts.map(|ts| ts.to_rfc3339()),
+            text: redact_home(t.text),
+        })
+        .collect()
 }
 
 fn interval_receipt(i: &Interval, show_intent: bool, with_output: bool) -> IntervalReceipt {
