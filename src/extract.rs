@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Read;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -188,12 +189,49 @@ fn parse_ts(rec: &Record) -> Option<DateTime<Utc>> {
         .map(|t| t.with_timezone(&Utc))
 }
 
+/// A large tool result is offloaded by the harness: the log holds a
+/// `<persisted-output>` pointer + a 2KB preview, and the full content lives in
+/// a sibling `tool-results/<id>.txt`. Follow the pointer to recover the full
+/// receipt (the oracle) — a truncated preview can drop the very "error" or
+/// confirmation line that matters. Returns None (keep the self-describing
+/// preview) if the marker/path is absent, fails the guardrail, or is
+/// unreadable.
+///
+/// Guardrail (session logs are untrusted input): only follow a path that looks
+/// like a Claude tool-results file (`…/tool-results/*.txt`), is a *regular*
+/// file (reject symlinks via `symlink_metadata`), and read at most one receipt
+/// cap of it. (Auditing another machine's logs would want this further
+/// restricted to the known store root — a later hardening.)
+fn resolve_offload(text: &str) -> Option<String> {
+    if !text.starts_with("<persisted-output>") {
+        return None;
+    }
+    let path = text
+        .lines()
+        .find_map(|l| l.split_once("saved to: ").map(|(_, p)| p.trim()))?;
+    if !path.contains("/tool-results/") || !path.ends_with(".txt") {
+        return None;
+    }
+    if !std::fs::symlink_metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let mut buf = String::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(RECEIPT_TEXT_CAP as u64 + 1)
+        .read_to_string(&mut buf)
+        .ok()?;
+    Some(buf)
+}
+
 pub fn extract(ordered: &[Record]) -> Session {
     // receipts first, keyed by tool_use_id
     let mut receipts: HashMap<String, Receipt> = HashMap::new();
     for rec in ordered {
         for res in rec.tool_results() {
-            let mut text = res.text();
+            // Follow a `<persisted-output>` pointer to the full receipt; else
+            // keep the (self-describing) preview text.
+            let mut text = resolve_offload(&res.text()).unwrap_or_else(|| res.text());
             if text.len() > RECEIPT_TEXT_CAP {
                 let mut cut = RECEIPT_TEXT_CAP;
                 while !text.is_char_boundary(cut) {
@@ -537,8 +575,35 @@ pub fn command_radius(command: &str) -> Option<Radius> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, classify_tool, parse_mcp_name};
+    use super::{Action, classify_tool, parse_mcp_name, resolve_offload};
     use serde_json::json;
+
+    #[test]
+    fn offload_pointer_is_followed_to_the_full_receipt() {
+        let base = std::env::temp_dir().join(format!("gr-offload-{}", std::process::id()));
+        let dir = base.join("tool-results");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("abc123.txt");
+        std::fs::write(&file, "FULL RECEIPT\nerror at line 99\ntail").unwrap();
+
+        let pointer = format!(
+            "<persisted-output>\nOutput too large (44.6KB). Full output saved to: {}\n\nPreview (first 2KB):\ntruncated…",
+            file.display()
+        );
+        let full = resolve_offload(&pointer).expect("should follow the pointer");
+        assert!(
+            full.contains("error at line 99"),
+            "recovered the full receipt"
+        );
+
+        // guardrails: not-a-pointer → None; a path outside tool-results → None
+        assert!(resolve_offload("plain output").is_none());
+        assert!(
+            resolve_offload("<persisted-output>\nFull output saved to: /etc/passwd\nx").is_none(),
+            "only follows …/tool-results/*.txt"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn mcp_name_splits_into_server_and_tool() {
