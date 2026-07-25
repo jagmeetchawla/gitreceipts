@@ -153,6 +153,10 @@ pub struct IntervalReceipt {
     pub spine_jump: bool,
     /// The prompts this commit answers to. Empty when redacted (`--no-intent`).
     pub intents: Vec<String>,
+    /// The agent's own post-commit summary — a natural-language claim, not
+    /// proof. Omitted when redacted (`--no-intent`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
     pub commands: Commands,
     /// What git recorded for this commit (its diff).
     pub statement: Vec<FileChangeReceipt>,
@@ -482,6 +486,11 @@ fn interval_receipt(i: &Interval, show_intent: bool, with_output: bool) -> Inter
             i.intents.iter().map(|s| redact_home(s)).collect()
         } else {
             Vec::new()
+        },
+        summary: if show_intent {
+            i.summary.as_deref().map(redact_home)
+        } else {
+            None
         },
         commands: Commands {
             total: i.commands,

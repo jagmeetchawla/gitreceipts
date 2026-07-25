@@ -510,6 +510,16 @@ fn render_interval(
             esc(why)
         );
     }
+    // The agent's own account of this commit — a claim, not proof; the
+    // findings above are what's verified.
+    if show_intent && let Some(summary) = &iv.summary {
+        let _ = write!(
+            b,
+            "<div class=\"section\"><div class=\"section-h\">agent summary — the agent's own words, not verified</div>\
+             <div class=\"agent-summary\">{}</div></div>",
+            esc(&redact_home(summary))
+        );
+    }
     b.push_str("</div></details>\n");
 }
 

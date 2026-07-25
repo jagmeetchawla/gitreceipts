@@ -1029,3 +1029,67 @@ fn multi_author_keyframe_residue_attributes_to_the_committer() {
     assert!(coauthors.iter().any(|c| c.contains("Claude")));
     assert!(coauthors.iter().any(|c| c.contains("Codex")));
 }
+
+#[test]
+fn commit_summary_is_the_agent_narration_right_after_the_commit() {
+    let repo = TempRepo::new("summary");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", &SessionBuilder::default_body("a.txt"));
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "land a"],
+        Some("2026-05-01T10:05:00Z"),
+    );
+
+    let summary = "Done — committed a.txt with the new module and its tests.";
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-05-01T10:00:00Z", "make a")
+        .write_claim("2026-05-01T10:01:00Z", "2026-05-01T10:01:01Z", "a.txt")
+        .bash_claim(
+            "2026-05-01T10:04:00Z",
+            "2026-05-01T10:05:01Z",
+            "git add -A && git commit -m 'land a'",
+        )
+        // a trivial one-liner (skipped) then the real summary, both post-commit
+        .assistant_text("2026-05-01T10:05:05Z", "ok")
+        .assistant_text("2026-05-01T10:05:10Z", summary);
+
+    let audit = run(&repo, &s);
+    assert_eq!(audit.intervals.len(), 1);
+    assert_eq!(
+        audit.intervals[0].summary.as_deref(),
+        Some(summary),
+        "the first substantial narration after the commit is its summary"
+    );
+}
+
+#[test]
+fn a_commit_with_no_narration_after_it_has_no_summary() {
+    let repo = TempRepo::new("summary-none");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", &SessionBuilder::default_body("a.txt"));
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "land a"],
+        Some("2026-05-01T10:05:00Z"),
+    );
+
+    // narration is BEFORE the commit — it is not a post-commit summary
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-05-01T10:00:00Z", "make a")
+        .assistant_text(
+            "2026-05-01T10:00:30Z",
+            "Let me create a.txt and wire it up now.",
+        )
+        .write_claim("2026-05-01T10:01:00Z", "2026-05-01T10:01:01Z", "a.txt")
+        .bash_claim(
+            "2026-05-01T10:04:00Z",
+            "2026-05-01T10:05:01Z",
+            "git add -A && git commit -m 'land a'",
+        );
+
+    let audit = run(&repo, &s);
+    assert_eq!(audit.intervals[0].summary, None);
+}

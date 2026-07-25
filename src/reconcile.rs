@@ -112,6 +112,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             pushed: pushed_set.contains(&commit.hash),
             commands_run: Vec::new(),
             intents: Vec::new(),
+            summary: None,
             spine_jump,
             superseded,
             statement,
@@ -142,6 +143,24 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             Some(idx) => audit.intervals[idx].intents.push(prompt.text.clone()),
             None => audit.tail_intents.push(prompt.text.clone()),
         }
+    }
+
+    // Each commit's summary: the first assistant narration after this commit
+    // but before the next — the agent's own account of what it just landed.
+    let mut narrations: Vec<&crate::extract::Narration> = session
+        .narrations
+        .iter()
+        .filter(|n| n.ts.is_some())
+        .collect();
+    narrations.sort_by_key(|n| n.ts);
+    for i in 0..audit.intervals.len() {
+        let after = audit.intervals[i].commit.ts;
+        let before = audit.intervals.get(i + 1).map(|iv| iv.commit.ts);
+        audit.intervals[i].summary = narrations
+            .iter()
+            .filter(|n| n.ts.is_some_and(|t| t > after))
+            .find(|n| before.is_none_or(|b| n.ts.is_some_and(|t| t < b)))
+            .map(|n| n.text.clone());
     }
 
     // per-interval ledgers accumulate as path -> (edits, frames, last probe)

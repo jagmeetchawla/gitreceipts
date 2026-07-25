@@ -76,6 +76,18 @@ pub struct Prompt {
     pub text: String,
 }
 
+/// A substantial assistant prose message — the agent narrating what it did.
+/// The one that follows a commit is that commit's own summary (a
+/// natural-language claim, reconciled the same way the ledger is).
+#[derive(Debug, Clone)]
+pub struct Narration {
+    pub ts: Option<DateTime<Utc>>,
+    pub text: String,
+}
+
+/// Assistant prose is capped: a commit summary is a paragraph, not a log.
+const NARRATION_CAP: usize = 4096;
+
 /// Deduplicated token totals for the session. A single API request is
 /// streamed as several JSONL records that repeat `message.usage` with
 /// growing values; summing them raw overcounts 2–3×. We key each request
@@ -94,6 +106,8 @@ pub struct Tokens {
 pub struct Session {
     pub claims: Vec<Claim>,
     pub prompts: Vec<Prompt>,
+    /// Assistant prose messages, in order — the agent narrating its work.
+    pub narrations: Vec<Narration>,
     pub tokens: Tokens,
     pub first_ts: Option<DateTime<Utc>>,
     pub last_ts: Option<DateTime<Utc>>,
@@ -163,6 +177,12 @@ pub fn extract(ordered: &[Record]) -> Session {
             && let Some(text) = prompt_text(rec)
         {
             session.prompts.push(Prompt { ts, text });
+        }
+
+        if rec.kind == "assistant"
+            && let Some(text) = assistant_text(rec)
+        {
+            session.narrations.push(Narration { ts, text });
         }
 
         if rec.kind == "assistant"
@@ -238,6 +258,28 @@ fn prompt_text(rec: &Record) -> Option<String> {
             !l.is_empty() && !l.starts_with('<') && !l.starts_with("Caveat:") && !l.starts_with('[')
         })
         .map(|l| l.chars().take(200).collect())
+}
+
+/// Substantial assistant prose from a record — the text blocks joined,
+/// trimmed, and capped. Skips trivial one-liners (a real commit summary is a
+/// paragraph); returns None for tool-only or tiny messages.
+fn assistant_text(rec: &Record) -> Option<String> {
+    let content = &rec.message.as_ref()?.content;
+    let text = match content {
+        Value::String(s) => s.clone(),
+        Value::Array(blocks) => blocks
+            .iter()
+            .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|b| b.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    let text = text.trim();
+    if text.chars().count() < 40 {
+        return None;
+    }
+    Some(text.chars().take(NARRATION_CAP).collect())
 }
 
 fn input_str<'v>(input: &'v Value, key: &str) -> Option<&'v str> {

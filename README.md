@@ -288,8 +288,12 @@ ledger is a later layer, not a v0.1 concern.
 Everything runs locally; nothing leaves your machine. The report
 prints repo-relative paths (your home directory collapses to `~`),
 branch names, commit subjects, and — because intent matters — the
-prompts you typed, attached to the commits they drove. Use
-`--no-intent` to drop the quoted text while keeping the counts, e.g.
+prompts you typed, attached to the commits they drove. Each commit
+block is bookended: the first prompt as **intent** at the top, and the
+agent's own **summary** (the prose it wrote right after committing) at
+the bottom — the readable claim, closing the loop the ledger verifies.
+The summary is the agent's word, not proof, and `--no-intent` drops
+both it and the quoted prompt text while keeping the counts, e.g.
 before sharing a report. Session files are treated as untrusted
 input: paths from the log never reach git as options, traversal is
 rejected, and a multi-gigabyte line won't take down the process.

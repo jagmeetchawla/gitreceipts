@@ -88,6 +88,10 @@ pub struct Interval {
     /// User prompts typed during this interval — the asks this commit
     /// answers to.
     pub intents: Vec<String>,
+    /// The agent's own account of this commit: the first prose message it
+    /// wrote right after committing. A natural-language claim — the readable
+    /// counterpart to the verified ledger, never proof itself.
+    pub summary: Option<String>,
     /// This commit's parent is not the previous spine commit (rebase,
     /// reset, branch switch) — the timeline has a seam here.
     pub spine_jump: bool,

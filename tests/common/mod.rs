@@ -157,6 +157,20 @@ impl SessionBuilder {
         self
     }
 
+    /// An assistant prose message — the agent narrating (e.g. a post-commit
+    /// summary).
+    pub fn assistant_text(&mut self, ts: &str, text: &str) -> &mut Self {
+        let esc = Self::json_escape(text);
+        let a = self.uuid("a");
+        self.push(
+            "assistant",
+            ts,
+            &a.clone(),
+            &format!(r#"{{"content":[{{"type":"text","text":"{esc}"}}]}}"#),
+        );
+        self
+    }
+
     /// Subsequent events record this cwd — a session wandering into a
     /// scratch dir or another repo.
     pub fn set_cwd(&mut self, cwd: &str) -> &mut Self {

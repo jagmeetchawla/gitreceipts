@@ -888,4 +888,17 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         };
         println!("      {}", st.dim(&hint));
     }
+
+    // The agent's own account of this commit, closing the block — the
+    // readable claim, not proof (the ledger above is what's verified).
+    if opts.show_intent
+        && let Some(summary) = &interval.summary
+    {
+        let flat = redact_home(summary).replace('\n', " ");
+        let mut shown: String = flat.chars().take(140).collect();
+        if flat.chars().count() > 140 {
+            shown.push('\u{2026}');
+        }
+        println!("    {} {}", st.cyan("\u{ab} summary:"), shown);
+    }
 }
