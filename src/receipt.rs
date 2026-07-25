@@ -102,6 +102,8 @@ pub struct Summary {
     pub commands: usize,
     pub mcp_calls: usize,
     pub observations: usize,
+    /// Execution-axis facts, per oracle (surfaced, not scored).
+    pub execution: ExecutionFacts,
     /// Ledger claims across all intervals.
     pub claims_total: usize,
     /// Ledger claims that reached git (landed on time or late).
@@ -113,6 +115,19 @@ pub struct Summary {
     pub radii: Radii,
     pub tokens: Tokens,
     pub identities: Identities,
+}
+
+/// Execution-axis facts per oracle — what the executors reported, surfaced
+/// not scored. `failed`/`errored` = the executor's error signal; `aborted` =
+/// the subset that were user-stops (a rejection/interrupt), not agent failures.
+#[derive(Debug, Serialize)]
+pub struct ExecutionFacts {
+    pub os_fs_commands: usize,
+    pub os_fs_failed: usize,
+    pub os_fs_aborted: usize,
+    pub mcp_calls: usize,
+    pub mcp_errored: usize,
+    pub mcp_aborted: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -406,6 +421,14 @@ impl Receipt {
             commands: audit.commands,
             mcp_calls: audit.mcp_calls,
             observations: audit.observations,
+            execution: ExecutionFacts {
+                os_fs_commands: audit.commands,
+                os_fs_failed: audit.cmd_failed,
+                os_fs_aborted: audit.cmd_aborted,
+                mcp_calls: audit.mcp_calls,
+                mcp_errored: audit.mcp_errored,
+                mcp_aborted: audit.mcp_aborted,
+            },
             claims_total,
             claims_landed,
             broken_promises,

@@ -29,6 +29,25 @@ use crate::extract::{Action, Claim, Radius, Session};
 use crate::gitio::{self, FileChange, SpineCommit};
 use matching::{Roots, change_paths, command_names_path, command_removes_path, usable_probe};
 
+/// Result text that says the USER stopped the action (a rejection or interrupt)
+/// rather than the agent/executor failing. Used only to COUNT aborts as a
+/// distinct fact — never as a verdict.
+fn is_user_abort(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    const MARKERS: &[&str] = &[
+        "user doesn't want to proceed",
+        "user rejected",
+        "tool use was rejected",
+        "request interrupted",
+        "interrupted by user",
+        "cancelled by the user",
+        "canceled by the user",
+        "user chose not to",
+        "operation was aborted",
+    ];
+    MARKERS.iter().any(|m| t.contains(m))
+}
+
 fn grade_command(claim: &Claim, corroborated: bool) -> Grade {
     match &claim.receipt {
         None => Grade::Dark,
@@ -137,6 +156,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         file_claims: 0,
         commands: 0,
         mcp_calls: 0,
+        cmd_failed: 0,
+        cmd_aborted: 0,
+        mcp_errored: 0,
+        mcp_aborted: 0,
         observations: 0,
     };
 
@@ -192,8 +215,18 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 input,
             } => {
                 audit.mcp_calls += 1;
+                let errored = claim.receipt.as_ref().is_some_and(|r| r.is_error);
+                if errored {
+                    audit.mcp_errored += 1;
+                    if claim
+                        .receipt
+                        .as_ref()
+                        .is_some_and(|r| is_user_abort(&r.text))
+                    {
+                        audit.mcp_aborted += 1;
+                    }
+                }
                 if let Some(idx) = interval_of(claim.ts) {
-                    let errored = claim.receipt.as_ref().is_some_and(|r| r.is_error);
                     audit.intervals[idx].mcp_runs.push(McpRun {
                         server: server.clone(),
                         tool: tool.clone(),
@@ -242,6 +275,14 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 let failed = claim.receipt.as_ref().is_some_and(|r| r.is_error);
                 if failed {
                     audit.grades.failed += 1;
+                    audit.cmd_failed += 1;
+                    if claim
+                        .receipt
+                        .as_ref()
+                        .is_some_and(|r| is_user_abort(&r.text))
+                    {
+                        audit.cmd_aborted += 1;
+                    }
                 }
                 let subs = crate::extract::git_subcommands(command);
                 let has_push = subs.iter().any(|s| s == "push");

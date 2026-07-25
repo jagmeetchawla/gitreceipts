@@ -232,5 +232,14 @@ pub struct Audit {
     /// MCP tool calls — first-class effectful actions (S3), no longer folded
     /// into observations.
     pub mcp_calls: usize,
+    // Execution-axis FACTS (surfaced, not verdicts), broken down by oracle.
+    // "errored/failed" = the executor's error signal; "aborted" = the subset
+    // that were user-stops (a rejection/interrupt), not agent failures.
+    /// OS/FS oracle: commands the OS reported a non-zero exit for.
+    pub cmd_failed: usize,
+    pub cmd_aborted: usize,
+    /// MCP oracle: calls whose server returned an error result.
+    pub mcp_errored: usize,
+    pub mcp_aborted: usize,
     pub observations: usize,
 }

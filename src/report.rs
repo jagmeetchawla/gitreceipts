@@ -198,6 +198,22 @@ pub fn print(
         "claims: {} file mutations · {} commands · {} MCP calls · {} observations",
         audit.file_claims, audit.commands, audit.mcp_calls, audit.observations
     );
+    // Execution-axis FACTS, per oracle — surfaced, not scored (a non-zero exit
+    // is often benign; the auditor judges). MCP is first-class here.
+    println!(
+        "  {} {} commands · {} failed · {} aborted by you",
+        st.dim("OS/FS oracle:"),
+        audit.commands,
+        audit.cmd_failed,
+        audit.cmd_aborted,
+    );
+    println!(
+        "  {}   {} calls · {} errored · {} aborted by you",
+        st.dim("MCP oracle:"),
+        audit.mcp_calls,
+        audit.mcp_errored,
+        audit.mcp_aborted,
+    );
     println!(
         "evidence: {} exact · {} receipted · {} claimed · {} dark   ({} failed)",
         st.green(&audit.grades.exact.to_string()),

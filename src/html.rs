@@ -115,6 +115,9 @@ pub fn render(
         "<div class=\"meta\">\
          <div>{} events kept / {} lines ({} bookkeeping, {} unparseable{})</div>\
          <div>{} file mutations · {} commands · {} MCP calls · {} observations</div>\
+         <div>OS/FS oracle: {} commands · {} failed · {} aborted by you \u{00b7} \
+         MCP oracle: {} calls · {} errored · {} aborted by you \
+         <span class=\"dim\">(facts, not scored)</span></div>\
          <div>blast radius: {} local-fs · {} local-git · {} remote-git · {} network · {} read-only</div>\
          </div>\n",
         stats.kept - stats.duplicates,
@@ -126,6 +129,12 @@ pub fn render(
         audit.commands,
         audit.mcp_calls,
         audit.observations,
+        audit.commands,
+        audit.cmd_failed,
+        audit.cmd_aborted,
+        audit.mcp_calls,
+        audit.mcp_errored,
+        audit.mcp_aborted,
         audit.radii.local_fs,
         audit.radii.local_git,
         audit.radii.remote_git,
