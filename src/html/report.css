@@ -93,6 +93,7 @@ h1 .cmd { color: var(--accent); }
 .radtag.commit { color: var(--green); border-color: currentColor; }
 .radtag.push { color: var(--amber); border-color: currentColor; }
 .radtag.fail { color: var(--red); border-color: currentColor; }
+.radtag.mcp { color: var(--intent); border-color: currentColor; }
 .mark { font-weight: 700; }
 .interval.green .mark { color: var(--green); }
 .interval.residue .mark { color: var(--amber); }

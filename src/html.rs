@@ -459,6 +459,7 @@ fn render_interval(
 
     render_statement(b, iv);
     render_commands(b, iv, with_output);
+    render_mcp(b, iv, with_output);
 
     // ---- reconciliation findings ---------------------------------------
     for l in &late {
@@ -655,6 +656,50 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output:
                 esc(&redact_home(&command_summary(&c.command)))
             );
         }
+    }
+    b.push_str("</div>");
+}
+
+/// The MCP tool calls in this interval (S3, execution axis). The server's
+/// tool_result is the oracle: errored is tagged; output shows on error or
+/// under `--with-output`.
+fn render_mcp(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool) {
+    if iv.mcp_runs.is_empty() {
+        return;
+    }
+    let errored = iv.mcp_runs.iter().filter(|m| m.errored).count();
+    let _ = write!(
+        b,
+        "<div class=\"section\"><div class=\"section-h\">MCP calls ({} total, {errored} errored)</div>",
+        iv.mcp_runs.len(),
+    );
+    for m in &iv.mcp_runs {
+        b.push_str("<div class=\"crow\">");
+        let _ = write!(b, "<span class=\"radtag mcp\">{}</span>", esc(&m.server));
+        if m.errored {
+            b.push_str("<span class=\"radtag fail\">errored</span>");
+        }
+        let _ = write!(b, "<code class=\"cmdfull\">{}</code>", esc(&m.tool));
+        if with_output || m.errored {
+            let _ = write!(
+                b,
+                "<pre class=\"cmdout\">{}</pre>",
+                esc(&redact_home(&m.input))
+            );
+            if let Some(receipt) = &m.output {
+                let cls = if receipt.is_error {
+                    "cmdout err"
+                } else {
+                    "cmdout"
+                };
+                let _ = write!(
+                    b,
+                    "<pre class=\"{cls}\">{}</pre>",
+                    esc(&redact_home(&receipt.text))
+                );
+            }
+        }
+        b.push_str("</div>");
     }
     b.push_str("</div>");
 }

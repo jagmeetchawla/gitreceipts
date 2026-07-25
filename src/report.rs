@@ -842,6 +842,36 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
                 );
             }
         }
+        // MCP calls — the execution axis. The tool_result is the oracle:
+        // errored is shown red; output is surfaced on error or --with-output.
+        for m in &interval.mcp_runs {
+            let head = format!("⚡ mcp {}/{}", m.server, m.tool);
+            let flag = if m.errored {
+                st.red("  ✗ errored")
+            } else {
+                String::new()
+            };
+            if opts.with_output || m.errored {
+                println!("      {}{}", st.dim(&head), flag);
+                for line in redact_home(&m.input).lines() {
+                    println!("        {line}");
+                }
+                if let Some(receipt) = &m.output {
+                    let marker = if receipt.is_error {
+                        "⤷ error"
+                    } else {
+                        "⤷ result"
+                    };
+                    println!("        {}", st.dim(marker));
+                    for line in redact_home(&receipt.text).lines() {
+                        println!("        {}", st.dim(&format!("  {line}")));
+                    }
+                }
+            } else {
+                let input1: String = redact_home(&m.input).chars().take(100).collect();
+                println!("      {}  {}", st.dim(&head), st.dim(&input1));
+            }
+        }
     }
     for line in &late {
         let (at, dist) = line

@@ -1125,4 +1125,10 @@ fn mcp_calls_are_counted_as_first_class_actions() {
         audit.mcp_calls, 1,
         "the MCP call is counted, not dropped into observations"
     );
+    // retained on its interval with the server + receipt (the execution axis)
+    let runs = &audit.intervals[0].mcp_runs;
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].server, "postgres");
+    assert_eq!(runs[0].tool, "query");
+    assert!(!runs[0].errored, "a success result is not errored");
 }

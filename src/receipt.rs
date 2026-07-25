@@ -176,6 +176,10 @@ pub struct IntervalReceipt {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     pub commands: Commands,
+    /// The MCP tool calls in this interval (S3, execution axis) — each with the
+    /// server's receipt (receipted vs errored).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mcp: Vec<McpRunReceipt>,
     /// What git recorded for this commit (its diff).
     pub statement: Vec<FileChangeReceipt>,
     /// The reconciled claims — one line per claimed path.
@@ -238,6 +242,20 @@ pub struct CommandOutput {
     pub is_error: bool,
     /// Capped at 64 KB upstream (in extract).
     pub text: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct McpRunReceipt {
+    pub server: String,
+    pub tool: String,
+    /// The structured call input (compact JSON) — the claim's payload.
+    pub input: String,
+    /// The server's receipt reported an error.
+    pub errored: bool,
+    /// The server's response — the oracle's own words. Present for errored
+    /// calls by default, and for every call under `--with-output`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<CommandOutput>,
 }
 
 #[derive(Debug, Serialize)]
@@ -569,6 +587,25 @@ fn interval_receipt(i: &Interval, show_intent: bool, with_output: bool) -> Inter
                 })
                 .collect(),
         },
+        mcp: i
+            .mcp_runs
+            .iter()
+            .map(|m| McpRunReceipt {
+                server: m.server.clone(),
+                tool: m.tool.clone(),
+                input: redact_home(&m.input),
+                errored: m.errored,
+                // Output for errored calls by default, all under --with-output.
+                output: if with_output || m.errored {
+                    m.output.as_ref().map(|o| CommandOutput {
+                        is_error: o.is_error,
+                        text: redact_home(&o.text),
+                    })
+                } else {
+                    None
+                },
+            })
+            .collect(),
         statement: i.statement.iter().map(file_change).collect(),
         ledger: i
             .ledger
