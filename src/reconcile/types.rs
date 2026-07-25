@@ -76,6 +76,21 @@ pub struct CommandRun {
     pub output: Option<Receipt>,
 }
 
+/// One MCP tool call that ran in an interval — the execution-axis counterpart
+/// to `CommandRun`. The receipt (the server's tool_result) is the oracle: it
+/// says receipted (`!errored`) vs errored.
+#[derive(Debug)]
+pub struct McpRun {
+    pub server: String,
+    pub tool: String,
+    /// The structured call input (compact JSON) — the claim's payload.
+    pub input: String,
+    /// The server returned an error result (`is_error`).
+    pub errored: bool,
+    /// The server's response — the oracle's own words, capped upstream.
+    pub output: Option<Receipt>,
+}
+
 #[derive(Debug)]
 pub struct Interval {
     pub commit: SpineCommit,
@@ -85,6 +100,8 @@ pub struct Interval {
     pub pushed: bool,
     /// The effectful commands the agent ran in this interval.
     pub commands_run: Vec<CommandRun>,
+    /// The MCP tool calls the agent made in this interval (S3, execution axis).
+    pub mcp_runs: Vec<McpRun>,
     /// User prompts typed during this interval — the asks this commit
     /// answers to.
     pub intents: Vec<String>,

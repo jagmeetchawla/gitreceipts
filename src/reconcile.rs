@@ -15,8 +15,8 @@ mod types;
 
 pub use matching::longest_prefix;
 pub use types::{
-    Audit, CommandRun, Grade, GradeCount, Interval, Landing, LedgerLine, RadiusCount, Status,
-    Superseded,
+    Audit, CommandRun, Grade, GradeCount, Interval, Landing, LedgerLine, McpRun, RadiusCount,
+    Status, Superseded,
 };
 
 use std::collections::{BTreeMap, HashMap};
@@ -111,6 +111,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             agent_committed: false,
             pushed: pushed_set.contains(&commit.hash),
             commands_run: Vec::new(),
+            mcp_runs: Vec::new(),
             intents: Vec::new(),
             summary: None,
             spine_jump,
@@ -182,11 +183,25 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 audit.observations += 1;
                 audit.radii.read_only += 1;
             }
-            // MCP call — first-class effectful action (S3, P1). Counted here;
-            // the execution-axis reconciliation (receipted/errored) and
-            // per-interval surfacing land in later phases.
-            Action::McpCall { .. } => {
+            // MCP call — first-class effectful action (S3). Retained on its
+            // interval with the server's receipt (the oracle): receipted vs
+            // errored. Surfacing + the errored→broken reconciliation follow.
+            Action::McpCall {
+                server,
+                tool,
+                input,
+            } => {
                 audit.mcp_calls += 1;
+                if let Some(idx) = interval_of(claim.ts) {
+                    let errored = claim.receipt.as_ref().is_some_and(|r| r.is_error);
+                    audit.intervals[idx].mcp_runs.push(McpRun {
+                        server: server.clone(),
+                        tool: tool.clone(),
+                        input: input.clone(),
+                        errored,
+                        output: claim.receipt.clone(),
+                    });
+                }
             }
             Action::FileMutation { path, probe } => {
                 audit.file_claims += 1;
