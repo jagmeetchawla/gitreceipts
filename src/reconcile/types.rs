@@ -160,6 +160,12 @@ impl Interval {
     }
 
     pub fn status(&self) -> Status {
+        // The verdict is git-only: red = a claimed edit git never got (the one
+        // unambiguous signal). Execution-axis errors are NOT verdicts — a
+        // non-zero exit is usually benign (grep no-match, a probe, a retried
+        // command), so failed commands / errored MCP calls are SURFACED as
+        // facts (the ✗failed flag, the errored tag, the receipt) for the auditor
+        // to judge, never manufactured into red or yellow. (S3 finding.)
         if self
             .ledger
             .iter()
