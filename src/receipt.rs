@@ -8,7 +8,7 @@
 //!
 //! Everything the verbose console/HTML views show is present here: per-commit
 //! statement, ledger, residue (attributed and dismissed), commands, intents,
-//! plus the header context, token estimate, evidence grades, blast radii, and
+//! plus the header context, token estimate, provenance, blast radii, and
 //! the git-identity roll-up.
 
 use chrono::{DateTime, Utc};
@@ -24,7 +24,7 @@ use crate::report::Filter;
 /// expected to evolve: the shape is not yet stable, so consumers should not
 /// assume compatibility across minor bumps. A future "1.0" is the stability
 /// commitment; a breaking change before then bumps the minor.
-pub const SCHEMA_VERSION: &str = "0.1";
+pub const SCHEMA_VERSION: &str = "0.2";
 
 /// The whole receipt: the root object a consumer reads.
 #[derive(Debug, Serialize)]
@@ -111,7 +111,7 @@ pub struct Summary {
     /// The headline: claims that never landed and nothing explains.
     pub broken_promises: usize,
     pub balance: Balance,
-    pub grades: Grades,
+    pub provenance: Provenance,
     pub radii: Radii,
     pub tokens: Tokens,
     pub identities: Identities,
@@ -138,13 +138,14 @@ pub struct Balance {
     pub total: usize,
 }
 
+/// Provenance — who attested each claim (a fact, not a grade). Ladder by
+/// authority of the attester: claimed (agent's word) < receipted (an executor
+/// returned a receipt) < landed (git durably verified). Only git lands.
 #[derive(Debug, Serialize)]
-pub struct Grades {
-    pub exact: usize,
+pub struct Provenance {
+    pub landed: usize,
     pub receipted: usize,
     pub claimed: usize,
-    pub dark: usize,
-    pub failed: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -438,12 +439,10 @@ impl Receipt {
                 red,
                 total: audit.intervals.len(),
             },
-            grades: Grades {
-                exact: audit.grades.exact,
-                receipted: audit.grades.receipted,
-                claimed: audit.grades.claimed,
-                dark: audit.grades.dark,
-                failed: audit.grades.failed,
+            provenance: Provenance {
+                landed: claims_landed,
+                receipted: audit.grades.receipted + audit.grades.claimed + audit.mcp_calls,
+                claimed: claims_total.saturating_sub(claims_landed) + audit.grades.dark,
             },
             radii: Radii {
                 local_fs: audit.radii.local_fs,

@@ -214,13 +214,22 @@ pub fn print(
         audit.mcp_errored,
         audit.mcp_aborted,
     );
+    // Provenance — who attested each claim (a fact, not a grade): git durably
+    // verified it (landed) · an executor returned a receipt (receipted) · only
+    // the agent's word, nothing corroborated (claimed). Ladder: claimed <
+    // receipted < landed. See "report facts, not grades" — only git lands.
+    let landed: usize = audit
+        .intervals
+        .iter()
+        .flat_map(|i| i.ledger.iter())
+        .filter(|l| l.landing != crate::reconcile::Landing::Never)
+        .count();
+    let claims_tot: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
+    let receipted = audit.grades.receipted + audit.grades.claimed + audit.mcp_calls;
+    let claimed_only = claims_tot.saturating_sub(landed) + audit.grades.dark;
     println!(
-        "evidence: {} exact · {} receipted · {} claimed · {} dark   ({} failed)",
-        st.green(&audit.grades.exact.to_string()),
-        st.green(&audit.grades.receipted.to_string()),
-        st.yellow(&audit.grades.claimed.to_string()),
-        st.red(&audit.grades.dark.to_string()),
-        audit.grades.failed
+        "provenance {}: {landed} landed in git · {receipted} receipted by an executor · {claimed_only} claimed only",
+        st.dim("(who attested)")
     );
     println!(
         "blast radius: {} local-fs · {} local-git · {} remote-git · {} network · {} read-only",

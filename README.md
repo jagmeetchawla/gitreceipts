@@ -249,9 +249,11 @@ git receipts export --latest --commit 6d6cdc4 --full
 
 `git receipts export` runs the same pipeline as `audit` and emits the
 result as machine-readable JSON — the same facts the verbose report
-shows (per-commit statement, ledger, residue, commands, intents) plus
-the header context, token estimate, evidence grades, blast radii, and
-the git-identity roll-up. Every headline number matches the report.
+shows (per-commit statement, ledger, residue, commands, MCP calls,
+intents) plus the header context, token estimate, provenance
+(claimed/receipted/landed), execution-axis facts per oracle, blast
+radii, and the git-identity roll-up. Every headline number matches the
+report.
 
 This is the interchange artifact: a compact, verified receipt you can
 commit beside the code, feed to another program, or hand to a model to
