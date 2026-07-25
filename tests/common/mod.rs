@@ -250,6 +250,11 @@ impl SessionBuilder {
             .replace('\t', "\\t")
     }
 
+    /// An MCP tool call (`mcp__server__tool`) with a success result.
+    pub fn mcp_claim(&mut self, ts: &str, result_ts: &str, name: &str, input: &str) -> &mut Self {
+        self.claim(ts, result_ts, name, input)
+    }
+
     pub fn bash_claim(&mut self, ts: &str, result_ts: &str, command: &str) -> &mut Self {
         let escaped = Self::json_escape(command);
         self.claim(

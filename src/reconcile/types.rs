@@ -206,5 +206,8 @@ pub struct Audit {
     pub prompts: usize,
     pub file_claims: usize,
     pub commands: usize,
+    /// MCP tool calls — first-class effectful actions (S3), no longer folded
+    /// into observations.
+    pub mcp_calls: usize,
     pub observations: usize,
 }

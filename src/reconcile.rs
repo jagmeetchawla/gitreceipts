@@ -135,6 +135,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         prompts: session.prompts.len(),
         file_claims: 0,
         commands: 0,
+        mcp_calls: 0,
         observations: 0,
     };
 
@@ -180,6 +181,12 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             Action::Observation => {
                 audit.observations += 1;
                 audit.radii.read_only += 1;
+            }
+            // MCP call — first-class effectful action (S3, P1). Counted here;
+            // the execution-axis reconciliation (receipted/errored) and
+            // per-interval surfacing land in later phases.
+            Action::McpCall { .. } => {
+                audit.mcp_calls += 1;
             }
             Action::FileMutation { path, probe } => {
                 audit.file_claims += 1;

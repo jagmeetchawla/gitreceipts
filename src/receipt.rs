@@ -100,6 +100,7 @@ pub struct Summary {
     pub commits: usize,
     pub file_claims: usize,
     pub commands: usize,
+    pub mcp_calls: usize,
     pub observations: usize,
     /// Ledger claims across all intervals.
     pub claims_total: usize,
@@ -385,6 +386,7 @@ impl Receipt {
             commits: audit.intervals.len(),
             file_claims: audit.file_claims,
             commands: audit.commands,
+            mcp_calls: audit.mcp_calls,
             observations: audit.observations,
             claims_total,
             claims_landed,

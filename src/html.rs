@@ -114,7 +114,7 @@ pub fn render(
         b,
         "<div class=\"meta\">\
          <div>{} events kept / {} lines ({} bookkeeping, {} unparseable{})</div>\
-         <div>{} file mutations · {} commands · {} observations</div>\
+         <div>{} file mutations · {} commands · {} MCP calls · {} observations</div>\
          <div>blast radius: {} local-fs · {} local-git · {} remote-git · {} network · {} read-only</div>\
          </div>\n",
         stats.kept - stats.duplicates,
@@ -124,6 +124,7 @@ pub fn render(
         dup,
         audit.file_claims,
         audit.commands,
+        audit.mcp_calls,
         audit.observations,
         audit.radii.local_fs,
         audit.radii.local_git,

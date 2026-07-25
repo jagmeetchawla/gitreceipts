@@ -195,8 +195,8 @@ pub fn print(
         dup_note
     );
     println!(
-        "claims: {} file mutations · {} commands · {} observations",
-        audit.file_claims, audit.commands, audit.observations
+        "claims: {} file mutations · {} commands · {} MCP calls · {} observations",
+        audit.file_claims, audit.commands, audit.mcp_calls, audit.observations
     );
     println!(
         "evidence: {} exact · {} receipted · {} claimed · {} dark   ({} failed)",

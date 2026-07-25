@@ -1093,3 +1093,36 @@ fn a_commit_with_no_narration_after_it_has_no_summary() {
     let audit = run(&repo, &s);
     assert_eq!(audit.intervals[0].summary, None);
 }
+
+#[test]
+fn mcp_calls_are_counted_as_first_class_actions() {
+    let repo = TempRepo::new("mcp-count");
+    let root = repo.root.display().to_string();
+    repo.write("a.txt", &SessionBuilder::default_body("a.txt"));
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "land a"],
+        Some("2026-06-01T10:05:00Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-06-01T10:00:00Z", "go")
+        .mcp_claim(
+            "2026-06-01T10:01:00Z",
+            "2026-06-01T10:01:01Z",
+            "mcp__postgres__query",
+            r#"{"sql":"SELECT 1"}"#,
+        )
+        .write_claim("2026-06-01T10:02:00Z", "2026-06-01T10:02:01Z", "a.txt")
+        .bash_claim(
+            "2026-06-01T10:04:00Z",
+            "2026-06-01T10:05:01Z",
+            "git add -A && git commit -m 'land a'",
+        );
+
+    let audit = run(&repo, &s);
+    assert_eq!(
+        audit.mcp_calls, 1,
+        "the MCP call is counted, not dropped into observations"
+    );
+}

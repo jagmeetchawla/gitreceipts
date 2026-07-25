@@ -46,8 +46,28 @@ pub enum Action {
         command: String,
         radius: Option<Radius>,
     },
+    /// An MCP tool call — `mcp__<server>__<tool>`. A first-class effectful
+    /// action, NOT an observation: the agent asked a connected server to do
+    /// something, and the server's tool_result (on the claim's receipt) is the
+    /// oracle. `input` is the structured call payload (compact JSON).
+    McpCall {
+        server: String,
+        tool: String,
+        input: String,
+    },
     /// Read/Grep/Glob/etc — observes, doesn't persist anything.
     Observation,
+}
+
+/// Split an MCP tool name `mcp__<server>__<tool>` into its parts. The server
+/// is the first component after `mcp__`; everything after the next `__` is the
+/// tool (server names use single `_`, so the first `__` is the boundary).
+fn parse_mcp_name(name: &str) -> (String, String) {
+    let rest = name.strip_prefix("mcp__").unwrap_or(name);
+    match rest.split_once("__") {
+        Some((server, tool)) => (server.to_string(), tool.to_string()),
+        None => (rest.to_string(), String::new()),
+    }
 }
 
 /// Captured output is capped: enough to carry every file list a command
@@ -367,6 +387,16 @@ fn classify_tool(name: &str, input: &Value) -> Action {
             let radius = command_radius(&command);
             Action::Command { command, radius }
         }
+        // MCP tool call — the non-shell way agents act. First-class effectful
+        // action; the tool_result on the receipt is the oracle.
+        n if n.starts_with("mcp__") => {
+            let (server, tool) = parse_mcp_name(n);
+            Action::McpCall {
+                server,
+                tool,
+                input: serde_json::to_string(input).unwrap_or_default(),
+            }
+        }
         _ => Action::Observation,
     }
 }
@@ -503,4 +533,43 @@ pub fn command_radius(command: &str) -> Option<Radius> {
         }
     }
     radius
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Action, classify_tool, parse_mcp_name};
+    use serde_json::json;
+
+    #[test]
+    fn mcp_name_splits_into_server_and_tool() {
+        assert_eq!(
+            parse_mcp_name("mcp__ccd_session_mgmt__list_sessions"),
+            ("ccd_session_mgmt".to_string(), "list_sessions".to_string())
+        );
+        assert_eq!(
+            parse_mcp_name("mcp__pg__query"),
+            ("pg".to_string(), "query".to_string())
+        );
+    }
+
+    #[test]
+    fn mcp_call_is_a_first_class_action_not_an_observation() {
+        match classify_tool("mcp__postgres__query", &json!({"sql": "SELECT 1"})) {
+            Action::McpCall {
+                server,
+                tool,
+                input,
+            } => {
+                assert_eq!(server, "postgres");
+                assert_eq!(tool, "query");
+                assert!(input.contains("SELECT 1"));
+            }
+            other => panic!("expected McpCall, got {other:?}"),
+        }
+        // a plain read-only tool is still an observation
+        assert!(matches!(
+            classify_tool("Read", &json!({"file_path": "x"})),
+            Action::Observation
+        ));
+    }
 }
