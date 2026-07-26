@@ -64,6 +64,27 @@ pub enum Expand {
     None,
 }
 
+/// Which coding agent produced the session being audited. The reconciliation
+/// against git is agent-neutral; everything that reads the *log* — its JSONL
+/// shape, the store location, how claims/commands/prompts are extracted — is
+/// agent-specific. Only Claude Code is supported in v0.1; this reserves the
+/// switch so other agents are an additive change, never a breaking one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum Agent {
+    /// Claude Code — the `~/.claude` session JSONL.
+    #[default]
+    Claude,
+}
+
+impl Agent {
+    /// The stable identifier recorded in the receipt's `source.agent`.
+    pub fn source(self) -> &'static str {
+        match self {
+            Agent::Claude => "claude-code",
+        }
+    }
+}
+
 pub struct Options {
     pub color: ColorMode,
     pub show_intent: bool,

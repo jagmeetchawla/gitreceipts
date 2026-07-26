@@ -48,6 +48,9 @@ pub struct Loaded {
     pub name: String,
     /// The repo path, as a string for display.
     pub repo_display: String,
+    /// Which agent produced the session (reserved for future parser selection;
+    /// today always Claude). Recorded in the receipt's `source.agent`.
+    pub agent: report::Agent,
     pub session: Session,
     pub stats: IngestStats,
     pub audit: Audit,
@@ -94,10 +97,11 @@ pub fn run(
     commit: Option<String>,
     redact: Vec<String>,
     scan: bool,
+    agent: report::Agent,
 ) -> Result<()> {
     let loaded = {
         let _status = Status::show("git receipts: auditing… reconciling against git");
-        load(sessions, latest, all, repo, store, &redact, scan)?
+        load(sessions, latest, all, repo, store, &redact, scan, agent)?
     };
     let Loaded {
         name,
@@ -105,6 +109,9 @@ pub fn run(
         session,
         stats,
         audit,
+        // agent is recorded in the receipt (export); the console/HTML views
+        // don't surface it, so ignore it here.
+        agent: _,
     } = &loaded;
 
     // Resolve --commit against the actual spine (fails on unknown/ambiguous).
@@ -146,6 +153,7 @@ pub fn run(
 
 /// Run the pipeline — discover sessions and repo, merge, extract, reconcile —
 /// and return the reconciled audit with its header context.
+#[allow(clippy::too_many_arguments)]
 pub fn load(
     sessions: Vec<PathBuf>,
     latest: bool,
@@ -154,6 +162,7 @@ pub fn load(
     store: Option<PathBuf>,
     redact: &[String],
     scan: bool,
+    agent: report::Agent,
 ) -> Result<Loaded> {
     let store = match store {
         Some(s) => {
@@ -213,6 +222,7 @@ pub fn load(
     Ok(Loaded {
         name: session_name(&session_paths),
         repo_display: repo_path.display().to_string(),
+        agent,
         session: session_data,
         stats,
         audit,

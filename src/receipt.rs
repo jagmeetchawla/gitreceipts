@@ -79,6 +79,9 @@ pub struct Tool {
 
 #[derive(Debug, Serialize)]
 pub struct Source {
+    /// The coding agent that produced the session (`"claude-code"`). Reserved
+    /// for multi-agent support (`--agent`); today always `claude-code`.
+    pub agent: &'static str,
     /// The session stem, or a summary when several were merged.
     pub session: String,
     pub repo: String,
@@ -362,6 +365,7 @@ impl Receipt {
     pub fn build(
         session_name: &str,
         repo: &str,
+        agent: &'static str,
         session: &Session,
         stats: &IngestStats,
         audit: &Audit,
@@ -501,6 +505,7 @@ impl Receipt {
                 version: env!("CARGO_PKG_VERSION"),
             },
             source: Source {
+                agent,
                 session: session_name.to_string(),
                 // Collapse home to ~ everywhere a path can carry it — the
                 // receipt is meant to be committed/shared, and this matches

@@ -70,6 +70,7 @@ fn receipt_headline_numbers_mirror_the_audit() {
     let r = Receipt::build(
         "session",
         "/tmp/receipt",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -109,6 +110,7 @@ fn broken_promise_is_flagged_at_the_ledger_line() {
     let r = Receipt::build(
         "session",
         "/tmp/receipt",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -143,6 +145,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
     let shown = Receipt::build(
         "session",
         "/tmp/receipt",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -156,6 +159,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
     let redacted = Receipt::build(
         "session",
         "/tmp/receipt",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -186,6 +190,7 @@ fn receipt_round_trips_as_valid_json() {
     let r = Receipt::build(
         "session",
         "/tmp/receipt",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -244,6 +249,7 @@ fn command_text_is_full_and_output_is_opt_in() {
     let without = Receipt::build(
         "s",
         "/tmp/r",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -265,6 +271,7 @@ fn command_text_is_full_and_output_is_opt_in() {
     let with = Receipt::build(
         "s",
         "/tmp/r",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -294,6 +301,7 @@ fn commit_scope_filters_intervals_but_keeps_the_whole_session_summary() {
     let r = Receipt::build(
         "s",
         "/tmp/r",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -350,6 +358,7 @@ fn a_failed_command_carries_output_by_default() {
     let r = Receipt::build(
         "s",
         "/tmp/r",
+        "claude-code",
         &session,
         &stats,
         &a,
@@ -383,6 +392,7 @@ fn full_adds_the_transcript_scoped_by_commit() {
         Receipt::build(
             "s",
             "/tmp/r",
+            "claude-code",
             &session,
             &stats,
             &a,

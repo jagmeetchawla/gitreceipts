@@ -85,6 +85,12 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// machine's sessions: --store /Volumes/studio/Users/me/.claude
         #[arg(long)]
         store: Option<PathBuf>,
+        /// Which coding agent produced the session. Only `claude` (the
+        /// default) is supported today; the switch reserves the contract so
+        /// other agents (e.g. codex) become an additive change, not a
+        /// breaking one. Recorded in the receipt's source.agent.
+        #[arg(long, value_enum, default_value_t = report::Agent::Claude)]
+        agent: report::Agent,
         /// When to emit ANSI colors. `always` keeps them through pipes,
         /// for `| bat`, `| less -R`, or saving a colored transcript.
         #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
@@ -198,6 +204,11 @@ EXAMPLES:
         /// sessions: --store /Volumes/studio/Users/me/.claude
         #[arg(long)]
         store: Option<PathBuf>,
+        /// Which coding agent produced the session. Only `claude` (the
+        /// default) is supported today; reserves the contract so other agents
+        /// become additive. Recorded in the receipt's source.agent.
+        #[arg(long, value_enum, default_value_t = report::Agent::Claude)]
+        agent: report::Agent,
         /// Omit the quoted prompt text from intents (counts stay). Use this
         /// before committing or sharing a receipt.
         #[arg(long)]
@@ -264,6 +275,7 @@ fn main() -> Result<()> {
             all,
             repo,
             store,
+            agent,
             color,
             no_intent,
             no_identity,
@@ -303,6 +315,7 @@ fn main() -> Result<()> {
             commit,
             redact,
             !no_scan,
+            agent,
         ),
         Cmd::Export {
             sessions,
@@ -310,6 +323,7 @@ fn main() -> Result<()> {
             all,
             repo,
             store,
+            agent,
             no_intent,
             no_identity,
             filter,
@@ -334,6 +348,7 @@ fn main() -> Result<()> {
             !compact,
             redact,
             !no_scan,
+            agent,
         ),
     }
 }

@@ -30,16 +30,18 @@ pub fn run(
     pretty: bool,
     redact: Vec<String>,
     scan: bool,
+    agent: gitreceipts::report::Agent,
 ) -> Result<()> {
     let Loaded {
         name,
         repo_display,
+        agent,
         session,
         stats,
         audit,
     } = {
         let _status = audit::Status::show("git receipts: preparing data for export…");
-        audit::load(sessions, latest, all, repo, store, &redact, scan)?
+        audit::load(sessions, latest, all, repo, store, &redact, scan, agent)?
     };
 
     // Resolve --commit against the actual spine (fails on unknown/ambiguous).
@@ -51,6 +53,7 @@ pub fn run(
     let receipt = Receipt::build(
         &name,
         &repo_display,
+        agent.source(),
         &session,
         &stats,
         &audit,
