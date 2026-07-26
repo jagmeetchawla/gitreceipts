@@ -61,6 +61,16 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     let to = session.last_ts.unwrap_or(Utc::now()) + chrono::Duration::minutes(2);
     let raw_spine = gitio::spine(repo, from, to)?;
 
+    // Batch every commit's statement (name-status) in ONE `git show` up front,
+    // rather than a subprocess per commit — the dominant reconcile cost on long
+    // sessions. Keyed by hash; both the amend-collapse and interval loops below
+    // read from this map.
+    let statements = gitio::commit_statements(
+        repo,
+        &raw_spine.iter().map(|c| c.hash.clone()).collect::<Vec<_>>(),
+    )
+    .unwrap_or_default();
+
     // Collapse amend chains: a `commit (amend)` sharing its parent with the
     // previous spine commit replaces it. The draft leaves the spine but its
     // size and lifetime are recorded on the surviving commit.
@@ -72,9 +82,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             && prev.parent == commit.parent
         {
             let draft = spine.pop().expect("last() was Some");
-            let files = gitio::commit_names(repo, &draft.hash)
-                .map(|f| f.len())
-                .unwrap_or(0);
+            let files = statements.get(&draft.hash).map(|f| f.len()).unwrap_or(0);
             // drafts the popped draft had absorbed now belong to this amend
             for (owner, _) in superseded_by_hash.iter_mut() {
                 if *owner == draft.hash {
@@ -114,7 +122,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
 
     let mut intervals: Vec<Interval> = Vec::with_capacity(spine.len());
     for (i, commit) in spine.iter().enumerate() {
-        let statement = gitio::commit_names(repo, &commit.hash)?;
+        let statement = statements.get(&commit.hash).cloned().unwrap_or_default();
         let spine_jump = i > 0 && commit.parent != spine[i - 1].hash;
         let superseded = superseded_by_hash
             .iter()
@@ -350,13 +358,13 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             .collect();
     }
 
-    // Forward sweep: a claim can be swept into ANY later commit, not just
-    // the next one — partial staging, batched commits, a file parked for a
-    // day. For every unlanded claim with content to check, walk every
-    // subsequent commit that touched the path and look for the claimed
-    // content in its blob. Found: verified late landing, and the matching
-    // residue there is explained away. Not found anywhere: the claim is
-    // genuinely broken — and we can now SAY so, because we checked.
+    // Forward sweep: a claim can land in ANY later commit, not just the next
+    // one — partial staging, batched commits, a file parked for a day. For each
+    // unlanded claim, walk subsequent commits and take the first whose statement
+    // touches the path: that is a late landing, and the matching residue there is
+    // explained away. This is the SAME path-level bar the on-time check uses
+    // (a file in the commit = landed) — landing is landing, on time or late, and
+    // no blob read is needed.
     let n = audit.intervals.len();
     let mut sweeps: Vec<(usize, usize, String, usize)> = Vec::new(); // (i, line_idx, path, j)
     for i in 0..n {
@@ -364,14 +372,8 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             if line.landing != Landing::Never {
                 continue;
             }
-            let Some(probe) = &line.probe else { continue };
             for (j, later) in audit.intervals.iter().enumerate().skip(i + 1) {
-                if !later.statement.iter().any(|c| c.path == line.path) {
-                    continue;
-                }
-                if gitio::blob_at(repo, &later.commit.hash, &line.path)
-                    .is_some_and(|blob| blob.contains(probe.as_str()))
-                {
+                if later.statement.iter().any(|c| c.path == line.path) {
                     sweeps.push((i, line_idx, line.path.clone(), j));
                     break;
                 }
@@ -391,16 +393,22 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             audit.intervals[j].residue.remove(pos);
         }
     }
-    // A late landing is ONLY ever content-verified — a pure path match to
-    // a later commit is not evidence the same edit landed (a coincidental
-    // change to that path would launder a lost claim). Claims we cannot
-    // verify stay Never and are judged by the resolution/diagnosis passes.
 
     // Dismiss residue that stopped mattering: the user has since
     // gitignored the path (local, global, or info/exclude — check-ignore
     // consults them all) or it is no longer tracked at all. Still listed,
     // but it no longer colors the interval.
     let tracked = gitio::tracked_paths(repo).unwrap_or_default();
+    // Batch check-ignore over every residue path in ONE subprocess, rather than
+    // one `git check-ignore` per path (the other big per-item cost).
+    let ignored = {
+        let all: Vec<String> = audit
+            .intervals
+            .iter()
+            .flat_map(|iv| iv.residue.iter().map(|c| c.path.clone()))
+            .collect();
+        gitio::ignored_paths(repo, &all)
+    };
     let mut dismissal: HashMap<String, &'static str> = HashMap::new();
     for interval in audit.intervals.iter_mut() {
         let (kept, dismissed): (Vec<FileChange>, Vec<FileChange>) =
@@ -408,7 +416,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 if dismissal.contains_key(&c.path) {
                     return false;
                 }
-                if gitio::is_ignored(repo, &c.path) {
+                if ignored.contains(&c.path) {
                     dismissal.insert(c.path.clone(), "now gitignored");
                     false
                 } else if !tracked.contains(&c.path) {

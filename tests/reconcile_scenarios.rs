@@ -283,11 +283,13 @@ fn backdated_commit_cannot_hide_from_the_spine() {
 }
 
 #[test]
-fn coincidental_same_path_change_does_not_launder_a_lost_claim() {
-    // The agent claims content for a.txt that never lands. The NEXT commit
-    // happens to touch a.txt too — but with unrelated content. Path-only
-    // carry-forward would call the claim "landed late" and strike the
-    // residue; the content check keeps both red.
+fn later_same_path_change_counts_as_a_late_landing() {
+    // Path-level landing (landing is landing, on time or late): the agent
+    // claims a.txt, which does not land in its own interval; a later commit
+    // touches a.txt, so that counts as a late landing and strikes the residue
+    // there — the SAME bar the on-time check uses. We deliberately do not
+    // content-verify, so an unrelated later change to the path launders the
+    // claim; that is the accepted trade for a consistent, blob-free audit.
     let repo = TempRepo::new("launder");
     let root = repo.root.display().to_string();
 
@@ -328,12 +330,12 @@ fn coincidental_same_path_change_does_not_launder_a_lost_claim() {
         .expect("the mid-session a.txt claim maps to interval two");
     assert_eq!(
         line.landing,
-        Landing::Never,
-        "unrelated content in commit three must not launder this claim"
+        Landing::Late,
+        "a later commit touching a.txt is a late landing (path-level)"
     );
     assert!(
-        audit.intervals[2].residue.iter().any(|c| c.path == "a.txt"),
-        "and commit three's real residue stays visible"
+        !audit.intervals[2].residue.iter().any(|c| c.path == "a.txt"),
+        "the late landing strikes commit three's a.txt residue"
     );
 }
 
@@ -546,10 +548,10 @@ fn a_commits_own_output_listing_residue_does_not_attribute_it() {
 }
 
 #[test]
-fn intermediate_edit_superseded_by_later_landed_edit_is_not_red() {
-    // The agent edits a file, doesn't commit that state, edits it again
-    // later and commits. The first edit is an intermediate state in a
-    // kept promise chain — resolved, not red.
+fn intermediate_edit_that_lands_in_a_later_commit_is_not_red() {
+    // The agent edits a file, doesn't commit that state, edits it again later
+    // and commits. Path-level: the first (intermediate) claim's path lands in
+    // the later commit, so it is a late landing — green, not a broken promise.
     let repo = TempRepo::new("supersede");
     let root = repo.root.display().to_string();
 
@@ -587,19 +589,15 @@ fn intermediate_edit_superseded_by_later_landed_edit_is_not_red() {
 
     let first = &audit.intervals[0];
     let line = first.ledger.iter().find(|l| l.path == "app.swift").unwrap();
-    assert_eq!(line.landing, Landing::Never);
-    assert!(
-        line.resolution
-            .as_deref()
-            .unwrap_or("")
-            .contains("superseded"),
-        "resolution: {:?}",
-        line.resolution
+    assert_eq!(
+        line.landing,
+        Landing::Late,
+        "the intermediate claim's path lands in the later commit (path-level)"
     );
     assert_eq!(
         first.status(),
         Status::Green,
-        "an intermediate state is not a broken promise"
+        "an edit that lands later is not a broken promise"
     );
 }
 
@@ -866,52 +864,6 @@ fn a_broken_promise_is_not_resolved_by_a_substring_mention() {
         line.resolution
     );
     assert_eq!(first.status(), Status::Red);
-}
-
-#[test]
-fn a_trivial_probe_does_not_content_verify_a_late_landing() {
-    // Round-2 review finding #3: a one-char Edit like `}` would "match"
-    // almost any blob. Such a probe is below the specificity floor, so the
-    // claim cannot be content-verified and stays a broken promise.
-    let repo = TempRepo::new("tinyprobe");
-    let root = repo.root.display().to_string();
-
-    repo.write("a.txt", "x");
-    repo.git(&["add", "a.txt"]);
-    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
-    // a later commit touches src.rs with a body that merely contains "}"
-    repo.write(
-        "src.rs",
-        "fn main() {}
-",
-    );
-    repo.git(&["add", "src.rs"]);
-    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:40Z"));
-
-    let mut s = SessionBuilder::new(&root);
-    s.user_text("2026-01-01T10:00:00Z", "go")
-        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
-        // trivial probe claimed BEFORE commit one, "lands" nowhere real
-        .write_claim_content(
-            "2026-01-01T10:00:08Z",
-            "2026-01-01T10:00:09Z",
-            "src.rs",
-            "}",
-        )
-        .bash_claim(
-            "2026-01-01T10:00:19Z",
-            "2026-01-01T10:00:21Z",
-            "git add a.txt && git commit -m one",
-        );
-    let audit = run(&repo, &s);
-
-    let first = &audit.intervals[0];
-    let line = first.ledger.iter().find(|l| l.path == "src.rs").unwrap();
-    assert_ne!(
-        line.landing,
-        Landing::Late,
-        "a `}}` probe must not content-verify against any blob with a brace"
-    );
 }
 
 #[test]

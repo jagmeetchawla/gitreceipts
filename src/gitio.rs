@@ -1,8 +1,10 @@
 //! Git access for the interval spine. We shell out to `git` on purpose:
 //! its output is itself the receipt, and v0.1 needs nothing libgit2 offers.
 
+use std::collections::{HashMap, HashSet};
+use std::io::Write as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
@@ -280,23 +282,6 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
     Ok(commits)
 }
 
-/// The content of `path` as committed in `hash`, if it exists there.
-/// Used to verify that a claimed edit's content actually reached a commit.
-pub fn blob_at(repo: &Path, hash: &str, path: &str) -> Option<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("show")
-        .arg(format!("{hash}:{path}"))
-        .stdin(std::process::Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
 /// Commits reachable from any remote-tracking ref — i.e. pushed, as of the
 /// repo's last fetch. A local-only commit is absent. This is a local check
 /// (no network), so it reflects the last-known remote state, not live.
@@ -306,17 +291,54 @@ pub fn pushed_commits(repo: &Path) -> std::collections::HashSet<String> {
         .unwrap_or_default()
 }
 
-/// Is this repo-relative path matched by the repo's ignore rules?
-///
-/// `rel_path` originates in the session file, which is untrusted — the
-/// `--` keeps a path like `--stdin` from being parsed as a git option
-/// (without it, check-ignore would block forever reading the terminal).
+/// Of `paths`, the subset matched by the repo's ignore rules — in ONE
+/// `git check-ignore --stdin` instead of a spawn per path. Paths originate in
+/// the untrusted session file; feeding them over stdin (never as argv) means a
+/// path like `--stdin` can't be parsed as a git option, and `-z` uses NUL
+/// separators both ways so odd characters aren't quoted or split.
+pub fn ignored_paths(repo: &Path, paths: &[String]) -> HashSet<String> {
+    if paths.is_empty() {
+        return HashSet::new();
+    }
+    let mut child = match Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["check-ignore", "-z", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return HashSet::new(),
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        for p in paths {
+            let _ = stdin.write_all(p.as_bytes());
+            let _ = stdin.write_all(&[0]);
+        }
+    }
+    let out = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(_) => return HashSet::new(),
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Is this single repo-relative path matched by the repo's ignore rules? For
+/// the rare per-claim diagnosis checks; the bulk residue pass uses
+/// [`ignored_paths`]. `rel_path` comes from the untrusted session file, so `--`
+/// keeps one like `--stdin` from being parsed as a git option.
 pub fn is_ignored(repo: &Path, rel_path: &str) -> bool {
     Command::new("git")
         .arg("-C")
         .arg(repo)
         .args(["check-ignore", "-q", "--", rel_path])
-        .stdin(std::process::Stdio::null())
+        .stdin(Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -325,7 +347,7 @@ pub fn is_ignored(repo: &Path, rel_path: &str) -> bool {
 /// Paths currently tracked by git (the index). A residue file that is no
 /// longer here was later untracked or deleted — yesterday's noise, not
 /// today's problem.
-pub fn tracked_paths(repo: &Path) -> Result<std::collections::HashSet<String>> {
+pub fn tracked_paths(repo: &Path) -> Result<HashSet<String>> {
     let raw = git(repo, &["ls-files"])?;
     Ok(raw
         .lines()
@@ -346,20 +368,40 @@ pub fn history_paths(repo: &Path) -> Result<std::collections::HashSet<String>> {
         .collect())
 }
 
-/// What one commit introduced vs its first parent: the interval statement.
-pub fn commit_names(repo: &Path, hash: &str) -> Result<Vec<FileChange>> {
-    let raw = git(
-        repo,
-        &[
-            "show",
-            "--name-status",
-            "-M",
-            "--first-parent",
-            "--format=",
-            hash,
-        ],
-    )?;
-    Ok(parse_name_status(&raw))
+/// The statements (name-status vs first parent) for MANY commits in a single
+/// `git show`, keyed by full hash — the batched form of [`commit_names`], one
+/// subprocess instead of one per commit. A record-separator (`\x1e`) before each
+/// commit's `%H` lets us split the output back into per-commit blocks; the
+/// `parse_name_status` line filter ignores the marker/blank lines.
+pub fn commit_statements(
+    repo: &Path,
+    hashes: &[String],
+) -> Result<HashMap<String, Vec<FileChange>>> {
+    let mut map = HashMap::new();
+    if hashes.is_empty() {
+        return Ok(map);
+    }
+    let mut args: Vec<&str> = vec![
+        "show",
+        "--name-status",
+        "-M",
+        "--first-parent",
+        "--format=%x1e%H",
+    ];
+    args.extend(hashes.iter().map(String::as_str));
+    let raw = git(repo, &args)?;
+    for chunk in raw.split('\u{1e}') {
+        let mut parts = chunk.splitn(2, '\n');
+        let hash = parts.next().unwrap_or("").trim();
+        if hash.len() != 40 {
+            continue; // the empty leading chunk / anything malformed
+        }
+        map.insert(
+            hash.to_string(),
+            parse_name_status(parts.next().unwrap_or("")),
+        );
+    }
+    Ok(map)
 }
 
 pub fn parse_name_status(raw: &str) -> Vec<FileChange> {
