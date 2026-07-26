@@ -162,13 +162,12 @@ pub fn tilde(path: &str) -> String {
 
 /// Redact private strings ANYWHERE in a line — for command text, output, and
 /// MCP receipts, where absolute paths, the username, and dash-encoded
-/// project-dir names appear mid-line. For each home: slash paths collapse to
-/// `~` (component-aware); then the bare username is masked as a WHOLE WORD
-/// wherever it survives — the `ls -l` owner column, `whoami`, `cd`, and the
-/// dash-encoded form (`-Users-name-Developer-…` → `-Users-****-Developer-…`).
-/// Finally any user-supplied `--redact` words are masked. Uses the redaction
-/// target from [`set_redaction`]; before that's called (unit tests), falls back
-/// to the running `$HOME`.
+/// project-dir names appear mid-line. For each home, paths read `~` (slash
+/// `/Users/name/…` and the dash-encoded `-Users-name-…` project-dir form alike)
+/// while a bare username token reads `****` (see [`redact_one_home`]). Finally
+/// any user-supplied `--redact` words are masked. Uses the redaction target
+/// from [`set_redaction`]; before that's called (unit tests), falls back to the
+/// running `$HOME`.
 pub fn redact_home(s: &str) -> String {
     match REDACTION.get() {
         Some(r) => {
@@ -203,11 +202,23 @@ fn scan_pass(s: &str) -> String {
     redacted
 }
 
-/// Collapse one home to `~`, then mask its bare username (`ls` owner, `whoami`,
-/// dash-encoded project dirs) to ****.
+/// Redact one home in three passes, distinguishing PATH-derived occurrences
+/// (which read `~`, the home marker) from a BARE username token (which reads
+/// `****`, an opaque mask):
+/// 1. slash paths (`/Users/name/…`) collapse to `~`;
+/// 2. the dash-encoded home (Claude's project-dir form, `-Users-name-…`) is
+///    still a path, so its home component reads `~` too, keeping the structure:
+///    `-Users-name-Developer` → `-Users-~-Developer`;
+/// 3. any bare username left over — an `ls -l` owner column, `whoami` — is not
+///    a path, so it is masked as `****`.
 fn redact_one_home(s: &str, home: &str) -> String {
-    let out = collapse(s, home);
     let user = home.rsplit('/').next().unwrap_or(home);
+    let mut out = collapse(s, home);
+    let dash_home = home.replace('/', "-");
+    if out.contains(&dash_home) {
+        let dash_tilde = dash_home.replace(user, "~");
+        out = out.replace(&dash_home, &dash_tilde);
+    }
     mask_word(&out, user, "****")
 }
 
@@ -268,7 +279,7 @@ pub fn abbrev(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collapse, collapse_prefix, home_of, mask_word};
+    use super::{collapse, collapse_prefix, home_of, mask_word, redact_one_home};
 
     // A realistic macOS home; tests pass it explicitly so they don't depend
     // on the machine's actual $HOME.
@@ -366,6 +377,22 @@ mod tests {
         assert_eq!(
             mask_word("adabot and adams", "ada", "****"),
             "adabot and adams"
+        );
+    }
+
+    #[test]
+    fn path_derived_home_reads_tilde_bare_username_reads_stars() {
+        // Dash-encoded project-dir path (Claude's form) is PATH-derived → ~.
+        assert_eq!(
+            redact_one_home("cwd -Users-jagmeetchawla-Developer-Projects-app", H),
+            "cwd -Users-~-Developer-Projects-app"
+        );
+        // Slash path collapses fully to ~.
+        assert_eq!(redact_one_home("/Users/jagmeetchawla/x", H), "~/x");
+        // A bare username (ls -l owner column) is not a path → ****.
+        assert_eq!(
+            redact_one_home("drwxr-xr-x 5 jagmeetchawla staff", H),
+            "drwxr-xr-x 5 **** staff"
         );
     }
 
