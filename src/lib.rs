@@ -16,4 +16,5 @@ pub mod ingest;
 pub mod receipt;
 pub mod reconcile;
 pub mod report;
+pub mod scan;
 pub mod schema;
