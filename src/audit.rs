@@ -5,6 +5,7 @@
 //! subcommand and `export` build on it, differing only in how they present
 //! the result.
 
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -14,6 +15,32 @@ use gitreceipts::reconcile::Audit;
 use gitreceipts::{discover, extract, html, reconcile, report};
 
 use crate::pager::{finish_pager, start_pager};
+
+/// A one-line progress note on stderr for the slow part (discover + reconcile
+/// against git, seconds on a long session). Cleared when dropped — including on
+/// the `?` error path — so it never collides with the report on stdout. No-op
+/// unless stderr is a terminal, so pipes and redirects stay clean.
+pub struct Status(bool);
+
+impl Status {
+    pub fn show(msg: &str) -> Self {
+        let on = std::io::stderr().is_terminal();
+        if on {
+            eprint!("\r\x1b[2K{msg}");
+            let _ = std::io::stderr().flush();
+        }
+        Status(on)
+    }
+}
+
+impl Drop for Status {
+    fn drop(&mut self) {
+        if self.0 {
+            eprint!("\r\x1b[2K");
+            let _ = std::io::stderr().flush();
+        }
+    }
+}
 
 /// A completed audit plus the header context every presenter needs.
 pub struct Loaded {
@@ -68,7 +95,10 @@ pub fn run(
     redact: Vec<String>,
     scan: bool,
 ) -> Result<()> {
-    let loaded = load(sessions, latest, all, repo, store, &redact, scan)?;
+    let loaded = {
+        let _status = Status::show("git receipts: auditing… reconciling against git");
+        load(sessions, latest, all, repo, store, &redact, scan)?
+    };
     let Loaded {
         name,
         repo_display,

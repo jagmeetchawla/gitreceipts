@@ -37,7 +37,10 @@ pub fn run(
         session,
         stats,
         audit,
-    } = audit::load(sessions, latest, all, repo, store, &redact, scan)?;
+    } = {
+        let _status = audit::Status::show("git receipts: preparing data for export…");
+        audit::load(sessions, latest, all, repo, store, &redact, scan)?
+    };
 
     // Resolve --commit against the actual spine (fails on unknown/ambiguous).
     let commit = match &commit {
