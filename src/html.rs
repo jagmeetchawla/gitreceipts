@@ -17,8 +17,15 @@ use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Landing, Status};
 use crate::report::Expand;
 
-/// HTML-escape a string for text/attribute content.
+/// Redact, then HTML-escape. This is the single sanitizer every dynamic string
+/// in the HTML report flows through, so routing redaction through it makes the
+/// rule "everything the report shows is scanned/redacted" STRUCTURAL: home/
+/// username masking + the secret/PII scanner run on every rendered value, with
+/// no per-site discipline to forget. Redaction is idempotent, so callers that
+/// still redact first are harmless (and don't double-count — the second pass
+/// finds nothing).
 fn esc(s: &str) -> String {
+    let s = redact_home(s);
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -495,7 +502,7 @@ fn render_interval(
         let _ = write!(
             b,
             "<div class=\"line intent\">\u{00bb} intent: {}{}</div>",
-            esc(&redact_home(first)),
+            esc(first),
             esc(&more)
         );
     }
@@ -594,7 +601,7 @@ fn render_interval(
             b,
             "<div class=\"section\"><div class=\"section-h\">agent summary — the agent's own words, not verified</div>\
              <div class=\"agent-summary\">{}</div></div>",
-            esc(&redact_home(summary))
+            esc(summary)
         );
     }
     // --full: the whole conversation that produced this commit.
@@ -609,7 +616,7 @@ fn render_interval(
             let _ = write!(
                 b,
                 "<div class=\"turn {who}\"><span class=\"who\">{who}</span><div class=\"msg\">{}</div></div>",
-                esc(&redact_home(t.text))
+                esc(t.text)
             );
         }
         b.push_str("</div>");
@@ -688,29 +695,21 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output:
         // or when it failed — the failure's output is always worth showing.
         if with_output || c.failed {
             // Full command, then its captured output in a scrollable block.
-            let _ = write!(
-                b,
-                "<code class=\"cmdfull\">{}</code>",
-                esc(&redact_home(&c.command))
-            );
+            let _ = write!(b, "<code class=\"cmdfull\">{}</code>", esc(&c.command));
             if let Some(receipt) = &c.output {
                 let cls = if receipt.is_error {
                     "cmdout err"
                 } else {
                     "cmdout"
                 };
-                let _ = write!(
-                    b,
-                    "<pre class=\"{cls}\">{}</pre>",
-                    esc(&redact_home(&receipt.text))
-                );
+                let _ = write!(b, "<pre class=\"{cls}\">{}</pre>", esc(&receipt.text));
             }
             b.push_str("</div>");
         } else {
             let _ = write!(
                 b,
                 "<code>{}</code></div>",
-                esc(&redact_home(&command_summary(&c.command)))
+                esc(&command_summary(&c.command))
             );
         }
     }
@@ -738,22 +737,14 @@ fn render_mcp(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool
         }
         let _ = write!(b, "<code class=\"cmdfull\">{}</code>", esc(&m.tool));
         if with_output || m.errored {
-            let _ = write!(
-                b,
-                "<pre class=\"cmdout\">{}</pre>",
-                esc(&redact_home(&m.input))
-            );
+            let _ = write!(b, "<pre class=\"cmdout\">{}</pre>", esc(&m.input));
             if let Some(receipt) = &m.output {
                 let cls = if receipt.is_error {
                     "cmdout err"
                 } else {
                     "cmdout"
                 };
-                let _ = write!(
-                    b,
-                    "<pre class=\"{cls}\">{}</pre>",
-                    esc(&redact_home(&receipt.text))
-                );
+                let _ = write!(b, "<pre class=\"{cls}\">{}</pre>", esc(&receipt.text));
             }
         }
         b.push_str("</div>");

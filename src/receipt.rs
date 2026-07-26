@@ -596,7 +596,7 @@ fn interval_receipt(
         commit: CommitReceipt {
             hash: c.hash.clone(),
             short: c.short.clone(),
-            subject: c.subject.clone(),
+            subject: redact_home(&c.subject),
             // --no-identity: drop the committer name/email and co-authors.
             author: if show_identity {
                 c.author.clone()

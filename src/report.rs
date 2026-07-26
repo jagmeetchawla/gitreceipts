@@ -6,7 +6,7 @@ use std::io::IsTerminal;
 use chrono::{DateTime, Utc};
 
 use crate::extract::Session;
-use crate::fmt::{abbrev, command_summary, redact_home, scan_counts, tilde};
+use crate::fmt::{abbrev, command_summary, redact_home, scan_counts};
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Interval, Status};
 
@@ -152,11 +152,14 @@ pub fn print(
 ) {
     let st = Style::new(opts.color);
 
-    println!("{}", st.bold(&format!("git receipts — {session_name}")));
+    println!(
+        "{}",
+        st.bold(&format!("git receipts — {}", redact_home(session_name)))
+    );
     println!(
         "repo: {}   branches seen: {}",
-        tilde(repo),
-        session.branches.join(", ")
+        redact_home(repo),
+        redact_home(&session.branches.join(", "))
     );
     // Private by default: built from chat/agent logs, git contents, and command
     // output. Warn before anyone shares it (redaction reduces, never removes).
@@ -660,7 +663,7 @@ fn render_oneline_row(st: &Style, iv: &Interval) {
     let residue = iv.residue.len();
     // char-safe truncate + pad so the count columns align (byte ops panic
     // mid-multibyte — a real crash found dogfooding).
-    let subject: String = iv.commit.subject.chars().take(48).collect();
+    let subject: String = redact_home(&iv.commit.subject).chars().take(48).collect();
     let pad = 48usize.saturating_sub(subject.chars().count());
 
     // Right-aligned 7-wide count cells; a zero is dimmed so non-zero counts
@@ -723,7 +726,10 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
     };
     // char-safe: byte truncate() panics mid-multibyte (emoji/accent in a
     // commit subject) — a real crash found dogfooding.
-    let subject: String = interval.commit.subject.chars().take(56).collect();
+    let subject: String = redact_home(&interval.commit.subject)
+        .chars()
+        .take(56)
+        .collect();
     println!(
         "{mark} {} {} {}{}{}{}",
         interval.commit.short,
@@ -850,7 +856,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
                 println!(
                     "      {} {}{}",
                     st.dim(&format!("[{}]", c.status)),
-                    c.path,
+                    redact_home(&c.path),
                     st.dim(&moved)
                 );
             }
@@ -948,7 +954,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         println!(
             "    {} {} {}",
             st.green("✓ landed late:"),
-            line.path,
+            redact_home(&line.path),
             st.dim(&format!(
                 "(content verified in {at}, {dist} {commits} later)"
             ))
@@ -958,7 +964,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         println!(
             "    {} {} ({} edit{}, f#{})",
             st.yellow("◌ never landed, resolved:"),
-            line.path,
+            redact_home(&line.path),
             line.edits,
             if line.edits == 1 { "" } else { "s" },
             line.frames.first().copied().unwrap_or(0)
@@ -971,7 +977,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         println!(
             "    {} {} ({} edit{}, f#{})",
             st.red("✘ never landed:"),
-            line.path,
+            redact_home(&line.path),
             line.edits,
             if line.edits == 1 { "" } else { "s" },
             line.frames.first().copied().unwrap_or(0)
@@ -984,7 +990,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         println!(
             "    {} {} {}",
             st.yellow("● residue:"),
-            res.path,
+            redact_home(&res.path),
             st.dim(&format!("[{}] changed, never claimed", res.status))
         );
     }
@@ -997,7 +1003,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         println!(
             "    {} {}{} {}",
             st.yellow("● residue (attributed):"),
-            res.path,
+            redact_home(&res.path),
             st.dim(&moved),
             st.dim(&format!("[{}] — {why}", res.status))
         );
@@ -1007,7 +1013,8 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
             "    {}",
             st.dim(&format!(
                 "○ residue dismissed: {} [{}] — {why}",
-                res.path, res.status
+                redact_home(&res.path),
+                res.status
             ))
         );
     }
