@@ -94,6 +94,12 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// fully remember.
         #[arg(long)]
         no_intent: bool,
+        /// Suppress git-identity names and emails — the "who touched this
+        /// repo" roll-up and per-commit committer/co-author lines (counts and
+        /// keyframe attribution stay). Use before sharing a report from a
+        /// repo with contributors you'd rather not name.
+        #[arg(long)]
+        no_identity: bool,
         /// Which intervals to list: all, red (broken promises only), or
         /// red-residue (red plus unclaimed-change intervals).
         #[arg(long, value_enum, default_value_t = report::Filter::All)]
@@ -132,6 +138,18 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// Implies --verbose for the console.
         #[arg(long, value_name = "REF")]
         commit: Option<String>,
+        /// Extra literal word to mask as **** everywhere in the report — on
+        /// top of the automatic home-directory/username redaction. Repeatable.
+        /// For names, hostnames, or client ids the tool can't infer:
+        /// --redact acme-corp --redact staging.internal
+        #[arg(long, value_name = "WORD")]
+        redact: Vec<String>,
+        /// Turn OFF the built-in secret/PII scanner (on by default). The
+        /// scanner masks API keys, tokens, private keys, and validated PII
+        /// (SSN/card/IBAN) it finds in commands, output, and MCP results.
+        /// Only pass this when you trust the audience with raw values.
+        #[arg(long)]
+        no_scan: bool,
         /// Don't page the console report through $PAGER, even on a
         /// terminal. (By default, like git, a terminal gets a colored
         /// pager; a pipe or redirect never does.)
@@ -184,6 +202,12 @@ EXAMPLES:
         /// before committing or sharing a receipt.
         #[arg(long)]
         no_intent: bool,
+        /// Omit git-identity names/emails from the receipt — the identity
+        /// roll-up and per-commit author/co-authors go empty (keyframe
+        /// attribution via agent_committed stays). Use before committing or
+        /// sharing a receipt from a repo with contributors.
+        #[arg(long)]
+        no_identity: bool,
         /// Which intervals to include: all, red (broken promises only), or
         /// red-residue (red plus unclaimed-change intervals). The summary
         /// still covers the whole session.
@@ -200,6 +224,18 @@ EXAMPLES:
         /// session; only the `intervals` array is restricted to this commit.
         #[arg(long, value_name = "REF")]
         commit: Option<String>,
+        /// Extra literal word to mask as **** everywhere in the receipt — on
+        /// top of the automatic home-directory/username redaction. Repeatable.
+        /// For names, hostnames, or client ids the tool can't infer:
+        /// --redact acme-corp --redact staging.internal
+        #[arg(long, value_name = "WORD")]
+        redact: Vec<String>,
+        /// Turn OFF the built-in secret/PII scanner (on by default). The
+        /// scanner masks API keys, tokens, private keys, and validated PII
+        /// (SSN/card/IBAN) found in the captured commands, output, and MCP
+        /// results before they enter the receipt.
+        #[arg(long)]
+        no_scan: bool,
         /// The maximal export: add the full chat transcript (every prompt and
         /// assistant message, in order) and imply --with-output. With --commit,
         /// the transcript is scoped to that commit's conversation.
@@ -230,6 +266,7 @@ fn main() -> Result<()> {
             store,
             color,
             no_intent,
+            no_identity,
             filter,
             format,
             expand,
@@ -238,6 +275,8 @@ fn main() -> Result<()> {
             verbose,
             with_output,
             commit,
+            redact,
+            no_scan,
             no_pager,
         } => audit::run(
             sessions,
@@ -249,6 +288,7 @@ fn main() -> Result<()> {
             report::Options {
                 color,
                 show_intent: !no_intent,
+                show_identity: !no_identity,
                 filter,
                 format,
                 expand,
@@ -261,6 +301,8 @@ fn main() -> Result<()> {
                 full,
             },
             commit,
+            redact,
+            !no_scan,
         ),
         Cmd::Export {
             sessions,
@@ -269,9 +311,12 @@ fn main() -> Result<()> {
             repo,
             store,
             no_intent,
+            no_identity,
             filter,
             with_output,
             commit,
+            redact,
+            no_scan,
             full,
             compact,
         } => export::run(
@@ -281,11 +326,14 @@ fn main() -> Result<()> {
             repo,
             store,
             !no_intent,
+            !no_identity,
             filter,
             with_output,
             commit,
             full,
             !compact,
+            redact,
+            !no_scan,
         ),
     }
 }

@@ -6,6 +6,15 @@
 //! case-insensitively** — macOS's default filesystem is case-insensitive, so
 //! a differently-cased path must still be caught. Targeted and vouched for on
 //! macOS; the ASCII/`/`-separator assumptions do not claim Windows coverage.
+//!
+//! The home(s) to redact are **derived from the session log's own `cwd`s**
+//! (see [`set_redaction`]), not just the running machine's `$HOME` — so the OS
+//! username is masked even when the audit runs on a different machine than
+//! recorded the session (a mounted `--store`, a teammate's export). Callers may
+//! add further literal words (`--redact`) for names/hosts we can't infer.
+
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The current home directory as a string, if non-empty. Uses
 /// `std::env::home_dir()` (un-deprecated and platform-correct since Rust
@@ -14,6 +23,75 @@ fn home() -> Option<String> {
     std::env::home_dir()
         .map(|h| h.display().to_string())
         .filter(|h| !h.is_empty())
+}
+
+/// The redaction target for this run: the home directories to collapse/mask
+/// and any extra literal words the user asked to redact. Set once, at load.
+struct Redaction {
+    /// Full home paths (e.g. `/Users/name`), derived from the session's cwds
+    /// plus `$HOME`. Each is collapsed to `~` and its username masked to ****.
+    homes: Vec<String>,
+    /// Extra literal words to mask (`--redact`) — names, hosts, client ids.
+    extra: Vec<String>,
+    /// Run the secret/PII scanner ([`crate::scan`]) as a final pass. Default-on
+    /// (disabled by `--no-scan`).
+    scan: bool,
+}
+
+static REDACTION: OnceLock<Redaction> = OnceLock::new();
+
+/// Running tallies of what the secret scanner masked this process, so a report
+/// can print an honest "N redacted" line. Approximate (a secret rendered in two
+/// places counts twice) — an indicator, not an audit.
+static SCAN_SECRETS: AtomicUsize = AtomicUsize::new(0);
+static SCAN_PII: AtomicUsize = AtomicUsize::new(0);
+
+/// Configure redaction for this process. `cwds` are the working directories the
+/// session recorded; we derive the home(s) it ran under from them — so masking
+/// follows the LOG, correct no matter where the audit executes — and add the
+/// running machine's `$HOME`. `extra` are additional literal words to mask.
+/// `scan` enables the secret/PII scanner pass. First call wins (the CLI calls it
+/// once, at load).
+pub fn set_redaction(cwds: &[String], extra: &[String], scan: bool) {
+    let mut homes: Vec<String> = Vec::new();
+    let mut push = |h: String| {
+        if !homes.iter().any(|x| x.eq_ignore_ascii_case(&h)) {
+            homes.push(h);
+        }
+    };
+    for c in cwds {
+        if let Some(h) = home_of(c) {
+            push(h);
+        }
+    }
+    if let Some(h) = home() {
+        push(h);
+    }
+    let extra = extra.iter().filter(|w| !w.is_empty()).cloned().collect();
+    let _ = REDACTION.set(Redaction { homes, extra, scan });
+}
+
+/// How many secrets / PII the scanner has masked so far — for the report's
+/// "N redacted" line. Read after rendering (the tallies accrue as strings pass
+/// through [`redact_home`]).
+pub fn scan_counts() -> (usize, usize) {
+    (
+        SCAN_SECRETS.load(Ordering::Relaxed),
+        SCAN_PII.load(Ordering::Relaxed),
+    )
+}
+
+/// The `/Users/<name>` or `/home/<name>` home prefix of an absolute path, if it
+/// has one. This is the platform shape we redact (macOS vouched, Linux
+/// best-effort); other roots fall back to `$HOME`.
+fn home_of(path: &str) -> Option<String> {
+    let mut it = path.split('/');
+    if !it.next()?.is_empty() {
+        return None; // must be absolute — the segment before the leading '/' is ""
+    }
+    let root = it.next()?;
+    let user = it.next().filter(|u| !u.is_empty())?;
+    matches!(root, "Users" | "home").then(|| format!("/{root}/{user}"))
 }
 
 /// A character that can continue a path component. A home-dir match flanked
@@ -82,13 +160,83 @@ pub fn tilde(path: &str) -> String {
     }
 }
 
-/// Replace the home directory ANYWHERE in a string with `~` — for command
-/// text, where absolute paths (and the username) appear mid-line.
+/// Redact private strings ANYWHERE in a line — for command text, output, and
+/// MCP receipts, where absolute paths, the username, and dash-encoded
+/// project-dir names appear mid-line. For each home: slash paths collapse to
+/// `~` (component-aware); then the bare username is masked as a WHOLE WORD
+/// wherever it survives — the `ls -l` owner column, `whoami`, `cd`, and the
+/// dash-encoded form (`-Users-name-Developer-…` → `-Users-****-Developer-…`).
+/// Finally any user-supplied `--redact` words are masked. Uses the redaction
+/// target from [`set_redaction`]; before that's called (unit tests), falls back
+/// to the running `$HOME`.
 pub fn redact_home(s: &str) -> String {
-    match home() {
-        Some(h) => collapse(s, &h),
-        None => s.to_string(),
+    match REDACTION.get() {
+        Some(r) => {
+            let mut out = s.to_string();
+            for h in &r.homes {
+                out = redact_one_home(&out, h);
+            }
+            for w in &r.extra {
+                out = mask_word(&out, w, "****");
+            }
+            // Final pass: mask machine secrets and validated PII (default-on).
+            if r.scan {
+                out = scan_pass(&out);
+            }
+            out
+        }
+        None => match home() {
+            Some(h) => redact_one_home(s, &h),
+            None => s.to_string(),
+        },
     }
+}
+
+/// Run the secret/PII scanner over `s`, tallying what it masks.
+fn scan_pass(s: &str) -> String {
+    let (redacted, found) = crate::scan::scan_redact(s);
+    if !found.is_empty() {
+        let (secrets, pii) = crate::scan::counts(&found);
+        SCAN_SECRETS.fetch_add(secrets, Ordering::Relaxed);
+        SCAN_PII.fetch_add(pii, Ordering::Relaxed);
+    }
+    redacted
+}
+
+/// Collapse one home to `~`, then mask its bare username (`ls` owner, `whoami`,
+/// dash-encoded project dirs) to ****.
+fn redact_one_home(s: &str, home: &str) -> String {
+    let out = collapse(s, home);
+    let user = home.rsplit('/').next().unwrap_or(home);
+    mask_word(&out, user, "****")
+}
+
+/// Replace whole-word occurrences of `word` with `mask`. A match is whole-word
+/// when flanked by non-alphanumeric chars (so `-`, `/`, `.`, space all bound it,
+/// but `name2`/`namex` don't match). Length-preserving indices aren't needed —
+/// we rebuild the string.
+fn mask_word(s: &str, word: &str, mask: &str) -> String {
+    if word.is_empty() {
+        return s.to_string();
+    }
+    let boundary = |c: Option<char>| c.is_none_or(|c| !c.is_ascii_alphanumeric());
+    let wl = word.len();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < s.len() {
+        if s[i..].starts_with(word)
+            && boundary(s[..i].chars().next_back())
+            && boundary(s[i + wl..].chars().next())
+        {
+            out.push_str(mask);
+            i += wl;
+        } else {
+            let ch = s[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
 }
 
 /// A one-line display summary of a shell command: the first line that
@@ -120,7 +268,7 @@ pub fn abbrev(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collapse, collapse_prefix};
+    use super::{collapse, collapse_prefix, home_of, mask_word};
 
     // A realistic macOS home; tests pass it explicitly so they don't depend
     // on the machine's actual $HOME.
@@ -181,6 +329,55 @@ mod tests {
         assert_eq!(
             collapse_prefix("see /Users/jagmeetchawla/p", H),
             "see /Users/jagmeetchawla/p"
+        );
+    }
+
+    #[test]
+    fn home_is_derived_from_a_recorded_cwd() {
+        // The signal that makes redaction correct off-machine: the log's cwd.
+        assert_eq!(
+            home_of("/Users/otheruser/Developer/Projects/app"),
+            Some("/Users/otheruser".to_string())
+        );
+        assert_eq!(home_of("/home/ada/src"), Some("/home/ada".to_string()));
+        // The home path itself, and non-home roots.
+        assert_eq!(home_of("/Users/ada"), Some("/Users/ada".to_string()));
+        assert_eq!(home_of("/tmp/scratch"), None);
+        assert_eq!(home_of("/Users"), None);
+        assert_eq!(home_of("relative/path"), None);
+    }
+
+    #[test]
+    fn mask_word_hits_bare_username_forms_but_not_substrings() {
+        // ls -l owner column, dash-encoded project dir, cd, whoami — all bare.
+        assert_eq!(
+            mask_word("drwxr-xr-x 5 ada staff 160", "ada", "****"),
+            "drwxr-xr-x 5 **** staff 160"
+        );
+        assert_eq!(
+            mask_word("-Users-ada-Developer-app", "ada", "****"),
+            "-Users-****-Developer-app"
+        );
+        assert_eq!(
+            mask_word("cd /Users/ada && ls", "ada", "****"),
+            "cd /Users/**** && ls"
+        );
+        // Not a substring of a longer token.
+        assert_eq!(
+            mask_word("adabot and adams", "ada", "****"),
+            "adabot and adams"
+        );
+    }
+
+    #[test]
+    fn mask_word_masks_user_supplied_words() {
+        assert_eq!(
+            mask_word(
+                "deploying to staging.internal now",
+                "staging.internal",
+                "****"
+            ),
+            "deploying to **** now"
         );
     }
 

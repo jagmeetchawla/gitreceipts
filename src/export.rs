@@ -22,11 +22,14 @@ pub fn run(
     repo: Option<PathBuf>,
     store: Option<PathBuf>,
     show_intent: bool,
+    show_identity: bool,
     filter: Filter,
     with_output: bool,
     commit: Option<String>,
     full: bool,
     pretty: bool,
+    redact: Vec<String>,
+    scan: bool,
 ) -> Result<()> {
     let Loaded {
         name,
@@ -34,7 +37,7 @@ pub fn run(
         session,
         stats,
         audit,
-    } = audit::load(sessions, latest, all, repo, store)?;
+    } = audit::load(sessions, latest, all, repo, store, &redact, scan)?;
 
     // Resolve --commit against the actual spine (fails on unknown/ambiguous).
     let commit = match &commit {
@@ -49,6 +52,7 @@ pub fn run(
         &stats,
         &audit,
         show_intent,
+        show_identity,
         // --full is the maximal export: the whole chat AND every command's
         // output.
         with_output || full,

@@ -6,7 +6,7 @@ use std::io::IsTerminal;
 use chrono::{DateTime, Utc};
 
 use crate::extract::Session;
-use crate::fmt::{abbrev, command_summary, redact_home, tilde};
+use crate::fmt::{abbrev, command_summary, redact_home, scan_counts, tilde};
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Interval, Status};
 
@@ -67,6 +67,11 @@ pub enum Expand {
 pub struct Options {
     pub color: ColorMode,
     pub show_intent: bool,
+    /// Show git-identity names/emails (the "who touched this repo" roll-up and
+    /// per-commit committer/co-author lines). False (`--no-identity`) keeps the
+    /// counts and attribution but drops the names — for sharing a report
+    /// without exposing contributors.
+    pub show_identity: bool,
     pub filter: Filter,
     pub format: Format,
     pub expand: Expand,
@@ -153,6 +158,14 @@ pub fn print(
         tilde(repo),
         session.branches.join(", ")
     );
+    // Private by default: built from chat/agent logs, git contents, and command
+    // output. Warn before anyone shares it (redaction reduces, never removes).
+    println!(
+        "{}",
+        st.dim(
+            "⚠ private audit report — from your chat/agent logs, git, and command output; handle with caution before sharing."
+        )
+    );
 
     // Scoped to one commit (--commit): show only that commit's block — none of
     // the session-wide summary above it. lspci -s: just the addressed device.
@@ -202,14 +215,14 @@ pub fn print(
     // is often benign; the auditor judges). MCP is first-class here.
     println!(
         "  {} {} commands · {} failed · {} aborted by you",
-        st.dim("OS/FS oracle:"),
+        st.dim("OS/FS:"),
         audit.commands,
         audit.cmd_failed,
         audit.cmd_aborted,
     );
     println!(
         "  {}   {} calls · {} errored · {} aborted by you",
-        st.dim("MCP oracle:"),
+        st.dim("MCP:  "),
         audit.mcp_calls,
         audit.mcp_errored,
         audit.mcp_aborted,
@@ -418,11 +431,22 @@ pub fn print(
     coauthors.sort_unstable();
     coauthors.dedup();
     println!("  who touched this repo (git identity — not how they authored):");
-    println!("    · committed by: {}", authors.join(" · "));
-    if !coauthors.is_empty() {
+    if opts.show_identity {
+        println!("    · committed by: {}", authors.join(" · "));
+        if !coauthors.is_empty() {
+            println!(
+                "    · co-authored-by (declared in commits): {}",
+                coauthors.join(" · ")
+            );
+        }
+    } else {
+        let plural = |n: usize, s| if n == 1 { s } else { "identities" };
         println!(
-            "    · co-authored-by (declared in commits): {}",
-            coauthors.join(" · ")
+            "    · {} committer {} · {} co-author {} (names hidden — --no-identity)",
+            authors.len(),
+            plural(authors.len(), "identity"),
+            coauthors.len(),
+            plural(coauthors.len(), "identity"),
         );
     }
     if keyframes > 0 {
@@ -569,6 +593,20 @@ pub fn print(
             pct(claims_landed, claims_total),
         ))
     );
+
+    // Secret scanner tally — accrues as commands/output pass through redaction
+    // above, so it is complete by here.
+    let (secrets, pii) = scan_counts();
+    if secrets + pii > 0 {
+        println!(
+            "{}",
+            st.yellow(&format!(
+                "🔒 redacted {secrets} secret{} and {pii} PII value{} the scanner recognized (masked in place; values never shown)",
+                if secrets == 1 { "" } else { "s" },
+                if pii == 1 { "" } else { "s" },
+            ))
+        );
+    }
 }
 
 /// `--full`: the commit's whole conversation — every prompt and assistant
@@ -665,11 +703,13 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
     // A keyframe is not this session's commit — name who git says made it.
     let who = if interval.agent_committed {
         String::new()
-    } else {
+    } else if opts.show_identity {
         format!(
             " [keyframe: not this session — committed by {}]",
             interval.commit.author
         )
+    } else {
+        " [keyframe: not this session — another contributor]".to_string()
     };
     let ghost = if interval.commit.reachable {
         ""
@@ -696,7 +736,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
     // Co-Authored-By is declared evidence of co-authorship (an agent, a
     // pair). Present-only — never inferred from absence. Per-commit detail
     // goes in --verbose; the summary carries the session-wide picture.
-    if opts.verbose && !interval.commit.co_authors.is_empty() {
+    if opts.verbose && opts.show_identity && !interval.commit.co_authors.is_empty() {
         println!(
             "    {} {}",
             st.dim("co-authored-by:"),
@@ -975,10 +1015,14 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         let hint = if !interval.agent_committed {
             // a whole commit this session didn't make — attribute it to
             // the committer git records, not "human edit".
-            format!(
-                "not this session's commit — committed by {}",
-                interval.commit.author
-            )
+            if opts.show_identity {
+                format!(
+                    "not this session's commit — committed by {}",
+                    interval.commit.author
+                )
+            } else {
+                "not this session's commit — another contributor".to_string()
+            }
         } else if interval.effectful_commands > 0 {
             format!(
                 "likely command fallout — {} effectful commands ran in this interval",

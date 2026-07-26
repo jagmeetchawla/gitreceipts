@@ -27,6 +27,9 @@ h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; te
 h1 .cmd { color: var(--accent); }
 .sub { color: var(--dim); font-size: 0.8rem; margin-top: 0.4rem; word-break: break-all; }
 .meta { margin: 1rem 0 0; border-left: 3px solid var(--rule); padding-left: 0.9rem; color: var(--dim); font-size: 0.8rem; }
+.notice { margin: 1.25rem 0 0; border: 1px solid var(--amber); border-left-width: 4px; border-radius: 4px; background: color-mix(in srgb, var(--amber) 10%, var(--panel)); padding: 0.7rem 0.95rem; color: var(--ink); font-size: 0.8rem; }
+.notice b { color: var(--amber); text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.72rem; }
+.scan-note { margin: 0.6rem 0 0; color: var(--amber); font-size: 0.8rem; }
 .stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.5rem 0 0; }
 .stat { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 0.7rem 1rem; min-width: 9rem; flex: 1; }
 .stat b { display: block; font-size: 1.45rem; font-weight: 600; }

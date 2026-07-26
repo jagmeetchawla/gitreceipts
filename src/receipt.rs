@@ -30,8 +30,16 @@ pub const SCHEMA_VERSION: &str = "0.2";
 #[derive(Debug, Serialize)]
 pub struct Receipt {
     pub schema_version: &'static str,
+    /// Privacy caution. This receipt is built from chat/agent logs, git
+    /// contents, and command output — private by default; handle with care
+    /// before sharing (redaction flags reduce, never remove, exposure).
+    pub notice: &'static str,
     pub tool: Tool,
     pub source: Source,
+    /// What the built-in secret/PII scanner masked while building this receipt
+    /// (`[redacted:<kind>]` in the command/output/MCP fields). Zero when
+    /// `--no-scan`. A tally, not a guarantee of completeness.
+    pub redacted: Redacted,
     pub summary: Summary,
     pub intervals: Vec<IntervalReceipt>,
     pub tail: Tail,
@@ -43,6 +51,13 @@ pub struct Receipt {
     /// also given, otherwise the whole session.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript: Option<Vec<ChatMessage>>,
+}
+
+/// Tally of what the secret/PII scanner masked in this receipt.
+#[derive(Debug, Serialize)]
+pub struct Redacted {
+    pub secrets: usize,
+    pub pii: usize,
 }
 
 /// One turn of the conversation, for the `--full` transcript.
@@ -351,6 +366,7 @@ impl Receipt {
         stats: &IngestStats,
         audit: &Audit,
         show_intent: bool,
+        show_identity: bool,
         with_output: bool,
         commit: Option<&str>,
         filter: Filter,
@@ -377,7 +393,7 @@ impl Receipt {
             .iter()
             .filter(|i| commit.is_none_or(|h| i.commit.hash == h))
             .filter(|i| filter.keeps(i.status()))
-            .map(|i| interval_receipt(i, show_intent, with_output))
+            .map(|i| interval_receipt(i, show_intent, show_identity, with_output))
             .collect();
 
         let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
@@ -404,14 +420,24 @@ impl Receipt {
             .filter(|i| i.status() == Status::Red)
             .count();
 
-        let identities = Identities {
-            authors: dedup_sorted(audit.intervals.iter().map(|i| i.commit.author.clone())),
-            co_authors: dedup_sorted(
-                audit
-                    .intervals
-                    .iter()
-                    .flat_map(|i| i.commit.co_authors.iter().cloned()),
-            ),
+        // --no-identity drops the names (like --no-intent drops prompt text):
+        // the roll-up and per-commit author/co-authors go empty. agent_committed
+        // still marks keyframes, so attribution survives without the identities.
+        let identities = if show_identity {
+            Identities {
+                authors: dedup_sorted(audit.intervals.iter().map(|i| i.commit.author.clone())),
+                co_authors: dedup_sorted(
+                    audit
+                        .intervals
+                        .iter()
+                        .flat_map(|i| i.commit.co_authors.iter().cloned()),
+                ),
+            }
+        } else {
+            Identities {
+                authors: Vec::new(),
+                co_authors: Vec::new(),
+            }
         };
 
         let tk = &session.tokens;
@@ -461,8 +487,15 @@ impl Receipt {
             identities,
         };
 
+        // The scanner tally is complete now — the intervals above have all been
+        // built, and each ran its command/output/MCP text through redaction.
+        let (secrets, pii) = crate::fmt::scan_counts();
         Receipt {
             schema_version: SCHEMA_VERSION,
+            notice: "Private audit report — built from chat/agent logs, git contents, \
+                     and command output. Meant for developers to audit their own work; \
+                     handle with extreme caution and treat as private before sharing.",
+            redacted: Redacted { secrets, pii },
             tool: Tool {
                 name: env!("CARGO_PKG_NAME"),
                 version: env!("CARGO_PKG_VERSION"),
@@ -552,15 +585,29 @@ fn transcript(session: &Session, audit: &Audit, commit: Option<&str>) -> Vec<Cha
         .collect()
 }
 
-fn interval_receipt(i: &Interval, show_intent: bool, with_output: bool) -> IntervalReceipt {
+fn interval_receipt(
+    i: &Interval,
+    show_intent: bool,
+    show_identity: bool,
+    with_output: bool,
+) -> IntervalReceipt {
     let c = &i.commit;
     IntervalReceipt {
         commit: CommitReceipt {
             hash: c.hash.clone(),
             short: c.short.clone(),
             subject: c.subject.clone(),
-            author: c.author.clone(),
-            co_authors: c.co_authors.clone(),
+            // --no-identity: drop the committer name/email and co-authors.
+            author: if show_identity {
+                c.author.clone()
+            } else {
+                String::new()
+            },
+            co_authors: if show_identity {
+                c.co_authors.clone()
+            } else {
+                Vec::new()
+            },
             parent: c.parent.clone(),
             authored: c.ts.to_rfc3339(),
             committed: c.committer_ts.to_rfc3339(),

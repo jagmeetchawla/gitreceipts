@@ -65,8 +65,10 @@ pub fn run(
     no_pager: bool,
     mut opts: report::Options,
     commit: Option<String>,
+    redact: Vec<String>,
+    scan: bool,
 ) -> Result<()> {
-    let loaded = load(sessions, latest, all, repo, store)?;
+    let loaded = load(sessions, latest, all, repo, store, &redact, scan)?;
     let Loaded {
         name,
         repo_display,
@@ -101,6 +103,7 @@ pub fn run(
                 stats,
                 audit,
                 opts.show_intent,
+                opts.show_identity,
                 opts.expand,
                 opts.with_output,
                 opts.commit.as_deref(),
@@ -119,6 +122,8 @@ pub fn load(
     all: bool,
     repo: Option<PathBuf>,
     store: Option<PathBuf>,
+    redact: &[String],
+    scan: bool,
 ) -> Result<Loaded> {
     let store = match store {
         Some(s) => {
@@ -150,6 +155,11 @@ pub fn load(
         bail!("no execution events in the given session(s)");
     }
     let session_data = extract::extract(&ordered);
+
+    // Establish redaction from the LOG's own working directories (so the OS
+    // username is masked wherever it appears, even auditing another machine's
+    // sessions) plus any words the user asked to mask. Must precede any render.
+    gitreceipts::fmt::set_redaction(&session_data.cwds, redact, scan);
 
     let repo_path = match repo {
         Some(r) => {
