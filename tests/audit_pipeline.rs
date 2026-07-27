@@ -284,49 +284,8 @@ fn html_drilldown_shows_statement_commands_and_push_status() {
     assert!(out.contains("class=\"radtag commit\""));
 }
 
-#[test]
-fn command_text_home_paths_are_redacted_in_html() {
-    // A command that cd's into an absolute home path must render with ~,
-    // not the raw username, in the shareable HTML.
-    let repo = TempRepo::new("redact");
-    let root = repo.root.display().to_string();
-    repo.write("a.txt", "x");
-    repo.git(&["add", "-A"]);
-    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:31Z"));
-
-    let home = std::env::home_dir().unwrap().display().to_string();
-    let mut s = SessionBuilder::new(&root);
-    s.user_text("2026-01-01T10:00:00Z", "go")
-        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
-        .bash_claim(
-            "2026-01-01T10:00:29Z",
-            "2026-01-01T10:00:31Z",
-            &format!("touch {home}/secret_marker_file && git add -A && git commit -m one"),
-        );
-    let path = repo.root.join("s.jsonl");
-    s.save(&path);
-    let (records, stats) = ingest::ingest(&path).unwrap();
-    let session = extract::extract(&causal::order(records));
-    let audit = reconcile::reconcile(&repo.root, &session).unwrap();
-    let out = html::render(
-        "sess",
-        &root,
-        &session,
-        &stats,
-        &audit,
-        true,
-        true,
-        gitreceipts::report::Expand::All,
-        false,
-        None,
-        false,
-    );
-
-    assert!(
-        !out.contains(&home),
-        "raw home path must not appear in the report"
-    );
-}
+// (home-path redaction moved to tests/home_redaction.rs — it needs the
+// set-once redaction global and a synthetic home, so it lives in its own binary.)
 
 #[test]
 fn multibyte_commit_subject_does_not_panic_the_console_report() {
