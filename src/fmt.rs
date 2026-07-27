@@ -283,12 +283,12 @@ mod tests {
 
     // A realistic macOS home; tests pass it explicitly so they don't depend
     // on the machine's actual $HOME.
-    const H: &str = "/Users/jagmeetchawla";
+    const H: &str = "/Users/ada";
 
     #[test]
     fn redacts_home_anywhere_in_a_command() {
         assert_eq!(
-            collapse("git -C /Users/jagmeetchawla/repo rev-parse", H),
+            collapse("git -C /Users/ada/repo rev-parse", H),
             "git -C ~/repo rev-parse"
         );
     }
@@ -296,51 +296,43 @@ mod tests {
     #[test]
     fn exact_home_and_home_with_subpath_collapse() {
         assert_eq!(collapse(H, H), "~");
-        assert_eq!(collapse("/Users/jagmeetchawla/x", H), "~/x");
+        assert_eq!(collapse("/Users/ada/x", H), "~/x");
     }
 
     #[test]
     fn a_longer_username_is_not_a_match() {
         // the component-boundary bug: a naive replace would rewrite these.
-        assert_eq!(
-            collapse("/Users/jagmeetchawla2/x", H),
-            "/Users/jagmeetchawla2/x"
-        );
-        assert_eq!(
-            collapse("/Users/jagmeetchawla.bak/x", H),
-            "/Users/jagmeetchawla.bak/x"
-        );
+        assert_eq!(collapse("/Users/ada2/x", H), "/Users/ada2/x");
+        assert_eq!(collapse("/Users/ada.bak/x", H), "/Users/ada.bak/x");
     }
 
     #[test]
     fn a_deeper_path_that_merely_contains_the_name_is_not_home() {
         assert_eq!(
-            collapse("/mnt/backup/Users/jagmeetchawla/x", H),
-            "/mnt/backup/Users/jagmeetchawla/x"
+            collapse("/mnt/backup/Users/ada/x", H),
+            "/mnt/backup/Users/ada/x"
         );
     }
 
     #[test]
     fn matching_is_case_insensitive_for_apfs() {
-        assert_eq!(collapse("/users/JagMeetChawla/notes.md", H), "~/notes.md");
+        // differently-cased path (lowercase root, mixed-case user) still matches.
+        assert_eq!(collapse("/users/AdA/notes.md", H), "~/notes.md");
     }
 
     #[test]
     fn redacts_inside_quotes_and_at_string_boundaries() {
         assert_eq!(
-            collapse("@\"/Users/jagmeetchawla/Downloads/x.md\"", H),
+            collapse("@\"/Users/ada/Downloads/x.md\"", H),
             "@\"~/Downloads/x.md\""
         );
     }
 
     #[test]
     fn tilde_only_collapses_a_prefix() {
-        assert_eq!(collapse_prefix("/Users/jagmeetchawla/p", H), "~/p");
+        assert_eq!(collapse_prefix("/Users/ada/p", H), "~/p");
         // home mid-string is not a prefix — left untouched.
-        assert_eq!(
-            collapse_prefix("see /Users/jagmeetchawla/p", H),
-            "see /Users/jagmeetchawla/p"
-        );
+        assert_eq!(collapse_prefix("see /Users/ada/p", H), "see /Users/ada/p");
     }
 
     #[test]
@@ -384,14 +376,14 @@ mod tests {
     fn path_derived_home_reads_tilde_bare_username_reads_stars() {
         // Dash-encoded project-dir path (Claude's form) is PATH-derived → ~.
         assert_eq!(
-            redact_one_home("cwd -Users-jagmeetchawla-Developer-Projects-app", H),
+            redact_one_home("cwd -Users-ada-Developer-Projects-app", H),
             "cwd -Users-~-Developer-Projects-app"
         );
         // Slash path collapses fully to ~.
-        assert_eq!(redact_one_home("/Users/jagmeetchawla/x", H), "~/x");
+        assert_eq!(redact_one_home("/Users/ada/x", H), "~/x");
         // A bare username (ls -l owner column) is not a path → ****.
         assert_eq!(
-            redact_one_home("drwxr-xr-x 5 jagmeetchawla staff", H),
+            redact_one_home("drwxr-xr-x 5 ada staff", H),
             "drwxr-xr-x 5 **** staff"
         );
     }
@@ -410,13 +402,7 @@ mod tests {
 
     #[test]
     fn empty_home_is_a_no_op() {
-        assert_eq!(
-            collapse("/Users/jagmeetchawla/x", ""),
-            "/Users/jagmeetchawla/x"
-        );
-        assert_eq!(
-            collapse_prefix("/Users/jagmeetchawla/x", ""),
-            "/Users/jagmeetchawla/x"
-        );
+        assert_eq!(collapse("/Users/ada/x", ""), "/Users/ada/x");
+        assert_eq!(collapse_prefix("/Users/ada/x", ""), "/Users/ada/x");
     }
 }
