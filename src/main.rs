@@ -57,6 +57,7 @@ EXAMPLES:
   git receipts audit --all                   merge every session the store has for it
   git receipts audit sess.jsonl --repo ~/app a specific session vs a specific repo
   git receipts audit --latest --filter red   only the broken promises
+  git receipts audit --latest --no-prompt    hide your prompts before sharing (counts stay)
   git receipts audit --latest --verbose      per-commit anatomy (A/M/D/R + commands)
   git receipts audit --latest --format html > audit.html    self-contained HTML report
   git receipts audit --all --store /Volumes/studio/Users/me/.claude/projects --repo /Volumes/studio/.../app
@@ -191,7 +192,7 @@ EXAMPLES:
   git receipts export --latest > receipt.json     newest session, pretty JSON
   git receipts export --latest --compact          single-line JSON, for streaming
   git receipts export --all --repo ~/app          every session for a repo, merged
-  git receipts export --latest --no-intent        drop quoted prompts, keep counts
+  git receipts export --latest --no-intent        drop prompts + agent prose, keep counts
   git receipts export --latest --with-output       include each command's output
   git receipts export --latest --full             the whole chat + all output
   git receipts export --latest --commit 6d6cdc4 --full   one commit's conversation"
