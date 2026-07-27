@@ -1,1 +1,13 @@
 /target
+
+# Editor / OS cruft (also covered by many global gitignores, but keep the repo
+# self-contained so a fresh clone can't commit them).
+.DS_Store
+.idea/
+*.log
+
+# Generated reports — `git receipts audit --format html > report.html` and the
+# JSON receipts are session artifacts, never source. They can carry private
+# data; keep them out of history.
+*.html
+receipt*.json
