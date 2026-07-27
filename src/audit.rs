@@ -166,15 +166,21 @@ pub fn load(
 ) -> Result<Loaded> {
     let store = match store {
         Some(s) => {
-            if !s.join("projects").is_dir() {
+            if !s.is_dir() {
+                bail!("--store {} is not a directory", s.display());
+            }
+            // Nudge for the old habit: a dir that CONTAINS projects/ is the
+            // `.claude` dir, not the projects dir the store now points at.
+            if s.join("projects").is_dir() {
                 bail!(
-                    "{} has no projects/ directory — --store expects the .claude directory itself",
-                    s.display()
+                    "--store points at the Claude Code projects directory itself now, not .claude — did you mean {}?",
+                    s.join("projects").display()
                 );
             }
             s
         }
-        None => discover::default_store().context("cannot locate the home directory")?,
+        None => discover::default_store()
+            .context("cannot locate the home directory (default store: ~/.claude/projects)")?,
     };
     let anchor = || {
         repo.clone()

@@ -180,12 +180,13 @@ fn distinct_sessions_merge_into_one_ledger() {
     assert!(audit.intervals.iter().all(|i| i.balanced()));
 }
 
-/// A fake session store: <tmp>/store/.claude-style layout with projects/.
+/// A fake session store — the Claude Code projects directory itself (session
+/// project dirs go directly under it; there is no extra `projects/` layer).
 fn fake_store(name: &str) -> std::path::PathBuf {
     let root =
         std::env::temp_dir().join(format!("gitreceipts-store-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(root.join("projects")).unwrap();
+    std::fs::create_dir_all(&root).unwrap();
     root
 }
 
@@ -205,7 +206,7 @@ fn store_lookup_matches_exact_ancestor_encodings() {
         .chars()
         .map(|c| if c == '/' || c == '.' { '-' } else { c })
         .collect();
-    let project_dir = store.join("projects").join(encoded);
+    let project_dir = store.join(encoded);
     std::fs::create_dir_all(&project_dir).unwrap();
     std::fs::write(project_dir.join("s1.jsonl"), "{}").unwrap();
 
@@ -220,9 +221,7 @@ fn mounted_store_falls_back_to_name_suffix_match() {
     // that machine's absolute path. Our local mount path shares only the
     // trailing directory name.
     let store = fake_store("mounted");
-    let foreign = store
-        .join("projects")
-        .join("-Users-someone-else-Developer-myapp");
+    let foreign = store.join("-Users-someone-else-Developer-myapp");
     std::fs::create_dir_all(&foreign).unwrap();
     std::fs::write(foreign.join("remote.jsonl"), "{}").unwrap();
 

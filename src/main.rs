@@ -59,7 +59,7 @@ EXAMPLES:
   git receipts audit --latest --filter red   only the broken promises
   git receipts audit --latest --verbose      per-commit anatomy (A/M/D/R + commands)
   git receipts audit --latest --format html > audit.html    self-contained HTML report
-  git receipts audit --all --store /Volumes/studio/Users/me/.claude --repo /Volumes/studio/.../app
+  git receipts audit --all --store /Volumes/studio/Users/me/.claude/projects --repo /Volumes/studio/.../app
                                              another machine's sessions from a mounted drive
 
 On a terminal the report auto-pages through $PAGER with color (like git);
@@ -80,9 +80,11 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// Repo to reconcile against (default: cwd recorded in the session).
         #[arg(long)]
         repo: Option<PathBuf>,
-        /// Claude data directory holding the session store (default:
-        /// ~/.claude). Point at a mounted drive to audit another
-        /// machine's sessions: --store /Volumes/studio/Users/me/.claude
+        /// The Claude Code projects directory — where session logs live, and
+        /// the ONLY directory gitreceipts reads (never your settings, prompt
+        /// history, or MCP auth). Default: ~/.claude/projects. To audit
+        /// another machine's sessions, point at a mounted copy:
+        /// --store /Volumes/studio/Users/me/.claude/projects
         #[arg(long)]
         store: Option<PathBuf>,
         /// Which coding agent produced the session. Only `claude` (the
@@ -199,9 +201,10 @@ EXAMPLES:
         /// Repo to reconcile against (default: cwd recorded in the session).
         #[arg(long)]
         repo: Option<PathBuf>,
-        /// Claude data directory holding the session store (default:
-        /// ~/.claude). Point at a mounted drive to audit another machine's
-        /// sessions: --store /Volumes/studio/Users/me/.claude
+        /// The Claude Code projects directory — where session logs live, and
+        /// the ONLY directory gitreceipts reads. Default: ~/.claude/projects.
+        /// For another machine's sessions, point at a mounted copy:
+        /// --store /Volumes/studio/Users/me/.claude/projects
         #[arg(long)]
         store: Option<PathBuf>,
         /// Which coding agent produced the session. Only `claude` (the

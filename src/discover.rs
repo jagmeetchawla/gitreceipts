@@ -26,13 +26,17 @@ fn encode(path: &Path) -> String {
         .collect()
 }
 
-/// The default store: `~/.claude`.
+/// The default store: the **Claude Code projects directory**,
+/// `~/.claude/projects`. This is the ONLY directory gitreceipts ever reads —
+/// the per-project session logs live here. It deliberately does NOT point at
+/// `~/.claude`, so the tool never touches your settings, prompt history, MCP
+/// auth caches, or anything else in that directory.
 pub fn default_store() -> Option<PathBuf> {
-    std::env::home_dir().map(|h| h.join(".claude"))
+    std::env::home_dir().map(|h| h.join(".claude").join("projects"))
 }
 
-/// Candidate session directories for a repo inside a given store's
-/// `projects/` dir: the repo's own encoding plus every ancestor (the
+/// Candidate session directories for a repo within the store (the Claude Code
+/// projects directory): the repo's own encoding plus every ancestor (the
 /// session may have been launched anywhere above the repo).
 ///
 /// When nothing matches exactly — typical for a store mounted from
@@ -41,12 +45,11 @@ pub fn default_store() -> Option<PathBuf> {
 /// with an ancestor's directory name ("…-myapp" for a repo at any
 /// /Volumes/mount/…/myapp), and say so.
 pub fn session_dirs_for(store: &Path, repo: &Path) -> Vec<PathBuf> {
-    let projects = store.join("projects");
     let start = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
 
     let exact: Vec<PathBuf> = start
         .ancestors()
-        .map(|a| projects.join(encode(a)))
+        .map(|a| store.join(encode(a)))
         .filter(|d| d.is_dir())
         .collect();
     if !exact.is_empty() {
@@ -61,7 +64,7 @@ pub fn session_dirs_for(store: &Path, repo: &Path) -> Vec<PathBuf> {
         .filter(|n| n.len() >= 3)
         .map(|n| format!("-{}", encode(Path::new(n))))
         .collect();
-    let Ok(entries) = std::fs::read_dir(&projects) else {
+    let Ok(entries) = std::fs::read_dir(store) else {
         return Vec::new();
     };
     let matched: Vec<PathBuf> = entries
@@ -91,7 +94,7 @@ pub fn latest_session(store: &Path, repo: &Path) -> Result<PathBuf> {
         bail!(
             "no session directories found for {} (or any parent) under {}",
             repo.display(),
-            store.join("projects").display()
+            store.display()
         );
     }
     let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
@@ -131,7 +134,7 @@ pub fn all_sessions(store: &Path, repo: &Path) -> Result<Vec<PathBuf>> {
         bail!(
             "no session directories found for {} (or any parent) under {}",
             repo.display(),
-            store.join("projects").display()
+            store.display()
         );
     }
     let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();

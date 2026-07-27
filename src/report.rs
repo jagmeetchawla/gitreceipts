@@ -71,7 +71,7 @@ pub enum Expand {
 /// switch so other agents are an additive change, never a breaking one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum Agent {
-    /// Claude Code — the `~/.claude` session JSONL.
+    /// Claude Code — the `~/.claude/projects` session JSONL.
     #[default]
     Claude,
 }

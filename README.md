@@ -228,8 +228,9 @@ git receipts audit --latest --format html --with-output > audit.html
 # write a self-contained HTML report (theme-aware, no external assets)
 git receipts audit --latest --format html > audit.html
 
-# audit another machine's sessions from a mounted drive
-git receipts audit --all --store /Volumes/studio/Users/me/.claude --repo /Volumes/studio/Users/me/code/myapp
+# audit another machine's sessions from a mounted drive (point --store at its
+# projects directory)
+git receipts audit --all --store /Volumes/studio/Users/me/.claude/projects --repo /Volumes/studio/Users/me/code/myapp
 
 # export the reconciled audit as a versioned JSON receipt
 git receipts export --latest > receipt.json
@@ -299,7 +300,11 @@ ledger is a later layer, not a v0.1 concern.
 
 ## What the report contains — and what it doesn't
 
-Everything runs locally; nothing leaves your machine. The report
+Everything runs locally; nothing leaves your machine. gitreceipts reads
+exactly one directory — your **Claude Code projects directory**
+(`~/.claude/projects` by default, where each project's session logs live;
+override with `--store <dir>`). It never opens anything else under `~/.claude`
+— not your settings, your prompt history, or your MCP auth caches. The report
 prints repo-relative paths (your home directory collapses to `~`),
 branch names, commit subjects, and — because intent matters — the
 prompts you typed, attached to the commits they drove. Each commit
