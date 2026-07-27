@@ -97,9 +97,17 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// for `| bat`, `| less -R`, or saving a colored transcript.
         #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
         color: report::ColorMode,
-        /// Suppress the quoted prompt text on intent lines (counts stay).
-        /// Use this before sharing a report from a session you don't
-        /// fully remember.
+        /// Suppress your prompt text (intent lines, and your turns in --full).
+        /// Counts stay. Use before sharing a report you'd rather not attach
+        /// your own words to.
+        #[arg(long)]
+        no_prompt: bool,
+        /// Suppress the agent's prose — its post-commit summaries (and its
+        /// turns in --full). The verified ledger and counts stay.
+        #[arg(long)]
+        no_summary: bool,
+        /// Suppress BOTH your prompts and the agent's prose (= --no-prompt
+        /// --no-summary). Counts stay. The blunt "share safely" switch.
         #[arg(long)]
         no_intent: bool,
         /// Suppress git-identity names and emails — the "who touched this
@@ -212,8 +220,16 @@ EXAMPLES:
         /// become additive. Recorded in the receipt's source.agent.
         #[arg(long, value_enum, default_value_t = report::Agent::Claude)]
         agent: report::Agent,
-        /// Omit the quoted prompt text from intents (counts stay). Use this
-        /// before committing or sharing a receipt.
+        /// Omit your prompt text from the receipt (intents + your --full
+        /// turns); counts stay. Before committing or sharing a receipt.
+        #[arg(long)]
+        no_prompt: bool,
+        /// Omit the agent's prose — post-commit summaries (+ its --full turns).
+        /// The verified ledger and counts stay.
+        #[arg(long)]
+        no_summary: bool,
+        /// Omit BOTH your prompts and the agent's prose (= --no-prompt
+        /// --no-summary); counts stay.
         #[arg(long)]
         no_intent: bool,
         /// Omit git-identity names/emails from the receipt — the identity
@@ -280,6 +296,8 @@ fn main() -> Result<()> {
             store,
             agent,
             color,
+            no_prompt,
+            no_summary,
             no_intent,
             no_identity,
             filter,
@@ -302,7 +320,10 @@ fn main() -> Result<()> {
             no_pager,
             report::Options {
                 color,
-                show_intent: !no_intent,
+                show: report::Show {
+                    prompt: !no_prompt && !no_intent,
+                    summary: !no_summary && !no_intent,
+                },
                 show_identity: !no_identity,
                 filter,
                 format,
@@ -327,6 +348,8 @@ fn main() -> Result<()> {
             repo,
             store,
             agent,
+            no_prompt,
+            no_summary,
             no_intent,
             no_identity,
             filter,
@@ -342,7 +365,10 @@ fn main() -> Result<()> {
             all,
             repo,
             store,
-            !no_intent,
+            report::Show {
+                prompt: !no_prompt && !no_intent,
+                summary: !no_summary && !no_intent,
+            },
             !no_identity,
             filter,
             with_output,

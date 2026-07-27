@@ -85,9 +85,20 @@ impl Agent {
     }
 }
 
+/// Which conversational content to render. Suppression is orthogonal to
+/// redaction: `--no-prompt`/`--no-summary` DROP a whole category; `--redact`/
+/// `--no-identity`/`--no-scan` MASK spans in place. `--no-intent` drops both.
+#[derive(Debug, Clone, Copy)]
+pub struct Show {
+    /// The user's prompt text — intent lines, and user turns in `--full`.
+    pub prompt: bool,
+    /// The agent's prose — post-commit summaries, and assistant turns in `--full`.
+    pub summary: bool,
+}
+
 pub struct Options {
     pub color: ColorMode,
-    pub show_intent: bool,
+    pub show: Show,
     /// Show git-identity names/emails (the "who touched this repo" roll-up and
     /// per-commit committer/co-author lines). False (`--no-identity`) keeps the
     /// counts and attribution but drops the names — for sharing a report
@@ -199,9 +210,9 @@ pub fn print(
             if &interval.commit.hash == h {
                 println!();
                 render_interval(&st, interval, opts, enriched);
-                if opts.full && opts.show_intent {
+                if opts.full && (opts.show.prompt || opts.show.summary) {
                     let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
-                    render_conversation(&st, session, after, Some(interval.commit.ts));
+                    render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
             }
         }
@@ -587,9 +598,9 @@ pub fn print(
         for (i, interval) in audit.intervals.iter().enumerate() {
             if opts.filter.keeps(interval.status()) {
                 render_interval(&st, interval, opts, enriched);
-                if opts.full && opts.show_intent {
+                if opts.full && (opts.show.prompt || opts.show.summary) {
                     let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
-                    render_conversation(&st, session, after, Some(interval.commit.ts));
+                    render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
             }
         }
@@ -641,8 +652,15 @@ fn render_conversation(
     session: &Session,
     after: Option<DateTime<Utc>>,
     until: Option<DateTime<Utc>>,
+    show: Show,
 ) {
-    let turns = session.conversation(after, until);
+    // Suppression applies inside --full too: --no-prompt drops your turns,
+    // --no-summary drops the agent's.
+    let turns: Vec<_> = session
+        .conversation(after, until)
+        .into_iter()
+        .filter(|t| if t.user { show.prompt } else { show.summary })
+        .collect();
     if turns.is_empty() {
         return;
     }
@@ -779,7 +797,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
                 ))
             );
     }
-    if opts.show_intent
+    if opts.show.prompt
         && let Some(first) = interval.intents.first()
     {
         let redacted = redact_home(first);
@@ -1064,7 +1082,7 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
 
     // The agent's own account of this commit, closing the block — the
     // readable claim, not proof (the ledger above is what's verified).
-    if opts.show_intent
+    if opts.show.summary
         && let Some(summary) = &interval.summary
     {
         let flat = redact_home(summary).replace('\n', " ");

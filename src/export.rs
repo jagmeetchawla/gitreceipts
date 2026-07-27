@@ -21,7 +21,7 @@ pub fn run(
     all: bool,
     repo: Option<PathBuf>,
     store: Option<PathBuf>,
-    show_intent: bool,
+    show: gitreceipts::report::Show,
     show_identity: bool,
     filter: Filter,
     with_output: bool,
@@ -57,7 +57,7 @@ pub fn run(
         &session,
         &stats,
         &audit,
-        show_intent,
+        show,
         show_identity,
         // --full is the maximal export: the whole chat AND every command's
         // output.

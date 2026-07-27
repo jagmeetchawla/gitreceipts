@@ -139,7 +139,7 @@ pub fn run(
                 session,
                 stats,
                 audit,
-                opts.show_intent,
+                opts.show,
                 opts.show_identity,
                 opts.expand,
                 opts.with_output,

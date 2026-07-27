@@ -15,7 +15,7 @@ use crate::extract::Session;
 use crate::fmt::{abbrev, command_summary, redact_home, tilde};
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Landing, Status};
-use crate::report::Expand;
+use crate::report::{Expand, Show};
 
 /// Redact, then HTML-escape. This is the single sanitizer every dynamic string
 /// in the HTML report flows through, so routing redaction through it makes the
@@ -50,7 +50,7 @@ pub fn render(
     session: &Session,
     stats: &IngestStats,
     audit: &Audit,
-    show_intent: bool,
+    show: Show,
     show_identity: bool,
     expand: Expand,
     with_output: bool,
@@ -208,16 +208,22 @@ pub fn render(
             continue;
         }
         // --full: the interval's conversation, in its span (after, commit ts].
-        let convo = if full && show_intent {
+        // Suppression applies per-turn: --no-prompt drops your turns,
+        // --no-summary the agent's.
+        let convo = if full && (show.prompt || show.summary) {
             let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
-            session.conversation(after, Some(iv.commit.ts))
+            session
+                .conversation(after, Some(iv.commit.ts))
+                .into_iter()
+                .filter(|t| if t.user { show.prompt } else { show.summary })
+                .collect()
         } else {
             Vec::new()
         };
         render_interval(
             &mut b,
             iv,
-            show_intent,
+            show,
             show_identity,
             enriched,
             expand,
@@ -402,7 +408,7 @@ fn render_summary(
 fn render_interval(
     b: &mut String,
     iv: &crate::reconcile::Interval,
-    show_intent: bool,
+    show: Show,
     show_identity: bool,
     enriched: bool,
     expand: Expand,
@@ -493,7 +499,9 @@ fn render_interval(
         esc(parent)
     );
 
-    if show_intent && let Some(first) = iv.intents.first() {
+    if show.prompt
+        && let Some(first) = iv.intents.first()
+    {
         let more = if iv.intents.len() > 1 {
             format!(" (+{} more)", iv.intents.len() - 1)
         } else {
@@ -596,7 +604,9 @@ fn render_interval(
     }
     // The agent's own account of this commit — a claim, not proof; the
     // findings above are what's verified.
-    if show_intent && let Some(summary) = &iv.summary {
+    if show.summary
+        && let Some(summary) = &iv.summary
+    {
         let _ = write!(
             b,
             "<div class=\"section\"><div class=\"section-h\">agent summary — the agent's own words, not verified</div>\

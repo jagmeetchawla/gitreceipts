@@ -217,8 +217,10 @@ git receipts audit --latest --no-pager
 # force colors through your own pipe (bat, less -R, a saved transcript)
 git receipts audit --latest --color=always | less -R
 
-# suppress quoted prompt text before sharing a screenshot
-git receipts audit --latest --no-intent
+# drop conversational content before sharing — counts always stay
+git receipts audit --latest --no-prompt     # your prompts
+git receipts audit --latest --no-summary    # the agent's prose
+git receipts audit --latest --no-intent     # both
 
 # show every command in full with its captured output — same depth in the
 # console, the HTML report, and the JSON receipt (implies --verbose here)
@@ -260,8 +262,9 @@ This is the interchange artifact: a compact, verified receipt you can
 commit beside the code, feed to another program, or hand to a model to
 interpret — far smaller than the raw session log it distills. The
 schema is versioned (`schema_version`), pretty-printed by default
-(`--compact` for a single line), and `--no-intent` drops the quoted
-prompt text while keeping every count, for a receipt you can share.
+(`--compact` for a single line), and `--no-prompt` / `--no-summary` /
+`--no-intent` drop your prompts / the agent's prose / both while keeping
+every count, for a receipt you can share.
 `export` takes the same scoping switches as `audit` — `--filter` and
 `--commit` restrict which intervals it carries, while the summary stays
 whole-session. `--full` is the maximal export: it adds the complete
@@ -311,9 +314,10 @@ prompts you typed, attached to the commits they drove. Each commit
 block is bookended: the first prompt as **intent** at the top, and the
 agent's own **summary** (the prose it wrote right after committing) at
 the bottom — the readable claim, closing the loop the ledger verifies.
-The summary is the agent's word, not proof, and `--no-intent` drops
-both it and the quoted prompt text while keeping the counts, e.g.
-before sharing a report. Session files are treated as untrusted
+The summary is the agent's word, not proof. Suppression is granular and
+keeps every count: `--no-prompt` drops your prompts, `--no-summary` the
+agent's prose, `--no-intent` both — e.g. before sharing a report.
+Session files are treated as untrusted
 input: paths from the log never reach git as options, traversal is
 rejected, and a multi-gigabyte line won't take down the process.
 

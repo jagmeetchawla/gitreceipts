@@ -18,7 +18,7 @@ use crate::extract::Session;
 use crate::fmt::redact_home;
 use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Interval, Landing, Status};
-use crate::report::Filter;
+use crate::report::{Filter, Show};
 
 /// Receipt schema version, independent of the tool version. Pre-1.0 and
 /// expected to evolve: the shape is not yet stable, so consumers should not
@@ -203,10 +203,10 @@ pub struct IntervalReceipt {
     pub pushed: bool,
     /// This commit's parent is not the previous spine commit (rebase/reset).
     pub spine_jump: bool,
-    /// The prompts this commit answers to. Empty when redacted (`--no-intent`).
+    /// The prompts this commit answers to. Empty under `--no-prompt`/`--no-intent`.
     pub intents: Vec<String>,
     /// The agent's own post-commit summary — a natural-language claim, not
-    /// proof. Omitted when redacted (`--no-intent`).
+    /// proof. Omitted under `--no-summary`/`--no-intent`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     pub commands: Commands,
@@ -356,11 +356,12 @@ pub struct Tail {
 }
 
 impl Receipt {
-    /// Build the receipt from a completed audit. `show_intent` false drops the
-    /// quoted prompt text (matching `--no-intent`) while keeping every count.
-    /// `with_output` includes every command's captured output; by default
-    /// only failed commands carry it (output is bulky and rebloats the receipt
-    /// toward the raw log, but a failure's is worth keeping).
+    /// Build the receipt from a completed audit. `show.prompt`/`show.summary`
+    /// gate the user prompt text and the agent's prose respectively (matching
+    /// `--no-prompt`/`--no-summary`, both dropped by `--no-intent`) while keeping
+    /// every count. `with_output` includes every command's captured output; by
+    /// default only failed commands carry it (output is bulky and rebloats the
+    /// receipt toward the raw log, but a failure's is worth keeping).
     #[allow(clippy::too_many_arguments)]
     pub fn build(
         session_name: &str,
@@ -369,7 +370,7 @@ impl Receipt {
         session: &Session,
         stats: &IngestStats,
         audit: &Audit,
-        show_intent: bool,
+        show: Show,
         show_identity: bool,
         with_output: bool,
         commit: Option<&str>,
@@ -397,7 +398,7 @@ impl Receipt {
             .iter()
             .filter(|i| commit.is_none_or(|h| i.commit.hash == h))
             .filter(|i| filter.keeps(i.status()))
-            .map(|i| interval_receipt(i, show_intent, show_identity, with_output))
+            .map(|i| interval_receipt(i, show, show_identity, with_output))
             .collect();
 
         let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
@@ -532,7 +533,7 @@ impl Receipt {
                         edits: *edits,
                     })
                     .collect(),
-                intents: if show_intent {
+                intents: if show.prompt {
                     audit.tail_intents.iter().map(|s| redact_home(s)).collect()
                 } else {
                     Vec::new()
@@ -546,8 +547,8 @@ impl Receipt {
                     edits: *edits,
                 })
                 .collect(),
-            transcript: if full && show_intent {
-                Some(transcript(session, audit, commit))
+            transcript: if full && (show.prompt || show.summary) {
+                Some(transcript(session, audit, commit, show))
             } else {
                 None
             },
@@ -567,7 +568,12 @@ impl Receipt {
 /// The full chat as `ChatMessage`s. Scoped to a commit's interval span
 /// `(previous commit, this commit]` when `commit` is set (the conversation
 /// that produced it), else the whole session.
-fn transcript(session: &Session, audit: &Audit, commit: Option<&str>) -> Vec<ChatMessage> {
+fn transcript(
+    session: &Session,
+    audit: &Audit,
+    commit: Option<&str>,
+    show: Show,
+) -> Vec<ChatMessage> {
     let (after, until): (Option<DateTime<Utc>>, Option<DateTime<Utc>>) = match commit {
         Some(h) => match audit.intervals.iter().position(|i| i.commit.hash == h) {
             Some(0) => (None, Some(audit.intervals[0].commit.ts)),
@@ -582,6 +588,7 @@ fn transcript(session: &Session, audit: &Audit, commit: Option<&str>) -> Vec<Cha
     session
         .conversation(after, until)
         .into_iter()
+        .filter(|t| if t.user { show.prompt } else { show.summary })
         .map(|t| ChatMessage {
             role: if t.user { "user" } else { "assistant" },
             ts: t.ts.map(|ts| ts.to_rfc3339()),
@@ -592,7 +599,7 @@ fn transcript(session: &Session, audit: &Audit, commit: Option<&str>) -> Vec<Cha
 
 fn interval_receipt(
     i: &Interval,
-    show_intent: bool,
+    show: Show,
     show_identity: bool,
     with_output: bool,
 ) -> IntervalReceipt {
@@ -625,12 +632,12 @@ fn interval_receipt(
         agent_committed: i.agent_committed,
         pushed: i.pushed,
         spine_jump: i.spine_jump,
-        intents: if show_intent {
+        intents: if show.prompt {
             i.intents.iter().map(|s| redact_home(s)).collect()
         } else {
             Vec::new()
         },
-        summary: if show_intent {
+        summary: if show.summary {
             i.summary.as_deref().map(redact_home)
         } else {
             None

@@ -7,7 +7,7 @@
 mod common;
 
 use common::{SessionBuilder, TempRepo};
-use gitreceipts::report::Expand;
+use gitreceipts::report::{Expand, Show};
 use gitreceipts::{causal, extract, fmt, html, ingest, reconcile};
 
 #[test]
@@ -44,7 +44,10 @@ fn command_home_paths_render_as_tilde_in_html() {
         &session,
         &stats,
         &audit,
-        true,
+        Show {
+            prompt: true,
+            summary: true,
+        },
         true,
         Expand::All,
         false,
