@@ -6,8 +6,10 @@
 .idea/
 *.log
 
-# Generated reports — `git receipts audit --format html > report.html` and the
-# JSON receipts are session artifacts, never source. They can carry private
-# data; keep them out of history.
+# Generated reports & receipts — session artifacts, NEVER source, and they can
+# carry private data. The tool writes them at the repo root when you run it here
+# (`audit --format html > x.html`, `export > x.json`); keep every such file out.
+# Intentional example fixtures live under docs/ and are `git add`-ed explicitly.
 *.html
-receipt*.json
+/*.json
+*.receipt.json
