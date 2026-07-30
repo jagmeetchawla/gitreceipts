@@ -215,7 +215,8 @@ pub fn print(
                 println!();
                 let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
                 let prov = commit_provenance(session, after, interval.commit.ts, multi_model);
-                render_interval(&st, interval, opts, enriched, prov);
+                let cost = session.cost_in(after, Some(interval.commit.ts));
+                render_interval(&st, interval, opts, enriched, prov, cost);
                 if opts.full && (opts.show.prompt || opts.show.summary) {
                     render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
@@ -625,7 +626,8 @@ pub fn print(
             if opts.filter.keeps(interval.status()) {
                 let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
                 let prov = commit_provenance(session, after, interval.commit.ts, multi_model);
-                render_interval(&st, interval, opts, enriched, prov);
+                let cost = session.cost_in(after, Some(interval.commit.ts));
+                render_interval(&st, interval, opts, enriched, prov, cost);
                 if opts.full && (opts.show.prompt || opts.show.summary) {
                     render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
@@ -762,6 +764,15 @@ fn short_model(id: &str) -> &str {
     id.strip_prefix("claude-").unwrap_or(id)
 }
 
+/// `word` for one, `words` for any other count.
+fn plural(n: usize, word: &str) -> String {
+    if n == 1 {
+        word.to_string()
+    } else {
+        format!("{word}s")
+    }
+}
+
 /// The per-commit provenance line — the model(s) that drove this interval and,
 /// where logged, its reasoning effort. Returns `None` (no line) when the
 /// session used a single model AND no effort was captured here: the header
@@ -801,6 +812,7 @@ fn render_interval(
     opts: &Options,
     enriched: bool,
     prov: Option<String>,
+    cost: (usize, u64),
 ) {
     let never: Vec<_> = interval.never_landed().collect();
     let resolved: Vec<_> = interval.resolved_never().collect();
@@ -927,14 +939,39 @@ fn render_interval(
         ));
     }
     println!(
-        "    {} claimed / {} landed{} / {} residue{}   ({} commands)",
+        "    {} claimed / {} landed{} / {} residue{}",
         interval.ledger.len(),
         landed,
         late_note,
         interval.residue.len(),
         residue_notes,
-        interval.commands
     );
+    // Line 2 — the work behind this commit: commands, MCP calls, and the agent
+    // token cost of its conversation window. Each part appears only when it has
+    // something to say, and the whole line is skipped for an empty keyframe.
+    let (creq, cout) = cost;
+    let mcp = interval.mcp_runs.len();
+    let mut work: Vec<String> = Vec::new();
+    if interval.commands > 0 {
+        work.push(format!(
+            "{} {}",
+            interval.commands,
+            plural(interval.commands, "command")
+        ));
+    }
+    if mcp > 0 {
+        work.push(format!("{mcp} MCP {}", plural(mcp, "call")));
+    }
+    if creq > 0 {
+        work.push(format!(
+            "{creq} {} · ~{} output tokens",
+            plural(creq, "request"),
+            abbrev(cout)
+        ));
+    }
+    if !work.is_empty() {
+        println!("    {}", st.dim(&work.join(" · ")));
+    }
 
     if opts.verbose {
         let commit = if interval.agent_committed {

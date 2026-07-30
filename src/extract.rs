@@ -140,6 +140,12 @@ pub struct RequestMeta {
     pub ts: Option<DateTime<Utc>>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// Output tokens for this request (the streamed max), so a window can sum
+    /// the token cost of the work behind a commit.
+    pub output: u64,
+    /// Whether any streamed record for this request carried usage — a request
+    /// counts toward a window's request tally only when it did real work.
+    pub has_usage: bool,
 }
 
 /// How much of a window's requests carried an `effort` tag — effort logging is
@@ -278,6 +284,26 @@ impl Session {
             Coverage::Partial
         };
         (set.into_iter().map(str::to_string).collect(), coverage)
+    }
+
+    /// The work behind a window `(after, until]`: how many API requests fell in
+    /// it and their total output tokens. Only requests that carried usage count
+    /// (a request is the unit the session token line also uses), so per-commit
+    /// sums reconcile with the session total — minus the uncommitted tail and
+    /// any undated requests, which no bounded window can claim.
+    pub fn cost_in(
+        &self,
+        after: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) -> (usize, u64) {
+        let (mut requests, mut output) = (0usize, 0u64);
+        for r in &self.requests {
+            if r.has_usage && in_window(r.ts, after, until) {
+                requests += 1;
+                output += r.output;
+            }
+        }
+        (requests, output)
     }
 }
 
@@ -432,11 +458,19 @@ pub fn extract(ordered: &[Record]) -> Session {
                 ts: None,
                 model: None,
                 effort: None,
+                output: 0,
+                has_usage: false,
             });
             if let Some(t) = ts
                 && meta.ts.is_none_or(|s| t < s)
             {
                 meta.ts = Some(t);
+            }
+            // Streaming repeats usage with growing values — keep the max, the
+            // same rule the session token total uses, so per-commit sums agree.
+            if let Some(u) = &msg.usage {
+                meta.output = meta.output.max(u.output_tokens);
+                meta.has_usage = true;
             }
             if meta.model.is_none()
                 && let Some(m) = msg.model.as_deref()
@@ -789,6 +823,46 @@ mod tests {
             session.models_used(ts("2026-01-01T10:02:00Z"), ts("2026-01-01T10:10:00Z")),
             vec![("claude-fable-5".to_string(), 1)]
         );
+    }
+
+    /// An assistant record carrying usage (output tokens), optionally undated.
+    fn asst_cost(ts: Option<&str>, id: &str, req: &str, output: u64) -> Record {
+        let mut v = json!({
+            "type": "assistant",
+            "requestId": req,
+            "message": { "id": id, "model": "claude-opus-4-8", "content": [],
+                "usage": { "output_tokens": output } },
+        });
+        if let Some(t) = ts {
+            v["timestamp"] = json!(t);
+        }
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn cost_in_sums_per_request_output_tokens_within_a_window() {
+        // Request `a` streams twice (10 then 40) — keep the max, not the sum.
+        // `c` is undated, so a bounded window can't claim it (only the
+        // whole-session roll-up sees it).
+        let records = vec![
+            asst_cost(Some("2026-01-01T10:00:00Z"), "a", "1", 10),
+            asst_cost(Some("2026-01-01T10:01:00Z"), "a", "1", 40),
+            asst_cost(Some("2026-01-01T10:05:00Z"), "b", "2", 100),
+            asst_cost(None, "c", "3", 5),
+        ];
+        let session = extract(&records);
+
+        // Whole session: 3 requests, 40 + 100 + 5 output tokens.
+        assert_eq!(session.cost_in(None, None), (3, 145));
+        // Bounded window keeps only `b`: `a`'s earliest ts is at the lower
+        // bound (excluded), `c` is undated and unplaceable.
+        assert_eq!(
+            session.cost_in(ts("2026-01-01T10:02:00Z"), ts("2026-01-01T10:10:00Z")),
+            (1, 100)
+        );
+        // Session token total is unchanged by the new per-request bookkeeping.
+        assert_eq!(session.tokens.requests, 3);
+        assert_eq!(session.tokens.output, 145);
     }
 
     #[test]

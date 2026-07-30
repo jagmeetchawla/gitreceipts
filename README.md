@@ -41,8 +41,11 @@ What it **verifies** — because git can witness it:
 What it **surfaces** — the rest of the story, honestly labeled:
 - **Intent** — the prompts *you* typed, attached to the commit each one
   drove, so every commit reads *ask → what landed*.
-- **Agent effort** — commands issued and an estimated token count
-  (deduplicated per request; marked *estimated, not billing*).
+- **Agent effort** — the work behind each commit: commands, MCP calls,
+  API requests, and an estimated token count (deduplicated per request;
+  marked *estimated, not billing*). Attributed by the conversation window
+  that led to the commit, so the per-commit numbers sum to the session
+  total minus the uncommitted tail.
 - **Model provenance** — which model(s) produced the session, attached
   to each commit. A mid-session switch (say Opus → Fable) shows per
   commit, so you can see what wrote what. Reasoning effort rides along
@@ -261,9 +264,10 @@ git receipts export --latest --commit 6d6cdc4 --full
 result as machine-readable JSON — the same facts the verbose report
 shows (per-commit statement, ledger, residue, commands, MCP calls,
 intents) plus the header context, token estimate, provenance
-(claimed/receipted/landed), the model(s) and reasoning effort behind
-each commit, execution-axis facts per oracle, blast radii, and the
-git-identity roll-up. Every headline number matches the report.
+(claimed/receipted/landed), the model(s), reasoning effort, and token
+cost (requests + output tokens) behind each commit, execution-axis facts
+per oracle, blast radii, and the git-identity roll-up. Every headline
+number matches the report.
 
 This is the interchange artifact: a compact, verified receipt you can
 commit beside the code, feed to another program, or hand to a model to

@@ -107,6 +107,14 @@ pub struct ModelUse {
     pub requests: usize,
 }
 
+/// The agent work behind an interval: API requests and their output tokens,
+/// attributed by the conversation window that led to the commit.
+#[derive(Debug, Serialize)]
+pub struct IntervalCost {
+    pub requests: usize,
+    pub output_tokens: u64,
+}
+
 /// Reasoning-effort levels seen in a window, and how completely the log tagged
 /// them — never presented as authoritative, unlike `models`.
 #[derive(Debug, Serialize)]
@@ -257,6 +265,10 @@ pub struct IntervalReceipt {
     /// the interval's requests carried no effort tag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<EffortObs>,
+    /// API requests + output tokens behind this commit. Omitted for a keyframe
+    /// interval that carried no requests (e.g. another contributor's commit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<IntervalCost>,
     /// This commit's parent is not the previous spine commit (rebase/reset).
     pub spine_jump: bool,
     /// The prompts this commit answers to. Empty under `--no-prompt`/`--no-intent`.
@@ -460,7 +472,8 @@ impl Receipt {
                 // commit] — the same bounds the console/HTML use to attach prompts.
                 let after = (idx > 0).then(|| audit.intervals[idx - 1].commit.ts);
                 let (models, effort) = provenance(session, after, Some(i.commit.ts));
-                interval_receipt(i, show, show_identity, with_output, models, effort)
+                let cost = session.cost_in(after, Some(i.commit.ts));
+                interval_receipt(i, show, show_identity, with_output, models, effort, cost)
             })
             .collect();
 
@@ -671,8 +684,10 @@ fn interval_receipt(
     with_output: bool,
     models: Vec<ModelUse>,
     effort: Option<EffortObs>,
+    cost: (usize, u64),
 ) -> IntervalReceipt {
     let c = &i.commit;
+    let (creq, cout) = cost;
     IntervalReceipt {
         commit: CommitReceipt {
             hash: c.hash.clone(),
@@ -702,6 +717,10 @@ fn interval_receipt(
         pushed: i.pushed,
         models,
         effort,
+        cost: (creq > 0).then_some(IntervalCost {
+            requests: creq,
+            output_tokens: cout,
+        }),
         spine_jump: i.spine_jump,
         intents: if show.prompt {
             i.intents.iter().map(|s| redact_home(s)).collect()

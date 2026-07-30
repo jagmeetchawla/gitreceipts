@@ -224,6 +224,7 @@ pub fn render(
             Vec::new()
         };
         let prov = commit_provenance(session, after, iv.commit.ts, multi_model);
+        let cost = session.cost_in(after, Some(iv.commit.ts));
         render_interval(
             &mut b,
             iv,
@@ -234,6 +235,7 @@ pub fn render(
             with_output,
             &convo,
             prov,
+            cost,
         );
     }
     b.push_str("</section>\n");
@@ -434,6 +436,15 @@ fn short_model(id: &str) -> &str {
     id.strip_prefix("claude-").unwrap_or(id)
 }
 
+/// `word` for one, `words` for any other count.
+fn plural(n: usize, word: &str) -> String {
+    if n == 1 {
+        word.to_string()
+    } else {
+        format!("{word}s")
+    }
+}
+
 /// Per-commit provenance text (plain — the caller escapes it). `None` when a
 /// single-model session left no effort here: the header roll-up already says
 /// it. See the console `commit_provenance` for the rationale.
@@ -472,6 +483,7 @@ fn render_interval(
     with_output: bool,
     convo: &[crate::extract::Turn],
     prov: Option<String>,
+    cost: (usize, u64),
 ) {
     let (cls, mark) = match iv.status() {
         Status::Green => ("green", "\u{2714}"),
@@ -517,10 +529,9 @@ fn render_interval(
     }
     let _ = write!(
         b,
-        "<span class=\"scount\">{} claimed / {landed} landed / {} residue \u{00b7} {} cmd</span></summary>\n<div class=\"drill\">",
+        "<span class=\"scount\">{} claimed / {landed} landed / {} residue</span></summary>\n<div class=\"drill\">",
         iv.ledger.len(),
         iv.residue.len(),
-        iv.commands
     );
 
     // ---- status badges -------------------------------------------------
@@ -559,6 +570,36 @@ fn render_interval(
         "<span class=\"badge\">parent {}</span></div>",
         esc(parent)
     );
+
+    // The work behind this commit — commands, MCP calls, and the agent token
+    // cost of its conversation window. Each part shows only when non-trivial.
+    let (creq, cout) = cost;
+    let mcp = iv.mcp_runs.len();
+    let mut work: Vec<String> = Vec::new();
+    if iv.commands > 0 {
+        work.push(format!(
+            "{} {}",
+            iv.commands,
+            plural(iv.commands, "command")
+        ));
+    }
+    if mcp > 0 {
+        work.push(format!("{mcp} MCP {}", plural(mcp, "call")));
+    }
+    if creq > 0 {
+        work.push(format!(
+            "{creq} {} · ~{} output tokens",
+            plural(creq, "request"),
+            abbrev(cout)
+        ));
+    }
+    if !work.is_empty() {
+        let _ = write!(
+            b,
+            "<div class=\"line dim\">{}</div>",
+            esc(&work.join(" · "))
+        );
+    }
 
     if show.prompt
         && let Some(first) = iv.intents.first()
