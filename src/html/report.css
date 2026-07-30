@@ -69,14 +69,25 @@ h1 .cmd { color: var(--accent); }
 .badge.ok { color: var(--green); border-color: currentColor; }
 .section { margin: 0.35rem 0; }
 .section-h { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 0.15rem; }
+/* Collapsible detail sections: a clean (green) commit ships them closed; the
+   header stays a one-line summary with a disclosure triangle you can open. */
+details.section > summary.section-h { cursor: pointer; list-style: none; }
+details.section > summary.section-h::-webkit-details-marker { display: none; }
+details.section > summary.section-h::before { content: "\25b8"; color: var(--dim); display: inline-block; width: 0.8rem; transition: transform 0.12s; }
+details.section[open] > summary.section-h::before { transform: rotate(90deg); }
 .section-h .add { color: var(--green); } .section-h .mod { color: var(--intent); }
 .section-h .del { color: var(--red); } .section-h .ren { color: var(--amber); }
-.frow { font-size: 0.8rem; display: flex; gap: 0.5rem; align-items: baseline; overflow-wrap: anywhere; }
+/* Recorded files are routine — dull the path so the eye goes to findings and
+   failures. The A/M/D/R letter keeps its color as a small change-type accent. */
+.frow { font-size: 0.8rem; display: flex; gap: 0.5rem; align-items: baseline; overflow-wrap: anywhere; color: var(--dim); }
 .st { font-weight: 700; width: 1rem; text-align: center; border-radius: 2px; font-size: 0.72rem; flex: none; }
 .st.add { color: var(--green); } .st.mod { color: var(--intent); }
 .st.del { color: var(--red); } .st.ren { color: var(--amber); }
 .crow { font-size: 0.78rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; overflow-wrap: anywhere; padding: 0.05rem 0; }
-.crow code { color: var(--ink); }
+/* A command that succeeded is routine — dull it; a failed one keeps full ink
+   (and its red tag) so it stands out in an open section. */
+.crow code { color: var(--dim); }
+.crow.fail code { color: var(--ink); }
 /* --with-output: full command on its own line (newlines preserved), then output */
 .crow code.cmdfull { flex-basis: 100%; white-space: pre-wrap; margin-top: 0.1rem; }
 .cmdout { flex-basis: 100%; margin: 0.25rem 0 0.5rem; padding: 0.45rem 0.6rem; background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; font-size: 0.72rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; color: var(--dim); }

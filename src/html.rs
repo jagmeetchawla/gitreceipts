@@ -631,9 +631,14 @@ fn render_interval(
         );
     }
 
-    render_statement(b, iv);
-    render_commands(b, iv, with_output);
-    render_mcp(b, iv, with_output);
+    // The bulky detail sections (files, commands, MCP) collapse for a clean
+    // green commit — nothing to inspect — but stay open for a red or residue
+    // commit, so the problem is visible without a click. `--expand all` forces
+    // everything open, honoring its "expand everything" contract.
+    let open_sections = iv.status() != Status::Green || expand == Expand::All;
+    render_statement(b, iv, open_sections);
+    render_commands(b, iv, with_output, open_sections);
+    render_mcp(b, iv, with_output, open_sections);
 
     // ---- reconciliation findings ---------------------------------------
     for l in &late {
@@ -737,7 +742,7 @@ fn render_interval(
 }
 
 /// The commit's own diff, grouped by status — what git actually recorded.
-fn render_statement(b: &mut String, iv: &crate::reconcile::Interval) {
+fn render_statement(b: &mut String, iv: &crate::reconcile::Interval, open: bool) {
     if iv.statement.is_empty() {
         return;
     }
@@ -745,9 +750,10 @@ fn render_statement(b: &mut String, iv: &crate::reconcile::Interval) {
     let (a, m, d, r) = (count('A'), count('M'), count('D'), count('R') + count('C'));
     let _ = write!(
         b,
-        "<div class=\"section\"><div class=\"section-h\">files git recorded ({}): \
+        "<details class=\"section\"{}><summary class=\"section-h\">files git recorded ({}): \
         <b class=\"add\">{a} added</b> \u{00b7} <b class=\"mod\">{m} modified</b> \u{00b7} \
-        <b class=\"del\">{d} deleted</b> \u{00b7} <b class=\"ren\">{r} renamed</b></div>",
+        <b class=\"del\">{d} deleted</b> \u{00b7} <b class=\"ren\">{r} renamed</b></summary>",
+        if open { " open" } else { "" },
         iv.statement.len()
     );
     for c in &iv.statement {
@@ -770,24 +776,30 @@ fn render_statement(b: &mut String, iv: &crate::reconcile::Interval) {
             esc(&c.path)
         );
     }
-    b.push_str("</div>");
+    b.push_str("</details>");
 }
 
 /// The effectful commands the agent ran in this interval. With `with_output`,
 /// each command is shown in full with its captured output — the same depth
 /// the JSON receipt carries under `--with-output`.
-fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool) {
+fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool, open: bool) {
     if iv.commands_run.is_empty() {
         return;
     }
     let _ = write!(
         b,
-        "<div class=\"section\"><div class=\"section-h\">commands ({} effectful of {} total)</div>",
+        "<details class=\"section\"{}><summary class=\"section-h\">commands ({} effectful of {} total)</summary>",
+        if open { " open" } else { "" },
         iv.commands_run.len(),
         iv.commands
     );
     for c in &iv.commands_run {
-        b.push_str("<div class=\"crow\">");
+        // A failed command keeps full ink (see .crow.fail); a succeeded one dulls.
+        b.push_str(if c.failed {
+            "<div class=\"crow fail\">"
+        } else {
+            "<div class=\"crow\">"
+        });
         match c.radius {
             Some(r) => {
                 let _ = write!(b, "<span class=\"radtag {}\">{}</span>", r, r);
@@ -825,24 +837,30 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output:
             );
         }
     }
-    b.push_str("</div>");
+    b.push_str("</details>");
 }
 
 /// The MCP tool calls in this interval (S3, execution axis). The server's
 /// tool_result is the oracle: errored is tagged; output shows on error or
 /// under `--with-output`.
-fn render_mcp(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool) {
+fn render_mcp(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool, open: bool) {
     if iv.mcp_runs.is_empty() {
         return;
     }
     let errored = iv.mcp_runs.iter().filter(|m| m.errored).count();
     let _ = write!(
         b,
-        "<div class=\"section\"><div class=\"section-h\">MCP calls ({} total, {errored} errored)</div>",
+        "<details class=\"section\"{}><summary class=\"section-h\">MCP calls ({} total, {errored} errored)</summary>",
+        if open { " open" } else { "" },
         iv.mcp_runs.len(),
     );
     for m in &iv.mcp_runs {
-        b.push_str("<div class=\"crow\">");
+        // An errored MCP call keeps full ink; a clean one dulls like commands.
+        b.push_str(if m.errored {
+            "<div class=\"crow fail\">"
+        } else {
+            "<div class=\"crow\">"
+        });
         let _ = write!(b, "<span class=\"radtag mcp\">{}</span>", esc(&m.server));
         if m.errored {
             b.push_str("<span class=\"radtag fail\">errored</span>");
@@ -861,5 +879,5 @@ fn render_mcp(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool
         }
         b.push_str("</div>");
     }
-    b.push_str("</div>");
+    b.push_str("</details>");
 }
