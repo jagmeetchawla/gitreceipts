@@ -113,6 +113,9 @@ h1 .cmd { color: var(--accent); }
 .line.bad { color: var(--red); }
 .line.warn { color: var(--amber); }
 .line.dim, .line .dim { color: var(--dim); }
+/* The per-commit work/cost line reads as a caption under the model badge:
+   aligned to the badge row's left edge, sized like the summary counts. */
+.line.work { padding-left: 0; margin: -0.15rem 0 0.2rem; font-size: 0.78rem; }
 body.f-red .interval.green, body.f-red .interval.residue { display: none; }
 body.f-red-residue .interval.green { display: none; }
 .balance { margin-top: 1.6rem; padding: 1rem 1.2rem; border-radius: 4px; background: var(--panel); border: 1px solid var(--green); font-weight: 600; font-size: 0.9rem; overflow-wrap: anywhere; }

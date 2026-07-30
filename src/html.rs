@@ -596,7 +596,7 @@ fn render_interval(
     if !work.is_empty() {
         let _ = write!(
             b,
-            "<div class=\"line dim\">{}</div>",
+            "<div class=\"line work dim\">{}</div>",
             esc(&work.join(" · "))
         );
     }
