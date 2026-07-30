@@ -131,6 +131,36 @@ pub struct Turn<'a> {
     pub text: &'a str,
 }
 
+/// One deduplicated API request's provenance: which model produced it and, when
+/// the log carries it, the reasoning-effort level. One per distinct
+/// `(message.id, requestId)` — the same key token accounting dedups on — so
+/// counts are requests, not streamed records.
+#[derive(Debug, Clone)]
+pub struct RequestMeta {
+    pub ts: Option<DateTime<Utc>>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+/// How much of a window's requests carried an `effort` tag — effort logging is
+/// newer and sparse, so a receipt must say whether it saw all, some, or none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Coverage {
+    None,
+    Partial,
+    Full,
+}
+
+impl Coverage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Coverage::None => "none",
+            Coverage::Partial => "partial",
+            Coverage::Full => "full",
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Session {
     pub claims: Vec<Claim>,
@@ -138,10 +168,28 @@ pub struct Session {
     /// Assistant prose messages, in order — the agent narrating its work.
     pub narrations: Vec<Narration>,
     pub tokens: Tokens,
+    /// One entry per deduplicated API request — the model (and, where logged,
+    /// the reasoning effort) behind each. Time-sorted, so a window can name the
+    /// model(s) that drove any interval.
+    pub requests: Vec<RequestMeta>,
     pub first_ts: Option<DateTime<Utc>>,
     pub last_ts: Option<DateTime<Utc>>,
     pub cwds: Vec<String>,
     pub branches: Vec<String>,
+}
+
+/// Half-open window predicate shared by `conversation` and the provenance
+/// queries: `None` bounds are unbounded; with both `None` (whole session)
+/// undated items are kept, but any bounded window drops them (unplaceable).
+fn in_window(
+    ts: Option<DateTime<Utc>>,
+    after: Option<DateTime<Utc>>,
+    until: Option<DateTime<Utc>>,
+) -> bool {
+    match ts {
+        Some(t) => after.is_none_or(|a| t > a) && until.is_none_or(|u| t <= u),
+        None => after.is_none() && until.is_none(),
+    }
 }
 
 impl Session {
@@ -154,10 +202,7 @@ impl Session {
         after: Option<DateTime<Utc>>,
         until: Option<DateTime<Utc>>,
     ) -> Vec<Turn<'_>> {
-        let in_window = |ts: Option<DateTime<Utc>>| match ts {
-            Some(t) => after.is_none_or(|a| t > a) && until.is_none_or(|u| t <= u),
-            None => after.is_none() && until.is_none(),
-        };
+        let in_window = |ts: Option<DateTime<Utc>>| in_window(ts, after, until);
         let mut turns: Vec<Turn> = Vec::new();
         for p in &self.prompts {
             if in_window(p.ts) {
@@ -179,6 +224,60 @@ impl Session {
         }
         turns.sort_by_key(|t| t.ts);
         turns
+    }
+
+    /// The model(s) that produced requests within `(after, until]`, each with
+    /// its request count, most-used first (ties broken by id). `(None, None)`
+    /// rolls up the whole session. Synthetic/unlabelled requests are excluded.
+    pub fn models_used(
+        &self,
+        after: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) -> Vec<(String, usize)> {
+        let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for r in &self.requests {
+            if in_window(r.ts, after, until)
+                && let Some(m) = r.model.as_deref()
+            {
+                *counts.entry(m).or_default() += 1;
+            }
+        }
+        let mut v: Vec<(String, usize)> = counts
+            .into_iter()
+            .map(|(k, c)| (k.to_string(), c))
+            .collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        v
+    }
+
+    /// The distinct reasoning-effort levels observed within `(after, until]`,
+    /// plus how much of the window's requests actually carried an effort tag.
+    /// Effort logging is sparse, so `Coverage` is the honesty signal: `Full`
+    /// only when every request in the window was tagged, `None` when none were.
+    pub fn effort_seen(
+        &self,
+        after: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) -> (Vec<String>, Coverage) {
+        let mut set: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let (mut total, mut tagged) = (0usize, 0usize);
+        for r in &self.requests {
+            if in_window(r.ts, after, until) {
+                total += 1;
+                if let Some(e) = r.effort.as_deref() {
+                    tagged += 1;
+                    set.insert(e);
+                }
+            }
+        }
+        let coverage = if tagged == 0 {
+            Coverage::None
+        } else if tagged == total {
+            Coverage::Full
+        } else {
+            Coverage::Partial
+        };
+        (set.into_iter().map(str::to_string).collect(), coverage)
     }
 }
 
@@ -253,6 +352,11 @@ pub fn extract(ordered: &[Record]) -> Session {
     // message.usage with growing values, so we keep the MAX of each field
     // per (message.id, requestId) and sum across distinct requests.
     let mut per_request: HashMap<(String, String), Usage> = HashMap::new();
+    // Per-request provenance (model + effort), keyed the same way. Kept separate
+    // from the usage map because effort can appear on a record that carries no
+    // usage, so we must fold across *all* of a request's records, not just the
+    // usage-bearing one.
+    let mut per_meta: HashMap<(String, String), RequestMeta> = HashMap::new();
 
     let mut session = Session::default();
     for (frame, rec) in ordered.iter().enumerate() {
@@ -312,6 +416,43 @@ pub fn extract(ordered: &[Record]) -> Session {
                 .max(usage.cache_creation_input_tokens);
         }
 
+        // Provenance: model on (virtually) every assistant record, effort on
+        // some. Fold across the whole request; first non-empty value wins, ts
+        // is the earliest seen. `<synthetic>` is the harness's own turns — not a
+        // model the user chose, so it never counts.
+        if rec.kind == "assistant"
+            && let Some(msg) = &rec.message
+        {
+            let fallback = || rec.uuid.clone().unwrap_or_default();
+            let key = (
+                msg.id.clone().unwrap_or_else(fallback),
+                rec.request_id.clone().unwrap_or_else(fallback),
+            );
+            let meta = per_meta.entry(key).or_insert_with(|| RequestMeta {
+                ts: None,
+                model: None,
+                effort: None,
+            });
+            if let Some(t) = ts
+                && meta.ts.is_none_or(|s| t < s)
+            {
+                meta.ts = Some(t);
+            }
+            if meta.model.is_none()
+                && let Some(m) = msg.model.as_deref()
+                && m != "<synthetic>"
+                && !m.is_empty()
+            {
+                meta.model = Some(m.to_string());
+            }
+            if meta.effort.is_none()
+                && let Some(e) = rec.effort.as_deref()
+                && !e.is_empty()
+            {
+                meta.effort = Some(e.to_string());
+            }
+        }
+
         for tu in rec.tool_uses() {
             let action = classify_tool(&tu.name, &tu.input);
             session.claims.push(Claim {
@@ -330,6 +471,8 @@ pub fn extract(ordered: &[Record]) -> Session {
         session.tokens.cache_read += u.cache_read_input_tokens;
         session.tokens.cache_creation += u.cache_creation_input_tokens;
     }
+    session.requests = per_meta.into_values().collect();
+    session.requests.sort_by_key(|r| r.ts);
     session
 }
 
@@ -575,8 +718,97 @@ pub fn command_radius(command: &str) -> Option<Radius> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, classify_tool, parse_mcp_name, resolve_offload};
+    use super::{Action, Coverage, classify_tool, extract, parse_mcp_name, resolve_offload};
+    use crate::schema::Record;
+    use chrono::{DateTime, Utc};
     use serde_json::json;
+
+    fn ts(s: &str) -> Option<DateTime<Utc>> {
+        Some(DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc))
+    }
+
+    /// An assistant record with a model, optional effort, keyed by (id, req).
+    fn asst(ts: &str, id: &str, req: &str, model: &str, effort: Option<&str>) -> Record {
+        let mut v = json!({
+            "type": "assistant",
+            "timestamp": ts,
+            "requestId": req,
+            "message": { "id": id, "model": model, "content": [] },
+        });
+        if let Some(e) = effort {
+            v["effort"] = json!(e);
+        }
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn model_and_effort_are_captured_per_request_with_honest_coverage() {
+        // Two records share one request (id=a/req=1): the model is on both, the
+        // effort tag only on the second — it must still be folded in. A third
+        // request is a different model; a fourth is <synthetic> (harness noise).
+        let records = vec![
+            asst("2026-01-01T10:00:00Z", "a", "1", "claude-opus-4-8", None),
+            asst(
+                "2026-01-01T10:01:00Z",
+                "a",
+                "1",
+                "claude-opus-4-8",
+                Some("high"),
+            ),
+            asst(
+                "2026-01-01T10:05:00Z",
+                "b",
+                "2",
+                "claude-fable-5",
+                Some("high"),
+            ),
+            asst("2026-01-01T10:06:00Z", "c", "3", "<synthetic>", None),
+        ];
+        let session = extract(&records);
+
+        // Three deduped requests; the synthetic one carries no model.
+        assert_eq!(session.requests.len(), 3, "one entry per (id, requestId)");
+
+        // Roll-up: synthetic excluded; ties sort by id ascending.
+        assert_eq!(
+            session.models_used(None, None),
+            vec![
+                ("claude-fable-5".to_string(), 1),
+                ("claude-opus-4-8".to_string(), 1)
+            ]
+        );
+
+        // Effort observed on 2 of 3 requests → partial, honestly.
+        let (efforts, coverage) = session.effort_seen(None, None);
+        assert_eq!(efforts, vec!["high".to_string()]);
+        assert_eq!(coverage, Coverage::Partial);
+
+        // Windowing: (10:02, 10:10] excludes request `a` (earliest ts 10:00),
+        // keeps fable (10:05); the synthetic request has no model to report.
+        assert_eq!(
+            session.models_used(ts("2026-01-01T10:02:00Z"), ts("2026-01-01T10:10:00Z")),
+            vec![("claude-fable-5".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn effort_coverage_is_none_when_the_log_never_tags_it() {
+        // Older logs carry no effort at all — coverage must say `None`, not fake
+        // completeness, and the observed set is empty.
+        let records = vec![
+            asst("2026-01-01T10:00:00Z", "a", "1", "claude-opus-4-8", None),
+            asst("2026-01-01T10:05:00Z", "b", "2", "claude-opus-4-8", None),
+        ];
+        let session = extract(&records);
+        let (efforts, coverage) = session.effort_seen(None, None);
+        assert!(efforts.is_empty());
+        assert_eq!(coverage, Coverage::None);
+        // A single model across the whole session still rolls up cleanly.
+        assert_eq!(
+            session.models_used(None, None),
+            vec![("claude-opus-4-8".to_string(), 2)]
+        );
+    }
 
     #[test]
     fn offload_pointer_is_followed_to_the_full_receipt() {

@@ -28,6 +28,11 @@ pub struct Record {
     /// must be deduplicated on it (see `extract`).
     #[serde(rename = "requestId", default)]
     pub request_id: Option<String>,
+    /// Reasoning-effort level for the turn (`low`..`max`), a top-level field on
+    /// *some* assistant records — newer logs only, so it is sparse and may be
+    /// absent for a whole session. Captured best-effort, never assumed complete.
+    #[serde(default)]
+    pub effort: Option<String>,
     #[serde(default)]
     pub message: Option<Message>,
 }
@@ -38,6 +43,12 @@ pub struct Message {
     /// records; paired with `requestId` it keys token deduplication.
     #[serde(default)]
     pub id: Option<String>,
+    /// The model that produced this assistant turn (e.g. `claude-opus-4-8`).
+    /// Present on effectively every assistant record, so a mid-session model
+    /// switch is captured turn-by-turn. `<synthetic>` marks harness-injected
+    /// messages, filtered out in `extract`.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Either a plain string (user prompts) or an array of content blocks.
     #[serde(default)]
     pub content: Value,

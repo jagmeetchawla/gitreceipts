@@ -201,17 +201,20 @@ pub fn render(
         audit.intervals.iter().filter(|i| i.agent_committed).count(),
     );
 
+    // A per-commit model line only earns its place when the session spanned
+    // more than one model; otherwise the header roll-up already covers it.
+    let multi_model = session.models_used(None, None).len() > 1;
     for (i, iv) in audit.intervals.iter().enumerate() {
         if let Some(h) = commit
             && iv.commit.hash != h
         {
             continue;
         }
+        let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
         // --full: the interval's conversation, in its span (after, commit ts].
         // Suppression applies per-turn: --no-prompt drops your turns,
         // --no-summary the agent's.
         let convo = if full && (show.prompt || show.summary) {
-            let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
             session
                 .conversation(after, Some(iv.commit.ts))
                 .into_iter()
@@ -220,6 +223,7 @@ pub fn render(
         } else {
             Vec::new()
         };
+        let prov = commit_provenance(session, after, iv.commit.ts, multi_model);
         render_interval(
             &mut b,
             iv,
@@ -229,6 +233,7 @@ pub fn render(
             expand,
             with_output,
             &convo,
+            prov,
         );
     }
     b.push_str("</section>\n");
@@ -325,6 +330,26 @@ fn render_summary(
             abbrev(tk.cache_read),
         );
     }
+    // Provenance: model(s) authoritative, effort labelled with its coverage.
+    let models = session.models_used(None, None);
+    if !models.is_empty() {
+        let list = models
+            .iter()
+            .map(|(m, c)| format!("{} ({} req)", esc(short_model(m)), c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (efforts, coverage) = session.effort_seen(None, None);
+        let etail = if efforts.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " <span class=\"dim\">· reasoning effort: {} ({} coverage in the log)</span>",
+                esc(&efforts.join(", ")),
+                coverage.as_str()
+            )
+        };
+        let _ = write!(b, "<div class=\"line\">model(s): {list}{etail}</div>");
+    }
     b.push_str("<div class=\"heading\">what happened to every exception</div>");
     if late > 0 {
         let _ = write!(
@@ -404,6 +429,38 @@ fn render_summary(
     b.push_str("</div>\n");
 }
 
+/// `claude-opus-4-8` → `opus-4-8` for display; full id stays in the JSON.
+fn short_model(id: &str) -> &str {
+    id.strip_prefix("claude-").unwrap_or(id)
+}
+
+/// Per-commit provenance text (plain — the caller escapes it). `None` when a
+/// single-model session left no effort here: the header roll-up already says
+/// it. See the console `commit_provenance` for the rationale.
+fn commit_provenance(
+    session: &Session,
+    after: Option<chrono::DateTime<chrono::Utc>>,
+    until: chrono::DateTime<chrono::Utc>,
+    multi_model: bool,
+) -> Option<String> {
+    let models = session.models_used(after, Some(until));
+    let (efforts, coverage) = session.effort_seen(after, Some(until));
+    if models.is_empty() || (!multi_model && efforts.is_empty()) {
+        return None;
+    }
+    let m = models
+        .iter()
+        .map(|(id, _)| short_model(id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let etail = if efforts.is_empty() {
+        String::new()
+    } else {
+        format!(" · effort: {} ({})", efforts.join(","), coverage.as_str())
+    };
+    Some(format!("model: {m}{etail}"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_interval(
     b: &mut String,
@@ -414,6 +471,7 @@ fn render_interval(
     expand: Expand,
     with_output: bool,
     convo: &[crate::extract::Turn],
+    prov: Option<String>,
 ) {
     let (cls, mark) = match iv.status() {
         Status::Green => ("green", "\u{2714}"),
@@ -487,6 +545,9 @@ fn render_interval(
         b.push_str("<span class=\"badge ok\">pushed (as of last fetch)</span>");
     } else {
         b.push_str("<span class=\"badge\">local only \u{2014} not pushed</span>");
+    }
+    if let Some(p) = &prov {
+        let _ = write!(b, "<span class=\"badge\">\u{2699} {}</span>", esc(p));
     }
     let parent = if iv.commit.parent.is_empty() {
         "(root)"

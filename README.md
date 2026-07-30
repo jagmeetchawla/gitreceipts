@@ -43,6 +43,11 @@ What it **surfaces** — the rest of the story, honestly labeled:
   drove, so every commit reads *ask → what landed*.
 - **Agent effort** — commands issued and an estimated token count
   (deduplicated per request; marked *estimated, not billing*).
+- **Model provenance** — which model(s) produced the session, attached
+  to each commit. A mid-session switch (say Opus → Fable) shows per
+  commit, so you can see what wrote what. Reasoning effort rides along
+  where the log records it — labeled with its coverage, since that field
+  is newer and only partially logged.
 - **Blast radius** — how far each command reached: `local-fs →
   local-git → remote-git → network`. This is the honest boundary:
   a network call or a deploy leaves nothing in git, so its captured
@@ -58,6 +63,8 @@ commands, checked against the working tree.
 intent → outcome
   173 prompts drove 52 commits; 214/219 claimed files landed (98%), 49 intervals fully balanced
   agent effort: 412 commands · ~5.0M output tokens across 3,413 requests (est., not billing)
+  model(s): opus-4-8 (2,605 req), fable-5 (808 req)
+  reasoning effort: high, max (partial coverage in the log)
   what happened to every exception:
     · claims that landed late: 3, content-verified against the commit they landed in
     · claims that never landed, resolved: 4 — superseded by later landed edits: 2 ·
@@ -254,9 +261,9 @@ git receipts export --latest --commit 6d6cdc4 --full
 result as machine-readable JSON — the same facts the verbose report
 shows (per-commit statement, ledger, residue, commands, MCP calls,
 intents) plus the header context, token estimate, provenance
-(claimed/receipted/landed), execution-axis facts per oracle, blast
-radii, and the git-identity roll-up. Every headline number matches the
-report.
+(claimed/receipted/landed), the model(s) and reasoning effort behind
+each commit, execution-axis facts per oracle, blast radii, and the
+git-identity roll-up. Every headline number matches the report.
 
 This is the interchange artifact: a compact, verified receipt you can
 commit beside the code, feed to another program, or hand to a model to

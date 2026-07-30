@@ -223,6 +223,16 @@ fn receipt_round_trips_as_valid_json() {
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
         assert_eq!(parsed["summary"]["broken_promises"], 1);
         assert!(parsed["intervals"].is_array());
+        // Synthetic sessions carry no model/effort in the log, so the optional
+        // provenance fields must be omitted entirely — never emitted empty.
+        assert!(
+            parsed["source"].get("models").is_none(),
+            "source.models is skipped when no model was logged"
+        );
+        assert!(
+            parsed["source"].get("effort").is_none(),
+            "source.effort is skipped when no effort was logged"
+        );
     }
 }
 

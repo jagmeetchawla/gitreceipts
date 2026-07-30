@@ -24,7 +24,7 @@ use crate::report::{Filter, Show};
 /// expected to evolve: the shape is not yet stable, so consumers should not
 /// assume compatibility across minor bumps. A future "1.0" is the stability
 /// commitment; a breaking change before then bumps the minor.
-pub const SCHEMA_VERSION: &str = "0.2";
+pub const SCHEMA_VERSION: &str = "0.3";
 
 /// The whole receipt: the root object a consumer reads.
 #[derive(Debug, Serialize)]
@@ -82,6 +82,15 @@ pub struct Source {
     /// The coding agent that produced the session (`"claude-code"`). Reserved
     /// for multi-agent support (`--agent`); today always `claude-code`.
     pub agent: &'static str,
+    /// The model(s) that produced the session, each with its request count,
+    /// most-used first. A mid-session model switch shows as several entries.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<ModelUse>,
+    /// Reasoning effort observed across the session. Effort logging is sparse
+    /// (newer logs only), so `coverage` says whether every request was tagged,
+    /// some, or none. Omitted entirely when the log carries no effort at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<EffortObs>,
     /// The session stem, or a summary when several were merged.
     pub session: String,
     pub repo: String,
@@ -89,6 +98,44 @@ pub struct Source {
     pub window: Option<Window>,
     pub branches: Vec<String>,
     pub ingest: Ingest,
+}
+
+/// A model and how many deduplicated API requests it produced in some window.
+#[derive(Debug, Serialize)]
+pub struct ModelUse {
+    pub id: String,
+    pub requests: usize,
+}
+
+/// Reasoning-effort levels seen in a window, and how completely the log tagged
+/// them — never presented as authoritative, unlike `models`.
+#[derive(Debug, Serialize)]
+pub struct EffortObs {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub observed: Vec<String>,
+    /// `"full"` (every request tagged) · `"partial"` · `"none"`.
+    pub coverage: &'static str,
+}
+
+/// Build the receipt's model roll-up + effort observation for a window.
+fn provenance(
+    session: &Session,
+    after: Option<chrono::DateTime<chrono::Utc>>,
+    until: Option<chrono::DateTime<chrono::Utc>>,
+) -> (Vec<ModelUse>, Option<EffortObs>) {
+    let models = session
+        .models_used(after, until)
+        .into_iter()
+        .map(|(id, requests)| ModelUse { id, requests })
+        .collect();
+    let (observed, coverage) = session.effort_seen(after, until);
+    // Omit effort only when nothing at all was observed; a partial signal is
+    // exactly what we want to keep (and label), never drop.
+    let effort = (coverage != crate::extract::Coverage::None).then_some(EffortObs {
+        observed,
+        coverage: coverage.as_str(),
+    });
+    (models, effort)
 }
 
 #[derive(Debug, Serialize)]
@@ -201,6 +248,15 @@ pub struct IntervalReceipt {
     pub status: &'static str,
     pub agent_committed: bool,
     pub pushed: bool,
+    /// The model(s) that drove this commit's interval — the conversation
+    /// between the previous spine commit and this one. Usually one; a mid-work
+    /// model switch shows two.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<ModelUse>,
+    /// Reasoning effort observed in this interval, with coverage. Omitted when
+    /// the interval's requests carried no effort tag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<EffortObs>,
     /// This commit's parent is not the previous spine commit (rebase/reset).
     pub spine_jump: bool,
     /// The prompts this commit answers to. Empty under `--no-prompt`/`--no-intent`.
@@ -396,9 +452,16 @@ impl Receipt {
         let intervals: Vec<IntervalReceipt> = audit
             .intervals
             .iter()
-            .filter(|i| commit.is_none_or(|h| i.commit.hash == h))
-            .filter(|i| filter.keeps(i.status()))
-            .map(|i| interval_receipt(i, show, show_identity, with_output))
+            .enumerate()
+            .filter(|(_, i)| commit.is_none_or(|h| i.commit.hash == h))
+            .filter(|(_, i)| filter.keeps(i.status()))
+            .map(|(idx, i)| {
+                // The interval's conversation window: (previous spine commit, this
+                // commit] — the same bounds the console/HTML use to attach prompts.
+                let after = (idx > 0).then(|| audit.intervals[idx - 1].commit.ts);
+                let (models, effort) = provenance(session, after, Some(i.commit.ts));
+                interval_receipt(i, show, show_identity, with_output, models, effort)
+            })
             .collect();
 
         let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
@@ -495,6 +558,8 @@ impl Receipt {
         // The scanner tally is complete now — the intervals above have all been
         // built, and each ran its command/output/MCP text through redaction.
         let (secrets, pii) = crate::fmt::scan_counts();
+        // Session-wide provenance roll-up (whole-session window).
+        let (models, effort) = provenance(session, None, None);
         Receipt {
             schema_version: SCHEMA_VERSION,
             notice: "Private audit report — built from chat/agent logs, git contents, \
@@ -507,6 +572,8 @@ impl Receipt {
             },
             source: Source {
                 agent,
+                models,
+                effort,
                 session: session_name.to_string(),
                 // Collapse home to ~ everywhere a path can carry it — the
                 // receipt is meant to be committed/shared, and this matches
@@ -602,6 +669,8 @@ fn interval_receipt(
     show: Show,
     show_identity: bool,
     with_output: bool,
+    models: Vec<ModelUse>,
+    effort: Option<EffortObs>,
 ) -> IntervalReceipt {
     let c = &i.commit;
     IntervalReceipt {
@@ -631,6 +700,8 @@ fn interval_receipt(
         status: status_str(i.status()),
         agent_committed: i.agent_committed,
         pushed: i.pushed,
+        models,
+        effort,
         spine_jump: i.spine_jump,
         intents: if show.prompt {
             i.intents.iter().map(|s| redact_home(s)).collect()

@@ -183,6 +183,10 @@ pub fn print(
     opts: &Options,
 ) {
     let st = Style::new(opts.color);
+    // A per-commit model line is only worth printing when the session spanned
+    // more than one model (a mid-session switch); otherwise the header roll-up
+    // says it once and per-commit would just repeat.
+    let multi_model = session.models_used(None, None).len() > 1;
 
     println!(
         "{}",
@@ -209,9 +213,10 @@ pub fn print(
         for (i, interval) in audit.intervals.iter().enumerate() {
             if &interval.commit.hash == h {
                 println!();
-                render_interval(&st, interval, opts, enriched);
+                let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
+                let prov = commit_provenance(session, after, interval.commit.ts, multi_model);
+                render_interval(&st, interval, opts, enriched, prov);
                 if opts.full && (opts.show.prompt || opts.show.summary) {
-                    let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
                     render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
             }
@@ -370,6 +375,27 @@ pub fn print(
             abbrev(tk.input),
             abbrev(tk.cache_read),
             st.dim("— usage records are approximate, not billing")
+        );
+    }
+    // Provenance: which model(s) produced the session, and — where the log
+    // carries it — the reasoning effort. Model is authoritative (every turn);
+    // effort is sparse, so it is labelled with its coverage, never as complete.
+    let models = session.models_used(None, None);
+    if !models.is_empty() {
+        let list = models
+            .iter()
+            .map(|(m, c)| format!("{} ({} req)", short_model(m), c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  {} {}", st.dim("model(s):"), list);
+    }
+    let (efforts, coverage) = session.effort_seen(None, None);
+    if !efforts.is_empty() {
+        println!(
+            "  {} {} {}",
+            st.dim("reasoning effort:"),
+            efforts.join(", "),
+            st.dim(&format!("({} coverage in the log)", coverage.as_str()))
         );
     }
     // what happened to every exception — the findings, not just counts
@@ -597,9 +623,10 @@ pub fn print(
     } else {
         for (i, interval) in audit.intervals.iter().enumerate() {
             if opts.filter.keeps(interval.status()) {
-                render_interval(&st, interval, opts, enriched);
+                let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
+                let prov = commit_provenance(session, after, interval.commit.ts, multi_model);
+                render_interval(&st, interval, opts, enriched, prov);
                 if opts.full && (opts.show.prompt || opts.show.summary) {
-                    let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
                     render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
             }
@@ -729,10 +756,52 @@ fn render_oneline_row(st: &Style, iv: &Interval) {
     );
 }
 
+/// Drop the `claude-` prefix for a tidier console label; the full id stays in
+/// the JSON receipt. `codex-x` and other non-Claude ids pass through untouched.
+fn short_model(id: &str) -> &str {
+    id.strip_prefix("claude-").unwrap_or(id)
+}
+
+/// The per-commit provenance line — the model(s) that drove this interval and,
+/// where logged, its reasoning effort. Returns `None` (no line) when the
+/// session used a single model AND no effort was captured here: the header
+/// roll-up already says everything, so a per-commit echo would be pure noise.
+/// It earns a line only when the model varies across the session or effort adds
+/// something. `until` is the commit ts; `after` the previous spine commit's.
+fn commit_provenance(
+    session: &Session,
+    after: Option<DateTime<Utc>>,
+    until: DateTime<Utc>,
+    multi_model: bool,
+) -> Option<String> {
+    let models = session.models_used(after, Some(until));
+    let (efforts, coverage) = session.effort_seen(after, Some(until));
+    if models.is_empty() || (!multi_model && efforts.is_empty()) {
+        return None;
+    }
+    let m = models
+        .iter()
+        .map(|(id, _)| short_model(id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let etail = if efforts.is_empty() {
+        String::new()
+    } else {
+        format!(" · effort: {} ({})", efforts.join(","), coverage.as_str())
+    };
+    Some(format!("⚙ model: {m}{etail}"))
+}
+
 /// Render one interval's block: the commit line, its tags, intent, the
 /// claimed/landed/residue counts, the optional verbose anatomy, and every
 /// reconciliation finding (late, resolved, never-landed, residue).
-fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bool) {
+fn render_interval(
+    st: &Style,
+    interval: &Interval,
+    opts: &Options,
+    enriched: bool,
+    prov: Option<String>,
+) {
     let never: Vec<_> = interval.never_landed().collect();
     let resolved: Vec<_> = interval.resolved_never().collect();
     let late: Vec<_> = interval.landed_late().collect();
@@ -778,6 +847,9 @@ fn render_interval(st: &Style, interval: &Interval, opts: &Options, enriched: bo
         st.yellow(ghost),
         st.yellow(hist),
     );
+    if let Some(p) = &prov {
+        println!("    {}", st.dim(p));
+    }
     // Co-Authored-By is declared evidence of co-authorship (an agent, a
     // pair). Present-only — never inferred from absence. Per-commit detail
     // goes in --verbose; the summary carries the session-wide picture.
