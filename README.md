@@ -237,8 +237,13 @@ git receipts audit --latest --no-intent     # both
 git receipts audit --latest --with-output
 git receipts audit --latest --format html --with-output > audit.html
 
-# write a self-contained HTML report (theme-aware, no external assets)
+# write a self-contained HTML report (theme-aware, no external assets).
+# clean commits collapse to a line; a red or residue commit opens with its
+# files and commands, and succeeded detail is dulled so failures stand out
 git receipts audit --latest --format html > audit.html
+
+# open every commit's drill-down, not just the findings
+git receipts audit --latest --format html --expand all > audit.html
 
 # audit another machine's sessions from a mounted drive (point --store at its
 # projects directory)
