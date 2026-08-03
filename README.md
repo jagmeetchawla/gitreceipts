@@ -217,8 +217,10 @@ git receipts audit ~/.claude/projects/<project>/<session>.jsonl --repo ~/code/my
 # just the broken promises
 git receipts audit --latest --filter red
 
-# broken promises + unexplained residue
-git receipts audit --latest --filter red-residue
+# filter the spine purely by color (red = broken promises; amber = residue,
+# failed command, or errored MCP; green = clean)
+git receipts audit --latest --filter amber
+git receipts audit --latest --filter red-amber   # everything that isn't green
 
 # on a terminal the report auto-pages through $PAGER (like git),
 # colors intact — no flags needed. To opt out:
@@ -238,7 +240,7 @@ git receipts audit --latest --with-output
 git receipts audit --latest --format html --with-output > audit.html
 
 # write a self-contained HTML report (theme-aware, no external assets).
-# clean commits collapse to a line; a red or residue commit opens with its
+# green commits collapse to a line; a red or amber commit opens with its
 # files and commands, and succeeded detail is dulled so failures stand out
 git receipts audit --latest --format html > audit.html
 
