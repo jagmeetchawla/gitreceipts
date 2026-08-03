@@ -271,6 +271,15 @@ git receipts export --latest --with-output --compact   # every output, single li
 # output. Scope it to one commit's conversation with --commit.
 git receipts export --latest --full > full-receipt.json
 git receipts export --latest --commit 6d6cdc4 --full
+
+# audit a whole PROJECT folder that holds several git repos (a public repo
+# beside private ops/config repos, driven from one container session). Discovers
+# every repo under it with sessions, opens with a "where it landed" roll-up
+# (verdict · commits · landed · broken · residue per repo), then a section each.
+git receipts audit --project ~/Developer/Projects/myproject
+
+# the JSON twin — a { project, summary, repos: [receipt, …] } wrapper
+git receipts export --project ~/Developer/Projects/myproject > project.json
 ```
 
 ## Receipts (JSON export)
@@ -318,6 +327,40 @@ archive: logs live in the store until its retention cleanup removes
 them, so commits older than your oldest surviving session will show as
 unclaimed keyframes. The event model is deliberately harness-neutral;
 adapters for other agent CLIs are on the roadmap.
+
+## Projects — several repos, one session
+
+Most of the time the working directory **is** the repo (`git init`, `cd`,
+`claude`), and a bare `git receipts` audits it. But a single session sometimes
+drives **several git repos** side by side under one folder — the common reason
+being a **public repo beside private ops/config repos**, kept as separate repos
+precisely so the private ones never ship in the public history.
+
+`--project <folder>` is the unit for that layout. It discovers every git repo
+under the folder that has sessions, and reports each:
+
+```bash
+git receipts audit --project ~/Developer/Projects/myproject
+```
+
+The report opens with a **where-it-landed** roll-up — one row per repo (verdict ·
+commits · landed/claims · broken · residue) so the whole picture reads at a
+glance — then a full section per repo. A folder that is itself a single repo (a
+monorepo, one `.git` at the root) collapses to the ordinary single-repo report:
+project ≡ repo. `export --project` emits the JSON twin — a
+`{ project, summary, repos: [receipt, …] }` wrapper whose `summary.landing`
+mirrors the roll-up, so console and JSON reconcile.
+
+**Sibling protection.** Each repo's section shows only *that* repo. Writes its
+session made into a **sibling** project repo don't vanish and don't leak: they
+collapse to a per-repo **count** — "*writes into sibling project repo: ops (14
+changes) — audit each directly; paths withheld here*" — with no paths, so a
+single repo's section (and its receipt in the wrapper) is safe to hand out
+without exposing another repo's file tree. Truly-external writes (scratch dirs,
+memory files) still show their paths, as before. Sibling roots are only known in
+a `--project` audit, so a bare `--repo` audit of a container sub-repo has no
+sibling context — get the protected view from `--project`. `--project` and
+`--repo` are mutually exclusive.
 
 ## Teams
 

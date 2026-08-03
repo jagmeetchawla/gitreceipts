@@ -215,6 +215,92 @@ fn store_lookup_matches_exact_ancestor_encodings() {
     let _ = std::fs::remove_dir_all(&store);
 }
 
+/// Dash-encode a path the way the store does, and create that project dir with
+/// one session file so `session_dirs_for` finds it.
+fn seed_session(store: &std::path::Path, repo: &std::path::Path) {
+    let canon = repo.canonicalize().unwrap();
+    let encoded: String = canon
+        .display()
+        .to_string()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
+    let dir = store.join(encoded);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("s.jsonl"), "{}").unwrap();
+}
+
+fn git_init(dir: &std::path::Path) {
+    std::fs::create_dir_all(dir).unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
+fn project_repos_finds_only_repos_with_sessions_and_skips_nested() {
+    let store = fake_store("proj");
+    let project = std::env::temp_dir().join(format!("gitreceipts-proj-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&project);
+    let app = project.join("app");
+    let notes = project.join("notes");
+    let plain = project.join("docs"); // a dir, not a git repo
+    git_init(&app);
+    git_init(&app.join("vendor")); // nested repo — must NOT be descended into
+    git_init(&notes);
+    std::fs::create_dir_all(&plain).unwrap();
+
+    // Only `app` and `notes` have sessions in the store; `vendor` does not.
+    seed_session(&store, &app);
+    seed_session(&store, &notes);
+
+    let repos = discover::project_repos(&project, &store);
+    let names: Vec<String> = repos
+        .iter()
+        .map(|r| r.file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&"app".to_string()), "app has sessions");
+    assert!(names.contains(&"notes".to_string()), "notes has sessions");
+    assert!(
+        !names.contains(&"vendor".to_string()),
+        "a nested repo is not descended into"
+    );
+    assert!(
+        !names.contains(&"docs".to_string()),
+        "docs is not a git repo"
+    );
+    assert_eq!(repos.len(), 2, "exactly the two repos with sessions");
+    let _ = std::fs::remove_dir_all(&store);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[test]
+fn project_that_is_itself_a_repo_yields_just_itself() {
+    // Monorepo case: the project folder has a .git at its root. It is the one
+    // repo — project ≡ repo — and discovery does not descend past it.
+    let store = fake_store("mono");
+    let project = std::env::temp_dir().join(format!("gitreceipts-mono-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&project);
+    git_init(&project);
+    git_init(&project.join("packages").join("inner")); // must be ignored
+    seed_session(&store, &project);
+
+    let repos = discover::project_repos(&project, &store);
+    assert_eq!(repos.len(), 1, "just the project root");
+    assert_eq!(
+        repos[0].canonicalize().unwrap(),
+        project.canonicalize().unwrap()
+    );
+    let _ = std::fs::remove_dir_all(&store);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 #[test]
 fn mounted_store_falls_back_to_name_suffix_match() {
     // The store was recorded on another machine: its encoded dir carries
