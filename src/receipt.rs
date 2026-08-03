@@ -17,7 +17,7 @@ use serde::Serialize;
 use crate::extract::Session;
 use crate::fmt::redact_home;
 use crate::ingest::IngestStats;
-use crate::reconcile::{Audit, Interval, Landing, Status};
+use crate::reconcile::{Audit, Interval, Landing, LandingSummary, Status};
 use crate::report::{Filter, Show};
 
 /// Receipt schema version, independent of the tool version. Pre-1.0 and
@@ -25,6 +25,11 @@ use crate::report::{Filter, Show};
 /// assume compatibility across minor bumps. A future "1.0" is the stability
 /// commitment; a breaking change before then bumps the minor.
 pub const SCHEMA_VERSION: &str = "0.6";
+
+/// The privacy caution stamped on every receipt (single-repo and project).
+const NOTICE: &str = "Private audit report — built from chat/agent logs, git contents, \
+     and command output. Meant for developers to audit their own work; \
+     handle with extreme caution and treat as private before sharing.";
 
 /// The whole receipt: the root object a consumer reads.
 #[derive(Debug, Serialize)]
@@ -629,9 +634,7 @@ impl Receipt {
         let (models, effort) = provenance(session, None, None);
         Receipt {
             schema_version: SCHEMA_VERSION,
-            notice: "Private audit report — built from chat/agent logs, git contents, \
-                     and command output. Meant for developers to audit their own work; \
-                     handle with extreme caution and treat as private before sharing.",
+            notice: NOTICE,
             redacted: Redacted { secrets, pii },
             tool: Tool {
                 name: env!("CARGO_PKG_NAME"),
@@ -690,6 +693,105 @@ impl Receipt {
     }
 
     /// Serialize to a JSON string. `pretty` selects indented output.
+    pub fn to_json(&self, pretty: bool) -> serde_json::Result<String> {
+        if pretty {
+            serde_json::to_string_pretty(self)
+        } else {
+            serde_json::to_string(self)
+        }
+    }
+}
+
+/// A `--project` export: the JSON twin of `audit --project`. A masthead
+/// (project path, repo count, overall verdict), a `landing` roll-up mirroring
+/// the console's where-it-landed table, then one full receipt per repo. Same
+/// numbers as the console, same schema version.
+#[derive(Debug, Serialize)]
+pub struct ProjectReceipt {
+    pub schema_version: &'static str,
+    pub notice: &'static str,
+    /// Discriminator: `"project"`, versus a bare `Receipt` (single repo).
+    pub kind: &'static str,
+    /// The project folder, home-redacted for display.
+    pub project: String,
+    pub summary: ProjectSummary,
+    /// One full receipt per repo, in the same order as `summary.landing`.
+    pub repos: Vec<RepoReceipt>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectSummary {
+    pub repos: usize,
+    /// The strongest verdict across the repos (red > amber > green).
+    pub verdict: &'static str,
+    /// The where-it-landed table: one headline row per repo.
+    pub landing: Vec<RepoLanding>,
+}
+
+/// One repo's headline row — the JSON of a console landing-table line.
+#[derive(Debug, Serialize)]
+pub struct RepoLanding {
+    pub name: String,
+    pub verdict: &'static str,
+    pub commits: usize,
+    pub claims: usize,
+    pub landed: usize,
+    pub broken: usize,
+    pub residue_files: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RepoReceipt {
+    /// The repo's directory name — the join key to its `summary.landing` row.
+    pub name: String,
+    pub receipt: Receipt,
+}
+
+impl ProjectReceipt {
+    /// Assemble the wrapper from each repo's name, built receipt, and landing
+    /// summary. `project` is the already-home-redacted project path.
+    pub fn build(
+        project: String,
+        entries: Vec<(String, Receipt, LandingSummary)>,
+    ) -> ProjectReceipt {
+        let verdict = if entries.iter().any(|(_, _, s)| s.verdict == Status::Red) {
+            "red"
+        } else if entries.iter().any(|(_, _, s)| s.verdict == Status::Amber) {
+            "amber"
+        } else {
+            "green"
+        };
+        let landing: Vec<RepoLanding> = entries
+            .iter()
+            .map(|(name, _, s)| RepoLanding {
+                name: name.clone(),
+                verdict: status_str(s.verdict),
+                commits: s.commits,
+                claims: s.claims,
+                landed: s.landed,
+                broken: s.broken,
+                residue_files: s.residue_files,
+            })
+            .collect();
+        let repo_count = landing.len();
+        let repos = entries
+            .into_iter()
+            .map(|(name, receipt, _)| RepoReceipt { name, receipt })
+            .collect();
+        ProjectReceipt {
+            schema_version: SCHEMA_VERSION,
+            notice: NOTICE,
+            kind: "project",
+            project,
+            summary: ProjectSummary {
+                repos: repo_count,
+                verdict,
+                landing,
+            },
+            repos,
+        }
+    }
+
     pub fn to_json(&self, pretty: bool) -> serde_json::Result<String> {
         if pretty {
             serde_json::to_string_pretty(self)

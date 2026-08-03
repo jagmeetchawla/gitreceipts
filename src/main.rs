@@ -225,8 +225,14 @@ EXAMPLES:
         #[arg(long)]
         all: bool,
         /// Repo to reconcile against (default: cwd recorded in the session).
-        #[arg(long)]
+        /// Mutually exclusive with --project.
+        #[arg(long, conflicts_with = "project")]
         repo: Option<PathBuf>,
+        /// A PROJECT folder holding several git repos: export a
+        /// { project, repos: [receipt, …] } wrapper, one receipt per repo — the
+        /// JSON twin of `audit --project`. Mutually exclusive with --repo.
+        #[arg(long)]
+        project: Option<PathBuf>,
         /// The Claude Code projects directory — where session logs live, and
         /// the ONLY directory gitreceipts reads. Default: ~/.claude/projects.
         /// For another machine's sessions, point at a mounted copy:
@@ -367,6 +373,7 @@ fn main() -> Result<()> {
             latest,
             all,
             repo,
+            project,
             store,
             agent,
             no_prompt,
@@ -385,6 +392,7 @@ fn main() -> Result<()> {
             latest,
             all,
             repo,
+            project,
             store,
             report::Show {
                 prompt: !no_prompt && !no_intent,
