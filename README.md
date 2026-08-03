@@ -270,9 +270,11 @@ result as machine-readable JSON — the same facts the verbose report
 shows (per-commit statement, ledger, residue, commands, MCP calls,
 intents) plus the header context, token estimate, provenance
 (claimed/receipted/landed), the model(s), reasoning effort, and token
-cost (requests + output tokens) behind each commit, execution-axis facts
-per oracle, blast radii, and the git-identity roll-up. Every headline
-number matches the report.
+cost (requests + output tokens) behind each commit, the exception
+breakdown (`summary.exceptions`: late landings, the unclaimed-change
+split, keyframes, failures), execution-axis facts per oracle, blast
+radii, and the git-identity roll-up. Console, HTML, and JSON are three
+renderings of one receipt — every number matches across them.
 
 This is the interchange artifact: a compact, verified receipt you can
 commit beside the code, feed to another program, or hand to a model to

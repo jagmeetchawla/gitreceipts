@@ -204,6 +204,39 @@ impl GradeCount {
     }
 }
 
+/// The exception aggregates the console headlines under "what happened to every
+/// exception" plus the interval-spine attribution counts. Computed once from the
+/// `Audit` so the console, HTML, and JSON receipt all render the SAME numbers —
+/// the three surfaces are just formats of one receipt. See [`Audit::exceptions`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Exceptions {
+    /// Claims that landed a commit or two late (content-verified there).
+    pub landed_late: usize,
+    /// Never landed but benignly explained, by kind:
+    pub resolved_superseded: usize,
+    pub resolved_deliberate: usize,
+    pub resolved_persisted: usize,
+    /// Genuine residue (unclaimed changes git recorded), before the who-split.
+    pub residue: usize,
+    /// Unclaimed total = residue + command-attributed + dismissed.
+    pub unclaimed_total: usize,
+    /// …explained by a command this agent ran (attributed residue).
+    pub unclaimed_by_command: usize,
+    /// …in a commit this session did not make (another contributor, by identity).
+    pub unclaimed_other_contributor: usize,
+    /// …inside an agent commit with nothing to explain it.
+    pub unclaimed_unexplained: usize,
+    /// Residue whose path is gitignored/untracked today — listed, dismissed.
+    pub dismissed: usize,
+    /// Commits not made by this session (keyframes) vs made by it.
+    pub keyframes: usize,
+    pub agent_committed: usize,
+    /// Commits created elsewhere (pulled/fetched — absent from the reflog).
+    pub created_elsewhere: usize,
+    /// Commands or edits the oracle reported as failed.
+    pub failed_commands_or_edits: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct RadiusCount {
     pub local_fs: usize,
@@ -242,4 +275,56 @@ pub struct Audit {
     pub mcp_errored: usize,
     pub mcp_aborted: usize,
     pub observations: usize,
+}
+
+impl Audit {
+    /// Compute the exception + attribution aggregates once, so every surface
+    /// renders identical numbers. Mirrors the console's own arithmetic exactly.
+    pub fn exceptions(&self) -> Exceptions {
+        let lines = || self.intervals.iter().flat_map(|i| i.ledger.iter());
+        let resolved = |needle: &str| {
+            lines()
+                .filter(|l| l.resolution.as_deref().is_some_and(|r| r.contains(needle)))
+                .count()
+        };
+        let residue: usize = self.intervals.iter().map(|i| i.residue.len()).sum();
+        let by_command: usize = self
+            .intervals
+            .iter()
+            .map(|i| i.attributed_residue.len())
+            .sum();
+        let dismissed: usize = self
+            .intervals
+            .iter()
+            .map(|i| i.dismissed_residue.len())
+            .sum();
+        // Residue in a commit this session did not make is another contributor's.
+        let other_contributor: usize = self
+            .intervals
+            .iter()
+            .filter(|i| !i.agent_committed)
+            .map(|i| i.residue.len())
+            .sum();
+        let keyframes = self.intervals.iter().filter(|i| !i.agent_committed).count();
+        Exceptions {
+            landed_late: lines().filter(|l| l.landing == Landing::Late).count(),
+            resolved_superseded: resolved("superseded"),
+            resolved_deliberate: resolved("deliberately"),
+            resolved_persisted: resolved("persisted outside git"),
+            residue,
+            unclaimed_total: residue + by_command + dismissed,
+            unclaimed_by_command: by_command,
+            unclaimed_other_contributor: other_contributor,
+            unclaimed_unexplained: residue - other_contributor,
+            dismissed,
+            keyframes,
+            agent_committed: self.intervals.len() - keyframes,
+            created_elsewhere: self
+                .intervals
+                .iter()
+                .filter(|i| i.commit.from_history)
+                .count(),
+            failed_commands_or_edits: self.grades.failed,
+        }
+    }
 }

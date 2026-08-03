@@ -24,7 +24,7 @@ use crate::report::{Filter, Show};
 /// expected to evolve: the shape is not yet stable, so consumers should not
 /// assume compatibility across minor bumps. A future "1.0" is the stability
 /// commitment; a breaking change before then bumps the minor.
-pub const SCHEMA_VERSION: &str = "0.3";
+pub const SCHEMA_VERSION: &str = "0.4";
 
 /// The whole receipt: the root object a consumer reads.
 #[derive(Debug, Serialize)]
@@ -183,11 +183,58 @@ pub struct Summary {
     pub claims_landed: usize,
     /// The headline: claims that never landed and nothing explains.
     pub broken_promises: usize,
+    /// The exception + attribution aggregates the console headlines under "what
+    /// happened to every exception" — first-class here so the receipt carries
+    /// every number the report shows, not just the four it always did.
+    pub exceptions: ExceptionCounts,
     pub balance: Balance,
     pub provenance: Provenance,
     pub radii: Radii,
     pub tokens: Tokens,
     pub identities: Identities,
+}
+
+/// The console's "what happened to every exception" block + interval-spine
+/// attribution, serialized. Mirrors [`crate::reconcile::Exceptions`] exactly.
+#[derive(Debug, Serialize)]
+pub struct ExceptionCounts {
+    pub landed_late: usize,
+    pub resolved_superseded: usize,
+    pub resolved_deliberate: usize,
+    pub resolved_persisted: usize,
+    /// Genuine residue (unclaimed changes), before the who-split.
+    pub residue: usize,
+    /// Unclaimed total = residue + command-attributed + dismissed.
+    pub unclaimed_total: usize,
+    pub unclaimed_by_command: usize,
+    pub unclaimed_other_contributor: usize,
+    pub unclaimed_unexplained: usize,
+    pub dismissed: usize,
+    pub keyframes: usize,
+    pub agent_committed: usize,
+    pub created_elsewhere: usize,
+    pub failed_commands_or_edits: usize,
+}
+
+impl From<crate::reconcile::Exceptions> for ExceptionCounts {
+    fn from(e: crate::reconcile::Exceptions) -> Self {
+        ExceptionCounts {
+            landed_late: e.landed_late,
+            resolved_superseded: e.resolved_superseded,
+            resolved_deliberate: e.resolved_deliberate,
+            resolved_persisted: e.resolved_persisted,
+            residue: e.residue,
+            unclaimed_total: e.unclaimed_total,
+            unclaimed_by_command: e.unclaimed_by_command,
+            unclaimed_other_contributor: e.unclaimed_other_contributor,
+            unclaimed_unexplained: e.unclaimed_unexplained,
+            dismissed: e.dismissed,
+            keyframes: e.keyframes,
+            agent_committed: e.agent_committed,
+            created_elsewhere: e.created_elsewhere,
+            failed_commands_or_edits: e.failed_commands_or_edits,
+        }
+    }
 }
 
 /// Execution-axis facts per oracle — what the executors reported, surfaced
@@ -540,6 +587,7 @@ impl Receipt {
             claims_total,
             claims_landed,
             broken_promises,
+            exceptions: audit.exceptions().into(),
             balance: Balance {
                 green,
                 residue_only,

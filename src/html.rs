@@ -69,6 +69,15 @@ pub fn render(
         .iter()
         .filter(|i| i.status() == Status::ResidueOnly)
         .count();
+    // Broken PROMISES = never-landed unexplained CLAIMS (the headline metric),
+    // not the red-interval count — several can sit in one red interval. Used by
+    // the stat tile AND the bottomline so the HTML agrees with console/JSON; the
+    // red-interval count still appears in the balance line below.
+    let broken = audit
+        .intervals
+        .iter()
+        .flat_map(|i| i.never_landed())
+        .count();
     let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
     let claims_landed: usize = audit
         .intervals
@@ -168,12 +177,12 @@ pub fn render(
         "<div class=\"stats\">\
          <div class=\"stat good\"><b>{:.0}%</b><span>intervals green · {green}/{total}</span></div>\
          <div class=\"stat good\"><b>{:.0}%</b><span>claims landed · {claims_landed}/{claims_total}</span></div>\
-         <div class=\"stat {}\"><b>{red}</b><span>red · broken promises</span></div>\
+         <div class=\"stat {}\"><b>{broken}</b><span>broken promises</span></div>\
          <div class=\"stat warn\"><b>{residue_only}</b><span>residue-only intervals</span></div>\
          </div>\n",
         pct(green, total),
         pct(claims_landed, claims_total),
-        if red == 0 { "good" } else { "bad" },
+        if broken == 0 { "good" } else { "bad" },
     );
 
     // ---- intent → outcome + exceptions --------------------------------
@@ -185,7 +194,7 @@ pub fn render(
         total,
         claims_landed,
         claims_total,
-        red,
+        broken,
         show_identity,
     );
 
@@ -282,36 +291,20 @@ fn render_summary(
     broken: usize,
     show_identity: bool,
 ) {
-    let all = || audit.intervals.iter().flat_map(|i| i.ledger.iter());
-    let late = all().filter(|l| l.landing == Landing::Late).count();
-    let resolved = |needle: &str| {
-        all()
-            .filter(|l| l.resolution.as_deref().is_some_and(|r| r.contains(needle)))
-            .count()
-    };
-    let superseded = resolved("superseded");
-    let persisted = resolved("persisted outside git");
-    let deliberate = resolved("removes or moves");
-    let attributed: usize = audit
-        .intervals
-        .iter()
-        .map(|i| i.attributed_residue.len())
-        .sum();
-    let dismissed: usize = audit
-        .intervals
-        .iter()
-        .map(|i| i.dismissed_residue.len())
-        .sum();
-    let residue: usize = audit.intervals.iter().map(|i| i.residue.len()).sum();
-    // residue in a keyframe is another contributor's; inside an agent
-    // commit it is unexplained.
-    let not_session: usize = audit
-        .intervals
-        .iter()
-        .filter(|i| !i.agent_committed)
-        .map(|i| i.residue.len())
-        .sum();
-    let unexplained = residue - not_session;
+    // Exception + attribution aggregates — the SAME computation the console and
+    // JSON receipt use (`Audit::exceptions`), so the three surfaces never drift.
+    // (This also fixes a latent bug: the old inline `deliberate` needle here was
+    // "removes or moves", not the console's "deliberately".)
+    let ex = audit.exceptions();
+    let late = ex.landed_late;
+    let superseded = ex.resolved_superseded;
+    let persisted = ex.resolved_persisted;
+    let deliberate = ex.resolved_deliberate;
+    let attributed = ex.unclaimed_by_command;
+    let dismissed = ex.dismissed;
+    let residue = ex.residue;
+    let not_session = ex.unclaimed_other_contributor;
+    let unexplained = ex.unclaimed_unexplained;
 
     b.push_str("<div class=\"outcome\"><h3>intent → outcome</h3>");
     let _ = write!(
@@ -324,12 +317,13 @@ fn render_summary(
         let _ = write!(
             b,
             "<div class=\"line\">agent effort: {} commands · ~{} output tokens across {} requests \
-             <span class=\"dim\">(est. from the log — approximate, not billing; ~{} input, ~{} cached)</span></div>",
+             <span class=\"dim\">(est. from the log — approximate, not billing; ~{} input, ~{} cache read, ~{} cache write)</span></div>",
             audit.commands,
             abbrev(tk.output),
             tk.requests,
             abbrev(tk.input),
             abbrev(tk.cache_read),
+            abbrev(tk.cache_creation),
         );
     }
     // Provenance: model(s) authoritative, effort labelled with its coverage.
@@ -378,11 +372,7 @@ fn render_summary(
     );
 
     // who touched this repo — attribution for free, straight from git
-    let keyframes = audit
-        .intervals
-        .iter()
-        .filter(|i| !i.agent_committed)
-        .count();
+    let keyframes = ex.keyframes;
     let mut authors: Vec<&str> = audit
         .intervals
         .iter()

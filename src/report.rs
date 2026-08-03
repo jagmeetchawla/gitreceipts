@@ -317,17 +317,12 @@ pub fn print(
                 .count()
         })
         .sum();
-    let residue_total: usize = audit.intervals.iter().map(|i| i.residue.len()).sum();
-    let dismissed_total: usize = audit
-        .intervals
-        .iter()
-        .map(|i| i.dismissed_residue.len())
-        .sum();
-    let attributed_total: usize = audit
-        .intervals
-        .iter()
-        .map(|i| i.attributed_residue.len())
-        .sum();
+    // Exception + attribution aggregates — computed once on the Audit and shared
+    // with the HTML and JSON receipt, so all three surfaces show the same numbers.
+    let ex = audit.exceptions();
+    let residue_total = ex.residue;
+    let dismissed_total = ex.dismissed;
+    let attributed_total = ex.unclaimed_by_command;
     let pct = |n: usize, d: usize| {
         if d == 0 {
             100.0
@@ -369,12 +364,13 @@ pub fn print(
     let tk = &session.tokens;
     if tk.requests > 0 {
         println!(
-            "  agent effort: {} commands · ~{} output tokens across {} requests (est. from the log; ~{} input, ~{} cached) {}",
+            "  agent effort: {} commands · ~{} output tokens across {} requests (est. from the log; ~{} input, ~{} cache read, ~{} cache write) {}",
             audit.commands,
             abbrev(tk.output),
             tk.requests,
             abbrev(tk.input),
             abbrev(tk.cache_read),
+            abbrev(tk.cache_creation),
             st.dim("— usage records are approximate, not billing")
         );
     }
@@ -401,22 +397,15 @@ pub fn print(
     }
     // what happened to every exception — the findings, not just counts
     let all_lines = || audit.intervals.iter().flat_map(|i| i.ledger.iter());
-    let late_verified = all_lines()
-        .filter(|l| l.landing == crate::reconcile::Landing::Late)
-        .count();
-    let resolved = |needle: &str| {
-        all_lines()
-            .filter(|l| l.resolution.as_deref().is_some_and(|r| r.contains(needle)))
-            .count()
-    };
-    let superseded = resolved("superseded");
-    let persisted = resolved("persisted outside git");
-    let deliberate = resolved("deliberately");
+    let late_verified = ex.landed_late;
+    let superseded = ex.resolved_superseded;
+    let persisted = ex.resolved_persisted;
+    let deliberate = ex.resolved_deliberate;
     let resolved_total = superseded + persisted + deliberate;
     let broken = all_lines()
         .filter(|l| l.landing == crate::reconcile::Landing::Never && l.resolution.is_none())
         .count();
-    let residue_all = residue_total + attributed_total + dismissed_total;
+    let residue_all = ex.unclaimed_total;
 
     println!("  what happened to every exception:");
     if late_verified > 0 {
@@ -445,13 +434,8 @@ pub fn print(
     // Split the genuine residue by WHO: a change in a keyframe (a commit
     // this session did not make) is another contributor's, attributed by
     // git identity; residue inside an agent commit is unexplained.
-    let not_session: usize = audit
-        .intervals
-        .iter()
-        .filter(|i| !i.agent_committed)
-        .map(|i| i.residue.len())
-        .sum();
-    let unexplained: usize = residue_total - not_session;
+    let not_session = ex.unclaimed_other_contributor;
+    let unexplained = ex.unclaimed_unexplained;
     if residue_all > 0 {
         println!(
             "    · unclaimed changes (git recorded it, no matching edit claim): {residue_all} — this agent via a command: {attributed_total} · not this session's commit (another contributor): {not_session} · unexplained, inside an agent commit: {unexplained} · dismissed as now ignored/untracked: {dismissed_total}",
@@ -473,11 +457,7 @@ pub fn print(
     // Identity only: a name never says agent-vs-hand-coded; a Co-Authored-By
     // trailer is present-only evidence of an agent/pair, never inferred from
     // absence.
-    let keyframes = audit
-        .intervals
-        .iter()
-        .filter(|i| !i.agent_committed)
-        .count();
+    let keyframes = ex.keyframes;
     let mut authors: Vec<&str> = audit
         .intervals
         .iter()
@@ -559,18 +539,14 @@ pub fn print(
         ),
     );
     side(
-        audit.grades.failed,
-        format!("failed commands or edits: {}", audit.grades.failed),
+        ex.failed_commands_or_edits,
+        format!("failed commands or edits: {}", ex.failed_commands_or_edits),
     );
 
-    let agent_commits = audit.intervals.iter().filter(|i| i.agent_committed).count();
-    let keyframes = audit.intervals.len() - agent_commits;
+    let agent_commits = ex.agent_committed;
+    let keyframes = ex.keyframes;
     println!();
-    let hist_n = audit
-        .intervals
-        .iter()
-        .filter(|i| i.commit.from_history)
-        .count();
+    let hist_n = ex.created_elsewhere;
     let reflog_n = audit.intervals.len() - hist_n;
     // Only when a reflog exists does "absent from it" mean anything: those
     // commits were created elsewhere (pulled/fetched) — attribution, not a
