@@ -130,13 +130,16 @@ pub struct Interval {
     pub effectful_commands: usize,
 }
 
-/// How an interval settled. Red is a broken promise (a claim that never
-/// landed); residue alone is a warning (something changed unclaimed —
-/// usually command fallout), not a lie.
+/// How an interval settled, by color.
+/// - **Red** = a broken promise: a claimed edit git never got. A lie. The one
+///   verdict; the trustworthy number.
+/// - **Amber** = worth a look: genuine residue, a failed command, or an errored
+///   MCP call. Not a lie — but not "nothing to see" either.
+/// - **Green** = clean: nothing to look at on either axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Green,
-    ResidueOnly,
+    Amber,
     Red,
 }
 
@@ -160,20 +163,27 @@ impl Interval {
     }
 
     pub fn status(&self) -> Status {
-        // The verdict is git-only: red = a claimed edit git never got (the one
-        // unambiguous signal). Execution-axis errors are NOT verdicts — a
-        // non-zero exit is usually benign (grep no-match, a probe, a retried
-        // command), so failed commands / errored MCP calls are SURFACED as
-        // facts (the ✗failed flag, the errored tag, the receipt) for the auditor
-        // to judge, never manufactured into red or yellow. (S3 finding.)
+        // RED is git-only and means exactly one thing: a claimed edit git never
+        // got. A non-zero exit is not a lie, so execution errors NEVER reach red
+        // — the red count stays the trustworthy number.
+        //
+        // But green is reserved for "nothing to look at". We can't know a failed
+        // command or an errored MCP call was harmless (the file may be in git yet
+        // something around it broke), so those lift green → AMBER, alongside
+        // genuine residue. User-aborts are your own stop, not a failure, so they
+        // do not count. (This refines the earlier S3 stance: errors stay out of
+        // red, but they do tint amber — "look here.")
         if self
             .ledger
             .iter()
             .any(|l| l.landing == Landing::Never && l.resolution.is_none())
         {
             Status::Red
-        } else if !self.residue.is_empty() {
-            Status::ResidueOnly
+        } else if !self.residue.is_empty()
+            || self.commands_run.iter().any(|c| c.failed)
+            || self.mcp_runs.iter().any(|m| m.errored)
+        {
+            Status::Amber
         } else {
             Status::Green
         }

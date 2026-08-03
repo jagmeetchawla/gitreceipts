@@ -24,7 +24,7 @@ use crate::report::{Filter, Show};
 /// expected to evolve: the shape is not yet stable, so consumers should not
 /// assume compatibility across minor bumps. A future "1.0" is the stability
 /// commitment; a breaking change before then bumps the minor.
-pub const SCHEMA_VERSION: &str = "0.4";
+pub const SCHEMA_VERSION: &str = "0.5";
 
 /// The whole receipt: the root object a consumer reads.
 #[derive(Debug, Serialize)]
@@ -253,7 +253,8 @@ pub struct ExecutionFacts {
 #[derive(Debug, Serialize)]
 pub struct Balance {
     pub green: usize,
-    pub residue_only: usize,
+    /// Amber = worth a look: residue, a failed command, or an errored MCP.
+    pub amber: usize,
     pub red: usize,
     pub total: usize,
 }
@@ -299,7 +300,7 @@ pub struct Identities {
 #[derive(Debug, Serialize)]
 pub struct IntervalReceipt {
     pub commit: CommitReceipt,
-    /// "green" | "residue_only" | "red".
+    /// "green" | "amber" | "red".
     pub status: &'static str,
     pub agent_committed: bool,
     pub pushed: bool,
@@ -537,10 +538,10 @@ impl Receipt {
             .flat_map(|i| i.never_landed())
             .count();
         let green = audit.intervals.iter().filter(|i| i.balanced()).count();
-        let residue_only = audit
+        let amber = audit
             .intervals
             .iter()
-            .filter(|i| i.status() == Status::ResidueOnly)
+            .filter(|i| i.status() == Status::Amber)
             .count();
         let red = audit
             .intervals
@@ -590,7 +591,7 @@ impl Receipt {
             exceptions: audit.exceptions().into(),
             balance: Balance {
                 green,
-                residue_only,
+                amber,
                 red,
                 total: audit.intervals.len(),
             },
@@ -883,7 +884,7 @@ fn file_change(fc: &crate::gitio::FileChange) -> FileChangeReceipt {
 fn status_str(s: Status) -> &'static str {
     match s {
         Status::Green => "green",
-        Status::ResidueOnly => "residue_only",
+        Status::Amber => "amber",
         Status::Red => "red",
     }
 }

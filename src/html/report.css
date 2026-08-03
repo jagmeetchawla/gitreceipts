@@ -56,7 +56,7 @@ h1 .cmd { color: var(--accent); }
 .ledger { display: flex; flex-direction: column; }
 .interval { border-bottom: 1px solid var(--rule); padding: 0.15rem 0 0.15rem 0.75rem; border-left: 3px solid transparent; }
 .interval.red { border-left-color: var(--red); }
-.interval.residue { border-left-color: var(--amber); }
+.interval.amber { border-left-color: var(--amber); }
 .interval.green { border-left-color: var(--green); }
 .interval > summary { display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: baseline; cursor: pointer; padding: 0.4rem 0; list-style: none; }
 .interval > summary::-webkit-details-marker { display: none; }
@@ -106,11 +106,11 @@ details.section[open] > summary.section-h::before { transform: rotate(90deg); }
 .radtag.network { color: var(--red); border-color: currentColor; }
 .radtag.commit { color: var(--green); border-color: currentColor; }
 .radtag.push { color: var(--amber); border-color: currentColor; }
-.radtag.fail { color: var(--red); border-color: currentColor; }
+.radtag.fail { color: var(--amber); border-color: currentColor; }
 .radtag.mcp { color: var(--intent); border-color: currentColor; }
 .mark { font-weight: 700; }
 .interval.green .mark { color: var(--green); }
-.interval.residue .mark { color: var(--amber); }
+.interval.amber .mark { color: var(--amber); }
 .interval.red .mark { color: var(--red); }
 .hash { color: var(--accent); font-weight: 600; }
 .date { color: var(--dim); font-size: 0.82rem; white-space: nowrap; }
@@ -127,8 +127,11 @@ details.section[open] > summary.section-h::before { transform: rotate(90deg); }
 /* The per-commit work/cost line reads as a caption under the model badge:
    aligned to the badge row's left edge, sized like the summary counts. */
 .line.work { padding-left: 0; margin: -0.15rem 0 0.2rem; font-size: 0.78rem; }
-body.f-red .interval.green, body.f-red .interval.residue { display: none; }
-body.f-red-residue .interval.green { display: none; }
+/* Filter the spine purely by color. Each f-<color> shows only that color. */
+body.f-red .interval:not(.red) { display: none; }
+body.f-amber .interval:not(.amber) { display: none; }
+body.f-green .interval:not(.green) { display: none; }
+body.f-red-amber .interval.green { display: none; }
 .balance { margin-top: 1.6rem; padding: 1rem 1.2rem; border-radius: 4px; background: var(--panel); border: 1px solid var(--green); font-weight: 600; font-size: 0.9rem; overflow-wrap: anywhere; }
 footer { margin-top: 2rem; color: var(--dim); font-size: 0.75rem; }
 footer code { color: var(--accent); }

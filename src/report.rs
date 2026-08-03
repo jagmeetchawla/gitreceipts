@@ -20,17 +20,21 @@ pub enum ColorMode {
     Never,
 }
 
-/// Which intervals to list in the spine section. Header, summary, and
-/// balance always cover the whole session.
+/// Which intervals to list in the spine section, filtered purely by COLOR.
+/// Header, summary, and balance always cover the whole session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum Filter {
     /// Every interval.
     #[default]
     All,
-    /// Only broken promises: intervals with never-landed claims.
+    /// Red only: broken promises (a claimed edit git never got).
     Red,
-    /// Red plus residue-only intervals (unclaimed changes).
-    RedResidue,
+    /// Amber only: worth a look — residue, a failed command, or an errored MCP.
+    Amber,
+    /// Green only: clean intervals.
+    Green,
+    /// Red + amber: everything that isn't green (the old `red-residue`).
+    RedAmber,
 }
 
 impl Filter {
@@ -38,7 +42,9 @@ impl Filter {
         match self {
             Filter::All => true,
             Filter::Red => status == Status::Red,
-            Filter::RedResidue => status != Status::Green,
+            Filter::Amber => status == Status::Amber,
+            Filter::Green => status == Status::Green,
+            Filter::RedAmber => status != Status::Green,
         }
     }
 }
@@ -55,7 +61,7 @@ pub enum Format {
 /// Which commit drill-downs start expanded in the HTML report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum Expand {
-    /// Findings open (red + residue), balanced commits collapsed.
+    /// Findings open (red + amber), green commits collapsed.
     #[default]
     Auto,
     /// Every commit expanded.
@@ -304,7 +310,7 @@ pub fn print(
     let residue_n = audit
         .intervals
         .iter()
-        .filter(|i| i.status() == Status::ResidueOnly)
+        .filter(|i| i.status() == Status::Amber)
         .count();
     let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
     let claims_landed: usize = audit
@@ -563,10 +569,11 @@ pub fn print(
         match opts.filter {
             Filter::All => String::new(),
             Filter::Red => format!(" — showing only red ({red_n} of {total})"),
-            Filter::RedResidue => format!(
-                " — showing red + residue ({} of {total})",
-                red_n + residue_n
-            ),
+            Filter::Amber => format!(" — showing only amber ({residue_n} of {total})"),
+            Filter::Green => format!(" — showing only green ({green} of {total})"),
+            Filter::RedAmber => {
+                format!(" — showing red + amber ({} of {total})", red_n + residue_n)
+            }
         }
     };
     println!(
@@ -628,7 +635,7 @@ pub fn print(
     println!(
         "{}",
         st.bold(&format!(
-            "balance: {green} green · {residue_n} residue-only · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue {residue_total} (+{attributed_total} command-attributed, +{dismissed_total} dismissed)",
+            "balance: {green} green · {residue_n} amber · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue {residue_total} (+{attributed_total} command-attributed, +{dismissed_total} dismissed)",
             pct(green, total),
             pct(claims_landed, claims_total),
         ))
@@ -694,7 +701,7 @@ fn render_conversation(
 fn render_oneline_row(st: &Style, iv: &Interval) {
     let (mark, paint): (&str, fn(&Style, &str) -> String) = match iv.status() {
         Status::Green => ("✔", Style::green),
-        Status::ResidueOnly => ("!", Style::yellow),
+        Status::Amber => ("!", Style::yellow),
         Status::Red => ("✘", Style::red),
     };
     let claimed = iv.ledger.len();
@@ -796,7 +803,7 @@ fn render_interval(
     let landed = interval.ledger.len() - never.len() - resolved.len() - late.len();
     let mark = match interval.status() {
         Status::Green => st.green("✔"),
-        Status::ResidueOnly => st.yellow("!"),
+        Status::Amber => st.yellow("!"),
         Status::Red => st.red("✘"),
     };
     // A keyframe is not this session's commit — name who git says made it.
@@ -1038,11 +1045,12 @@ fn render_interval(
             }
         }
         // MCP calls — the execution axis. The tool_result is the oracle:
-        // errored is shown red; output is surfaced on error or --with-output.
+        // errored is shown amber (a fact worth a look, not a red verdict);
+        // output is surfaced on error or --with-output.
         for m in &interval.mcp_runs {
             let head = format!("⚡ mcp {}/{}", m.server, m.tool);
             let flag = if m.errored {
-                st.red("  ✗ errored")
+                st.yellow("  ✗ errored")
             } else {
                 String::new()
             };

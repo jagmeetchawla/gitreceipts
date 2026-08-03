@@ -64,10 +64,10 @@ pub fn render(
         .iter()
         .filter(|i| i.status() == Status::Red)
         .count();
-    let residue_only = audit
+    let amber = audit
         .intervals
         .iter()
-        .filter(|i| i.status() == Status::ResidueOnly)
+        .filter(|i| i.status() == Status::Amber)
         .count();
     // Broken PROMISES = never-landed unexplained CLAIMS (the headline metric),
     // not the red-interval count — several can sit in one red interval. Used by
@@ -146,7 +146,7 @@ pub fn render(
          <div>{} file mutations · {} commands · {} MCP calls · {} observations</div>\
          <div>OS/FS: {} commands · {} failed · {} aborted by you \u{00b7} \
          MCP: {} calls · {} errored · {} aborted by you \
-         <span class=\"dim\">(facts, not scored)</span></div>\
+         <span class=\"dim\">(amber signals — a look, never red)</span></div>\
          <div>blast radius: {} local-fs · {} local-git · {} remote-git · {} network · {} read-only</div>\
          </div>\n",
         stats.kept - stats.duplicates,
@@ -178,11 +178,25 @@ pub fn render(
          <div class=\"stat good\"><b>{:.0}%</b><span>intervals green · {green}/{total}</span></div>\
          <div class=\"stat good\"><b>{:.0}%</b><span>claims landed · {claims_landed}/{claims_total}</span></div>\
          <div class=\"stat {}\"><b>{broken}</b><span>broken promises</span></div>\
-         <div class=\"stat warn\"><b>{residue_only}</b><span>residue-only intervals</span></div>\
+         <div class=\"stat {}\"><b>{}</b><span>commands with errors</span></div>\
+         <div class=\"stat {}\"><b>{}</b><span>MCP with errors</span></div>\
+         <div class=\"stat warn\"><b>{amber}</b><span>amber intervals</span></div>\
          </div>\n",
         pct(green, total),
         pct(claims_landed, claims_total),
         if broken == 0 { "good" } else { "bad" },
+        if audit.cmd_failed == 0 {
+            "good"
+        } else {
+            "warn"
+        },
+        audit.cmd_failed,
+        if audit.mcp_errored == 0 {
+            "good"
+        } else {
+            "warn"
+        },
+        audit.mcp_errored,
     );
 
     // ---- intent → outcome + exceptions --------------------------------
@@ -205,7 +219,9 @@ pub fn render(
          <label>show <select id=\"filter\">\
          <option value=\"all\" selected>all</option>\
          <option value=\"red\">red only</option>\
-         <option value=\"red-residue\">red + residue</option>\
+         <option value=\"amber\">amber only</option>\
+         <option value=\"green\">green only</option>\
+         <option value=\"red-amber\">red + amber</option>\
          </select></label></div>\n<section class=\"ledger\">\n",
         audit.intervals.iter().filter(|i| i.agent_committed).count(),
     );
@@ -253,7 +269,7 @@ pub fn render(
     let residue_total: usize = audit.intervals.iter().map(|i| i.residue.len()).sum();
     let _ = write!(
         b,
-        "<div class=\"balance\">balance: {green} green · {residue_only} residue-only · {red} red \
+        "<div class=\"balance\">balance: {green} green · {amber} amber · {red} red \
          of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} · \
          residue {residue_total}</div>\n",
         pct(green, total),
@@ -477,7 +493,7 @@ fn render_interval(
 ) {
     let (cls, mark) = match iv.status() {
         Status::Green => ("green", "\u{2714}"),
-        Status::ResidueOnly => ("residue", "!"),
+        Status::Amber => ("amber", "!"),
         Status::Red => ("red", "\u{2718}"),
     };
     let mut subject = iv.commit.subject.clone();

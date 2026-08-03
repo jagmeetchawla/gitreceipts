@@ -45,10 +45,12 @@ Reads the session log(s) and the repo, then reconciles per commit:
                      to another contributor by git identity, or left unexplained)
   intent -> outcome  the prompts you typed, agent effort, blast radius
 
-Each commit is green when it balances, residue-only (!) as a warning, or red
-(x) for a broken promise. git is the oracle: what git can witness is verified;
-side-effects beyond it (network, deploy, out-of-repo writes) are surfaced as
-blast radius, never as proof.",
+Each commit is colored: green when it balances and nothing failed, amber (!)
+when something is worth a look (residue, a failed command, or an errored MCP),
+or red (x) for a broken promise. Only red is a verdict — a claimed edit git
+never got; amber is a fact, never a lie. git is the oracle: what git can witness
+is verified; side-effects beyond it (network, deploy, out-of-repo writes) are
+surfaced as blast radius, never as proof.",
         after_long_help = "\
 EXAMPLES:
   git receipts audit --latest                audit the newest session for this repo
@@ -117,8 +119,8 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// repo with contributors you'd rather not name.
         #[arg(long)]
         no_identity: bool,
-        /// Which intervals to list: all, red (broken promises only), or
-        /// red-residue (red plus unclaimed-change intervals).
+        /// Filter the spine purely by color: all, red (broken promises), amber
+        /// (residue, failed command, or errored MCP), green, or red-amber.
         #[arg(long, value_enum, default_value_t = report::Filter::All)]
         filter: report::Filter,
         /// Output format: text (console ledger) or html (a self-contained
@@ -239,8 +241,8 @@ EXAMPLES:
         /// sharing a receipt from a repo with contributors.
         #[arg(long)]
         no_identity: bool,
-        /// Which intervals to include: all, red (broken promises only), or
-        /// red-residue (red plus unclaimed-change intervals). The summary
+        /// Filter the intervals purely by color: all, red (broken promises),
+        /// amber (residue/failed command/errored MCP), green, or red-amber. The summary
         /// still covers the whole session.
         #[arg(long, value_enum, default_value_t = report::Filter::All)]
         filter: report::Filter,

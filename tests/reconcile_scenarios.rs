@@ -279,7 +279,7 @@ fn backdated_commit_cannot_hide_from_the_spine() {
     // its statement is still checked: hidden.txt shows as residue,
     // which alone is a warning (yellow), not a broken promise (red)
     assert!(sneaky.residue.iter().any(|c| c.path == "hidden.txt"));
-    assert_eq!(sneaky.status(), Status::ResidueOnly);
+    assert_eq!(sneaky.status(), Status::Amber);
 }
 
 #[test]
@@ -542,7 +542,7 @@ fn a_commits_own_output_listing_residue_does_not_attribute_it() {
     assert!(interval.attributed_residue.is_empty());
     assert_eq!(
         interval.status(),
-        Status::ResidueOnly,
+        Status::Amber,
         "yellow, not laundered to green"
     );
 }
