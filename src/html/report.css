@@ -120,7 +120,9 @@ details.section[open] > summary.section-h::before { transform: rotate(90deg); }
 .hash { color: var(--accent); font-weight: 600; }
 .date { color: var(--dim); font-size: 0.82rem; white-space: nowrap; }
 .subject { flex: 1 1 16rem; min-width: 12rem; }
-.tag { font-size: 0.7rem; color: var(--amber); border: 1px solid currentColor; border-radius: 3px; padding: 0 0.35rem; white-space: nowrap; }
+/* History/attribution tags (keyframe, created-elsewhere, reflog-only, clock
+   anomaly) are FACTS — dim/grey, not verdict-amber. */
+.tag { font-size: 0.7rem; color: var(--dim); border: 1px solid currentColor; border-radius: 3px; padding: 0 0.35rem; white-space: nowrap; }
 .counts { color: var(--dim); font-size: 0.82rem; padding-left: 1.35rem; }
 .line { font-size: 0.82rem; padding-left: 1.35rem; overflow-wrap: anywhere; }
 .line.indent { padding-left: 2.6rem; }

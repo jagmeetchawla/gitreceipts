@@ -845,9 +845,9 @@ fn render_interval(
         interval.commit.short,
         interval.commit.ts.format("%m-%d %H:%M"),
         st.dim(&subject),
-        st.yellow(&who),
-        st.yellow(ghost),
-        st.yellow(hist),
+        st.dim(&who),
+        st.dim(ghost),
+        st.dim(hist),
     );
     if let Some(p) = &prov {
         println!("    {}", st.dim(p));
@@ -865,7 +865,7 @@ fn render_interval(
     if interval.commit.clock_anomaly {
         println!(
                 "    {}",
-                st.yellow(&format!(
+                st.dim(&format!(
                     "⚠ clock anomaly: dated {}, but the reflog places it between in-window commits — dates on this commit cannot be trusted (backdated?)",
                     interval.commit.committer_ts.format("%Y-%m-%d %H:%M")
                 ))
@@ -894,13 +894,13 @@ fn render_interval(
     if interval.spine_jump {
         println!(
             "    {}",
-            st.yellow("⑂ spine jump: parent is not the previous commit (rebase/reset/branch)")
+            st.dim("⑂ spine jump: parent is not the previous commit (rebase/reset/branch)")
         );
     }
     for s in &interval.superseded {
         println!(
             "    {} draft {} committed {} file{}, amended {}s later",
-            st.yellow("↻ amend:"),
+            st.dim("↻ amend:"),
             s.short,
             s.files,
             if s.files == 1 { "" } else { "s" },

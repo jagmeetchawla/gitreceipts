@@ -535,7 +535,7 @@ fn render_interval(
         b.push_str("<span class=\"tag\">reflog only</span>");
     }
     if iv.commit.clock_anomaly {
-        b.push_str("<span class=\"tag warn\">clock anomaly</span>");
+        b.push_str("<span class=\"tag\">clock anomaly</span>");
     }
     let _ = write!(
         b,
@@ -628,13 +628,13 @@ fn render_interval(
     }
     if iv.spine_jump {
         b.push_str(
-            "<div class=\"line warn\">\u{2442} spine jump: parent is not the previous commit</div>",
+            "<div class=\"line dim\">\u{2442} spine jump: parent is not the previous commit</div>",
         );
     }
     for s in &iv.superseded {
         let _ = write!(
             b,
-            "<div class=\"line warn\">\u{21bb} amend: draft {} committed {} files, amended {}s later</div>",
+            "<div class=\"line dim\">\u{21bb} amend: draft {} committed {} files, amended {}s later</div>",
             esc(&s.short),
             s.files,
             s.seconds_before_amend
