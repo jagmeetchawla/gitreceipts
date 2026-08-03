@@ -194,33 +194,41 @@ planned.
 ## Usage
 
 ```sh
-# audit the most recent session for the repo you're in
+# audit ALL of this repo's sessions — the default, the complete picture
+git receipts audit
+
+# just my last run (one session). CAVEAT: a single-session audit still
+# reconciles against the WHOLE repo, so commits from your other sessions
+# match nothing and show up as residue / unclaimed keyframes. Prefer the
+# default (all sessions) unless you specifically want one run.
 git receipts audit --latest
 
 # the commit spine, one line per commit (git log --oneline style)
-git receipts audit --latest --oneline
+git receipts audit --oneline
 
 # scope to a single commit (short hash from --oneline) — lspci -s style
-git receipts audit --latest --commit 6d6cdc4
-git receipts export --latest --commit 6d6cdc4
+git receipts audit --commit 6d6cdc4
+git receipts export --commit 6d6cdc4
 
 # read a commit's whole conversation (every prompt + assistant message)
-git receipts audit --latest --commit 6d6cdc4 --full
+git receipts audit --commit 6d6cdc4 --full
 
-# audit every session the store still has for this repo, merged into
-# one ledger (forked sessions deduplicate; concurrent sessions union)
+# audit a specific session file (exactly that one)
+git receipts audit ~/.claude/projects/<enc>/<uuid>.jsonl
+
+# --all is the explicit synonym for the default (every session, merged)
 git receipts audit --all
 
 # audit a specific session log against a specific repo
 git receipts audit ~/.claude/projects/<project>/<session>.jsonl --repo ~/code/myapp
 
 # just the broken promises
-git receipts audit --latest --filter red
+git receipts audit --filter red
 
 # filter the spine purely by color (red = broken promises; amber = residue,
 # failed command, or errored MCP; green = clean)
-git receipts audit --latest --filter amber
-git receipts audit --latest --filter red-amber   # everything that isn't green
+git receipts audit --filter amber
+git receipts audit --filter red-amber   # everything that isn't green
 
 # on a terminal the report auto-pages through $PAGER (like git),
 # colors intact — no flags needed. To opt out:

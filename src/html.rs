@@ -69,6 +69,10 @@ pub fn render(
         .iter()
         .filter(|i| i.status() == Status::Amber)
         .count();
+    // Your unexplained residue — unique files in your own commits (deduped, not
+    // per-commit occurrences, not another contributor's keyframe residue). The
+    // honest "residue" tile: ~11, not the 345 a per-interval sum would show.
+    let residue_files = audit.residue_files();
     // Broken PROMISES = never-landed unexplained CLAIMS (the headline metric),
     // not the red-interval count — several can sit in one red interval. Used by
     // the stat tile AND the bottomline so the HTML agrees with console/JSON; the
@@ -180,7 +184,7 @@ pub fn render(
          <div class=\"stat {}\"><b>{broken}</b><span>broken promises</span></div>\
          <div class=\"stat {}\"><b>{}</b><span>commands with errors</span></div>\
          <div class=\"stat {}\"><b>{}</b><span>MCP with errors</span></div>\
-         <div class=\"stat warn\"><b>{amber}</b><span>amber intervals</span></div>\
+         <div class=\"stat {}\"><b>{residue_files}</b><span>residue</span></div>\
          </div>\n",
         pct(green, total),
         pct(claims_landed, claims_total),
@@ -197,6 +201,7 @@ pub fn render(
             "warn"
         },
         audit.mcp_errored,
+        if residue_files == 0 { "good" } else { "warn" },
     );
 
     // ---- intent → outcome + exceptions --------------------------------
@@ -216,13 +221,12 @@ pub fn render(
     let _ = write!(
         b,
         "<div class=\"controls\"><h2>interval spine — {total} commits ({} agent-committed)</h2>\
-         <label>show <select id=\"filter\">\
-         <option value=\"all\" selected>all</option>\
-         <option value=\"red\">red only</option>\
-         <option value=\"amber\">amber only</option>\
-         <option value=\"green\">green only</option>\
-         <option value=\"red-amber\">red + amber</option>\
-         </select></label></div>\n<section class=\"ledger\">\n",
+         <fieldset class=\"filter\">show \
+         <label><input type=\"checkbox\" id=\"f-all\" checked> all</label>\
+         <label class=\"c-green\"><input type=\"checkbox\" class=\"fc\" value=\"green\" checked> green</label>\
+         <label class=\"c-amber\"><input type=\"checkbox\" class=\"fc\" value=\"amber\" checked> amber</label>\
+         <label class=\"c-red\"><input type=\"checkbox\" class=\"fc\" value=\"red\" checked> red</label>\
+         </fieldset></div>\n<section class=\"ledger\">\n",
         audit.intervals.iter().filter(|i| i.agent_committed).count(),
     );
 

@@ -337,4 +337,22 @@ impl Audit {
             failed_commands_or_edits: self.grades.failed,
         }
     }
+
+    /// Unique files with unexplained residue in THIS session's OWN commits — the
+    /// residue that actually warrants a look. Deduplicated (a file counted once,
+    /// not once per commit it recurs in) and scoped to agent-committed intervals
+    /// (another contributor's keyframe residue is theirs, attributed by identity,
+    /// not your unexplained residue). This is the honest "residue" headline; the
+    /// per-event `Exceptions` breakdown is the fuller unclaimed-changes picture.
+    pub fn residue_files(&self) -> usize {
+        let mut set = std::collections::HashSet::new();
+        for i in &self.intervals {
+            if i.agent_committed {
+                for r in &i.residue {
+                    set.insert(r.path.as_str());
+                }
+            }
+        }
+        set.len()
+    }
 }

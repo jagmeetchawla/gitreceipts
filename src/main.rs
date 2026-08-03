@@ -69,15 +69,20 @@ On a terminal the report auto-pages through $PAGER with color (like git);
 a pipe or redirect never pages. Use --no-pager to opt out."
     )]
     Audit {
-        /// Paths to session .jsonl files (or use --latest / --all).
+        /// Paths to session .jsonl files. With none given, audits ALL of the
+        /// repo's sessions (the default) — pass a file to audit just that one.
         sessions: Vec<PathBuf>,
-        /// Audit the most recent session for the repo.
+        /// Audit ONLY the most recent session, not all of them. Deliberate
+        /// shortcut for "what my last run did". Caveat: a single-session audit
+        /// reconciles against the whole repo, so commits from your OTHER
+        /// sessions match nothing and show up as residue / unclaimed keyframes.
+        /// Audit all sessions (the default) for a clean picture.
         #[arg(long)]
         latest: bool,
-        /// Audit every session the store still has for this repo and its
-        /// parent directories, merged into one ledger. There is no local
-        /// archive: sessions older than the store's retention are gone,
-        /// and commits from that era will show as unclaimed keyframes.
+        /// Audit every session for this repo, merged into one ledger. This is
+        /// now the DEFAULT (kept as an explicit synonym). There is no local
+        /// archive: sessions older than the store's retention are gone, and
+        /// commits from that era show as unclaimed keyframes.
         #[arg(long)]
         all: bool,
         /// Repo to reconcile against (default: cwd recorded in the session).
@@ -200,13 +205,16 @@ EXAMPLES:
   git receipts export --latest --commit 6d6cdc4 --full   one commit's conversation"
     )]
     Export {
-        /// Paths to session .jsonl files (or use --latest / --all).
+        /// Paths to session .jsonl files. With none given, exports ALL of the
+        /// repo's sessions (the default) — pass a file to export just that one.
         sessions: Vec<PathBuf>,
-        /// Export the most recent session for the repo.
+        /// Export ONLY the most recent session, not all of them. Caveat: a
+        /// single-session view reconciles against the whole repo, so commits
+        /// from your other sessions show as residue / unclaimed keyframes.
         #[arg(long)]
         latest: bool,
-        /// Export every session the store still has for this repo and its
-        /// parent directories, merged into one ledger.
+        /// Export every session for this repo, merged. Now the DEFAULT (kept as
+        /// an explicit synonym).
         #[arg(long)]
         all: bool,
         /// Repo to reconcile against (default: cwd recorded in the session).

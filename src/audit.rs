@@ -187,12 +187,24 @@ pub fn load(
             .or_else(|| std::env::current_dir().ok())
             .context("cannot determine a directory to search for sessions")
     };
-    let session_paths: Vec<PathBuf> = match (sessions.is_empty(), latest, all) {
-        (false, false, false) => sessions,
-        (true, true, false) => vec![discover::latest_session(&store, &anchor()?)?],
-        (true, false, true) => discover::all_sessions(&store, &anchor()?)?,
-        (true, false, false) => bail!("pass session path(s), --latest, or --all"),
-        _ => bail!("pass session path(s), --latest, or --all — not a combination"),
+    // Session selection. The DEFAULT (no session, no flags) is ALL of the repo's
+    // sessions — the complete picture, and it avoids the single-session trap
+    // where your OTHER sessions' commits look like another contributor's
+    // (inflated residue/keyframes). `--latest` is the deliberate one-session
+    // shortcut; `--all` is kept as an explicit synonym for the default.
+    let session_paths: Vec<PathBuf> = if !sessions.is_empty() {
+        if latest || all {
+            bail!("pass session path(s) OR --latest/--all, not both");
+        }
+        sessions
+    } else if latest {
+        if all {
+            bail!("--latest and --all are mutually exclusive");
+        }
+        vec![discover::latest_session(&store, &anchor()?)?]
+    } else {
+        // default and --all: every session the store has for this repo
+        discover::all_sessions(&store, &anchor()?)?
     };
 
     let (ordered, stats) = discover::merge_sessions(&session_paths)?;

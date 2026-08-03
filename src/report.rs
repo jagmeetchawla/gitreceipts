@@ -458,6 +458,13 @@ pub fn print(
             ))
         }
     );
+    // Your unexplained residue — unique files, your own commits (deduped). The
+    // honest "residue" number, distinct from the per-event unclaimed total above.
+    let residue_files = audit.residue_files();
+    println!(
+        "    · your unexplained residue: {residue_files} file{} (unique, in your own commits)",
+        if residue_files == 1 { "" } else { "s" }
+    );
 
     // Who touched this repo — attribution for free, straight from git.
     // Identity only: a name never says agent-vs-hand-coded; a Co-Authored-By

@@ -24,7 +24,7 @@ use crate::report::{Filter, Show};
 /// expected to evolve: the shape is not yet stable, so consumers should not
 /// assume compatibility across minor bumps. A future "1.0" is the stability
 /// commitment; a breaking change before then bumps the minor.
-pub const SCHEMA_VERSION: &str = "0.5";
+pub const SCHEMA_VERSION: &str = "0.6";
 
 /// The whole receipt: the root object a consumer reads.
 #[derive(Debug, Serialize)]
@@ -183,6 +183,10 @@ pub struct Summary {
     pub claims_landed: usize,
     /// The headline: claims that never landed and nothing explains.
     pub broken_promises: usize,
+    /// Unique files with unexplained residue in your OWN commits (deduped, not
+    /// per-event; another contributor's keyframe residue excluded) — the honest
+    /// "residue" figure. The per-event breakdown is in `exceptions`.
+    pub residue_files: usize,
     /// The exception + attribution aggregates the console headlines under "what
     /// happened to every exception" — first-class here so the receipt carries
     /// every number the report shows, not just the four it always did.
@@ -588,6 +592,7 @@ impl Receipt {
             claims_total,
             claims_landed,
             broken_promises,
+            residue_files: audit.residue_files(),
             exceptions: audit.exceptions().into(),
             balance: Balance {
                 green,
