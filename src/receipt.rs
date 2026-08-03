@@ -51,11 +51,25 @@ pub struct Receipt {
     /// File claims that resolve outside the audited repo (scratch dirs, other
     /// repos, memory files) — reported, never scored.
     pub out_of_repo: Vec<FileClaim>,
+    /// Writes that reached a SIBLING project repo — a per-repo COUNT only, no
+    /// paths (sibling protection). Populated only in `--project` exports, where
+    /// the sibling roots are known; empty and omitted for a single-repo export.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sibling_repos: Vec<SiblingRepo>,
     /// The full chat — every prompt and assistant message, in order — present
     /// only under `--full`. Scoped to the commit's interval when `--commit` is
     /// also given, otherwise the whole session.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript: Option<Vec<ChatMessage>>,
+}
+
+/// A sibling repo's write tally — no paths, so a single repo's shareable
+/// receipt names the sibling without exposing its file tree.
+#[derive(Debug, Serialize)]
+pub struct SiblingRepo {
+    pub name: String,
+    pub files: usize,
+    pub changes: usize,
 }
 
 /// Tally of what the secret/PII scanner masked in this receipt.
@@ -501,7 +515,9 @@ impl Receipt {
         commit: Option<&str>,
         filter: Filter,
         full: bool,
+        siblings: &[std::path::PathBuf],
     ) -> Receipt {
+        let (external_writes, sibling_writes) = audit.partition_out_of_repo(siblings);
         let window = match (session.first_ts, session.last_ts) {
             (Some(a), Some(b)) => {
                 let dur = b - a;
@@ -676,12 +692,19 @@ impl Receipt {
                     Vec::new()
                 },
             },
-            out_of_repo: audit
-                .out_of_repo
+            out_of_repo: external_writes
                 .iter()
                 .map(|(path, edits)| FileClaim {
                     path: redact_home(path),
                     edits: *edits,
+                })
+                .collect(),
+            sibling_repos: sibling_writes
+                .into_iter()
+                .map(|s| SiblingRepo {
+                    name: s.name,
+                    files: s.files,
+                    changes: s.changes,
                 })
                 .collect(),
             transcript: if full && (show.prompt || show.summary) {

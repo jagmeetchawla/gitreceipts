@@ -135,6 +135,10 @@ pub struct Options {
     /// redundant session-name line and privacy notice (the project header
     /// carries them once).
     pub project_section: bool,
+    /// The OTHER project repos' roots (empty outside `--project`). Their
+    /// out-of-repo writes are named and counted, never pathed — so a per-repo
+    /// section is safe to share without exposing a sibling's file tree.
+    pub siblings: Vec<std::path::PathBuf>,
 }
 
 /// The 7-char short form of a full commit hash, for display.
@@ -443,9 +447,14 @@ pub fn print(
     };
     let gitignored = diag_paths("gitignored");
     let thrown_away = diag_paths("deleted before any commit");
-    let mut oor_paths: Vec<&str> = audit.out_of_repo.iter().map(|(p, _)| p.as_str()).collect();
+    // Sibling protection: in a --project section, writes into a SIBLING project
+    // repo are named and counted here, never pathed. Outside --project the
+    // sibling list is empty, so everything stays "external" as before.
+    let (external_oor, sibling_writes) = audit.partition_out_of_repo(&opts.siblings);
+    let mut oor_paths: Vec<&str> = external_oor.iter().map(|(p, _)| p.as_str()).collect();
     oor_paths.sort_unstable();
     oor_paths.dedup();
+    let sibling_changes: usize = sibling_writes.iter().map(|s| s.changes).sum();
 
     println!();
     println!("{}", st.bold("intent → outcome"));
@@ -609,13 +618,26 @@ pub fn print(
         }
     };
     side(
-        audit.out_of_repo.len(),
+        external_oor.len(),
         format!(
             "writes outside this repo: {} across {} paths (scratch dirs, other repos)",
-            audit.out_of_repo.len(),
+            external_oor.len(),
             oor_paths.len()
         ),
     );
+    if !sibling_writes.is_empty() {
+        let named = sibling_writes
+            .iter()
+            .map(|s| format!("{} ({} change{})", s.name, s.changes, plural(s.changes, "")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "    · writes into sibling project repo{}: {} {}",
+            plural(sibling_writes.len(), ""),
+            named,
+            st.dim("— audit each directly; paths withheld here")
+        );
+    }
     side(
         audit.radii.network,
         format!("network commands: {}", audit.radii.network),
@@ -716,16 +738,26 @@ pub fn print(
         }
     }
 
-    if !audit.out_of_repo.is_empty() {
-        let mut paths: Vec<&str> = audit.out_of_repo.iter().map(|(p, _)| p.as_str()).collect();
+    if !external_oor.is_empty() {
+        let mut paths: Vec<&str> = external_oor.iter().map(|(p, _)| p.as_str()).collect();
         paths.sort_unstable();
         paths.dedup();
         println!();
         println!(
             "out-of-repo writes: {} claims across {} paths {}",
-            audit.out_of_repo.len(),
+            external_oor.len(),
             paths.len(),
             st.dim("(outside the audited repo — not in the equation)")
+        );
+    }
+    if sibling_changes > 0 {
+        println!(
+            "sibling-repo writes: {} change{} across {} repo{} {}",
+            sibling_changes,
+            plural(sibling_changes, ""),
+            sibling_writes.len(),
+            plural(sibling_writes.len(), ""),
+            st.dim("(other project repos — counted, paths withheld)")
         );
     }
 

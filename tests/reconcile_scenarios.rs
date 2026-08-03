@@ -58,6 +58,83 @@ fn amend_collapses_the_draft_into_its_survivor() {
 }
 
 #[test]
+fn sibling_writes_collapse_to_a_count_without_paths() {
+    // Sibling protection: a session driven from a container that also writes
+    // into a sibling project repo must not expose that sibling's file tree.
+    // Those writes leave the audited repo as `out_of_repo`; when the sibling's
+    // root is known (a --project audit), they collapse to a per-repo COUNT with
+    // no paths — while truly-external writes (scratch, memory) stay pathed.
+    let repo = TempRepo::new("main");
+    let root = repo.root.display().to_string();
+
+    // A sibling repo dir beside the audited one, and a scratch dir that is NOT
+    // a project repo (must remain external, with its path).
+    let sibling = repo.root.parent().unwrap().join("private-ops");
+    std::fs::create_dir_all(sibling.join("secret")).unwrap();
+    let scratch = repo.root.parent().unwrap().join("scratchpad");
+    std::fs::create_dir_all(&scratch).unwrap();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:11Z"));
+
+    let secret_a = sibling.join("secret/plans.md").display().to_string();
+    let secret_b = sibling.join("secret/roadmap.md").display().to_string();
+    let scratch_note = scratch.join("note.txt").display().to_string();
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "edit here and next door")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .write_claim_abs("2026-01-01T10:00:07Z", "2026-01-01T10:00:08Z", &secret_a)
+        .write_claim_abs("2026-01-01T10:00:09Z", "2026-01-01T10:00:10Z", &secret_b)
+        .write_claim_abs("2026-01-01T10:00:12Z", "2026-01-01T10:00:13Z", &secret_a)
+        .write_claim_abs(
+            "2026-01-01T10:00:14Z",
+            "2026-01-01T10:00:15Z",
+            &scratch_note,
+        )
+        .bash_claim(
+            "2026-01-01T10:00:16Z",
+            "2026-01-01T10:00:17Z",
+            "git add a.txt && git commit -m one",
+        );
+    let audit = run(&repo, &s);
+
+    // Four writes landed outside the audited repo (2 distinct sibling files
+    // touched 3 times total, plus 1 scratch file).
+    assert_eq!(
+        audit.out_of_repo.len(),
+        4,
+        "all four external writes recorded"
+    );
+
+    // No siblings known → nothing collapses (a bare --repo audit).
+    let (external, siblings) = audit.partition_out_of_repo(&[]);
+    assert!(siblings.is_empty(), "no sibling roots → no collapse");
+    assert_eq!(external.len(), 4);
+
+    // Sibling root known → its writes collapse to a count; scratch stays.
+    let (external, siblings) = audit.partition_out_of_repo(std::slice::from_ref(&sibling));
+    assert_eq!(siblings.len(), 1, "one sibling repo");
+    assert_eq!(siblings[0].name, "private-ops");
+    assert_eq!(siblings[0].files, 2, "two distinct sibling files, deduped");
+    assert_eq!(
+        siblings[0].changes, 3,
+        "three write claims into the sibling"
+    );
+    assert_eq!(external.len(), 1, "only the scratch write stays external");
+    assert_eq!(external[0].0, scratch_note, "scratch keeps its path");
+
+    // The collapsed form must never carry a sibling path anywhere.
+    let leaked = format!("{siblings:?}");
+    assert!(
+        !leaked.contains("plans.md")
+            && !leaked.contains("roadmap.md")
+            && !leaked.contains("secret"),
+        "a sibling's file paths must never appear in the collapsed count"
+    );
+}
+
+#[test]
 fn a_deletion_is_never_red() {
     // A commit that DELETES a file is a change git recorded, not a claimed edit
     // that failed to land. Deletions are intentional; RED is reserved for a

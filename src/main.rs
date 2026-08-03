@@ -362,6 +362,7 @@ fn main() -> Result<()> {
                 oneline,
                 full,
                 project_section: false,
+                siblings: Vec::new(),
             },
             commit,
             redact,

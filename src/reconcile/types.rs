@@ -1,6 +1,8 @@
 //! The data types the interval equation produces — the audit result and
 //! everything hanging off it. No logic here beyond trivial accessors.
 
+use std::path::{Path, PathBuf};
+
 use crate::extract::{Radius, Receipt};
 use crate::gitio::{FileChange, SpineCommit};
 
@@ -399,4 +401,91 @@ pub struct LandingSummary {
     pub landed: usize,
     pub broken: usize,
     pub residue_files: usize,
+}
+
+/// Writes that a repo's session made into a SIBLING project repo — a per-repo
+/// COUNT only, never the paths. This is the sibling-protection payoff: a single
+/// repo's shareable view can say "14 changes reached the `ops` repo — audit it
+/// directly" without exposing that private repo's file tree.
+#[derive(Debug, Clone)]
+pub struct SiblingWrites {
+    pub name: String,
+    /// Distinct paths touched in that sibling.
+    pub files: usize,
+    /// Total write claims (a file touched twice counts twice).
+    pub changes: usize,
+}
+
+/// Resolve `.` and `..` lexically (no filesystem access — the path may be a
+/// historical claim whose target no longer exists), so a `repo/../ops/x` claim
+/// still matches the `ops` sibling root.
+fn normalize_lexical(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in p.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+impl Audit {
+    /// Split `out_of_repo` writes into (truly external, sibling-repo). External
+    /// writes (scratch dirs, memory files, unrelated repos) keep their paths;
+    /// writes that land inside one of the given `siblings` collapse to a
+    /// per-sibling count with NO paths. With an empty `siblings` list — every
+    /// non-project audit — nothing is a sibling, so all writes stay external
+    /// and this is a no-op partition.
+    pub fn partition_out_of_repo(
+        &self,
+        siblings: &[PathBuf],
+    ) -> (Vec<(String, usize)>, Vec<SiblingWrites>) {
+        let roots: Vec<(PathBuf, String)> = siblings
+            .iter()
+            .map(|s| {
+                let name = s
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("(repo)")
+                    .to_string();
+                (normalize_lexical(s), name)
+            })
+            .collect();
+
+        let mut external: Vec<(String, usize)> = Vec::new();
+        // name -> (distinct paths, write-claim count). One out_of_repo entry is
+        // one write claim; a file written twice is two claims, one path.
+        let mut sib: std::collections::BTreeMap<
+            String,
+            (std::collections::HashSet<String>, usize),
+        > = std::collections::BTreeMap::new();
+        for (path, frame) in &self.out_of_repo {
+            let norm = normalize_lexical(Path::new(path));
+            let home = roots
+                .iter()
+                .find(|(root, _)| norm.starts_with(root))
+                .map(|(_, name)| name);
+            match home {
+                Some(name) => {
+                    let e = sib.entry(name.clone()).or_default();
+                    e.0.insert(path.clone());
+                    e.1 += 1;
+                }
+                None => external.push((path.clone(), *frame)),
+            }
+        }
+        let siblings = sib
+            .into_iter()
+            .map(|(name, (paths, changes))| SiblingWrites {
+                name,
+                files: paths.len(),
+                changes,
+            })
+            .collect();
+        (external, siblings)
+    }
 }

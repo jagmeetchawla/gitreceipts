@@ -88,6 +88,8 @@ pub fn run(
         commit.as_deref(),
         filter,
         full,
+        // Single-repo export: no project context, so no sibling roots to mask.
+        &[],
     );
     println!("{}", receipt.to_json(pretty)?);
     Ok(())
@@ -138,6 +140,9 @@ fn run_project(
             .and_then(|n| n.to_str())
             .unwrap_or("(repo)")
             .to_string();
+        // Every OTHER project repo is a sibling: its writes collapse to a count
+        // in this repo's receipt, so each per-repo receipt is safe to share.
+        let siblings: Vec<PathBuf> = repos.iter().filter(|r| *r != repo).cloned().collect();
         let loaded = audit::load(
             Vec::new(),
             latest,
@@ -162,6 +167,7 @@ fn run_project(
             None,
             filter,
             full,
+            &siblings,
         );
         entries.push((name, receipt, landing));
     }

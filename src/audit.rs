@@ -250,7 +250,15 @@ fn run_project(
     report::landing_table(&rows, opts.color);
 
     opts.project_section = true;
-    for ((name, _), l) in rows.iter().zip(&loaded) {
+    for (i, ((name, _), l)) in rows.iter().zip(&loaded).enumerate() {
+        // Every OTHER project repo is a sibling: its writes are named and
+        // counted in this section, never pathed — so each section is shareable.
+        opts.siblings = repos
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .map(|(_, r)| r.clone())
+            .collect();
         println!("\n═══ {name} ═══════════════════════════════════════════════");
         report::print(
             &l.name,

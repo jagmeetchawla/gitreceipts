@@ -83,6 +83,7 @@ fn receipt_headline_numbers_mirror_the_audit() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
 
     assert_eq!(r.schema_version, SCHEMA_VERSION);
@@ -126,6 +127,7 @@ fn broken_promise_is_flagged_at_the_ledger_line() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
 
     let broken: Vec<&str> = r
@@ -164,6 +166,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
     let redacted = Receipt::build(
         "session",
@@ -181,6 +184,7 @@ fn no_intent_redacts_prompt_text_but_keeps_counts() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
 
     let intent_strings =
@@ -215,6 +219,7 @@ fn receipt_round_trips_as_valid_json() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
 
     for pretty in [true, false] {
@@ -287,6 +292,7 @@ fn command_text_is_full_and_output_is_opt_in() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
     assert_eq!(cmd(&without), full_cmd, "full multi-line command retained");
     let no_output = without
@@ -312,6 +318,7 @@ fn command_text_is_full_and_output_is_opt_in() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
     let out = with
         .intervals
@@ -345,6 +352,7 @@ fn commit_scope_filters_intervals_but_keeps_the_whole_session_summary() {
         Some(&target),
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
     // Only the scoped commit is in the intervals array…
     assert_eq!(r.intervals.len(), 1);
@@ -405,6 +413,7 @@ fn a_failed_command_carries_output_by_default() {
         None,
         gitreceipts::report::Filter::All,
         false,
+        &[],
     );
     let with_out: Vec<(&str, bool)> = r
         .intervals
@@ -442,6 +451,7 @@ fn full_adds_the_transcript_scoped_by_commit() {
             commit,
             gitreceipts::report::Filter::All,
             full,
+            &[],
         )
     };
 
