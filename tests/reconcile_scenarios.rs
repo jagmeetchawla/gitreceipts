@@ -58,6 +58,58 @@ fn amend_collapses_the_draft_into_its_survivor() {
 }
 
 #[test]
+fn a_deletion_is_never_red() {
+    // A commit that DELETES a file is a change git recorded, not a claimed edit
+    // that failed to land. Deletions are intentional; RED is reserved for a
+    // never-landed CLAIM (the one verdict), so a deletion must never make an
+    // interval red — locked here so it can't regress.
+    let repo = TempRepo::new("delete");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "add a"], Some("2026-01-01T10:00:11Z"));
+    repo.git(&["rm", "-q", "a.txt"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "remove a"],
+        Some("2026-01-01T10:00:31Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "add then delete a.txt")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:09Z",
+            "2026-01-01T10:00:11Z",
+            "git add -A && git commit -m 'add a'",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:29Z",
+            "2026-01-01T10:00:31Z",
+            "git rm a.txt && git commit -m 'remove a'",
+        );
+    let audit = run(&repo, &s);
+
+    assert_eq!(audit.intervals.len(), 2, "two commits, two intervals");
+    for iv in &audit.intervals {
+        assert_ne!(
+            iv.status(),
+            Status::Red,
+            "a deletion must never make an interval red"
+        );
+    }
+    let broken: usize = audit.intervals.iter().flat_map(|i| i.never_landed()).count();
+    assert_eq!(broken, 0, "a deletion is never a broken promise");
+    // The deletion commit itself carries a D in its statement — and is not red.
+    let del = audit
+        .intervals
+        .iter()
+        .find(|i| i.statement.iter().any(|c| c.status == 'D'))
+        .expect("the delete commit's statement records a deletion");
+    assert_ne!(del.status(), Status::Red);
+}
+
+#[test]
 fn commit_event_in_the_same_second_still_claims_its_interval() {
     // git truncates committer dates to whole seconds; the Bash event that
     // created the commit can carry a timestamp a few hundred ms past it.
