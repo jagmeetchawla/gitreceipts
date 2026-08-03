@@ -87,6 +87,42 @@ pub fn session_dirs_for(store: &Path, repo: &Path) -> Vec<PathBuf> {
     matched
 }
 
+/// The git repos under a PROJECT folder that have sessions — the repos a
+/// `--project` audit will report. Walks the folder (bounded depth), treats any
+/// directory with a `.git` entry (dir OR file, so worktrees count) as a repo and
+/// does not descend into it, then keeps only those the store has sessions for.
+/// Sorted. A project folder that is itself a git repo yields just itself (the
+/// monorepo case → project ≡ repo).
+pub fn project_repos(project: &Path, store: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+        if dir.join(".git").exists() {
+            out.push(dir.to_path_buf());
+            return; // a repo — don't descend into it (skip nested repos)
+        }
+        if depth == 0 {
+            return;
+        }
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut sub: Vec<PathBuf> = entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            sub.sort();
+            for p in sub {
+                walk(&p, depth - 1, out);
+            }
+        }
+    }
+    let start = project
+        .canonicalize()
+        .unwrap_or_else(|_| project.to_path_buf());
+    let mut repos = Vec::new();
+    walk(&start, 5, &mut repos);
+    repos.retain(|r| !session_dirs_for(store, r).is_empty());
+    repos
+}
+
 /// Newest .jsonl across the candidate directories.
 pub fn latest_session(store: &Path, repo: &Path) -> Result<PathBuf> {
     let dirs = session_dirs_for(store, repo);

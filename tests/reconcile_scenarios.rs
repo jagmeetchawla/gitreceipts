@@ -68,7 +68,10 @@ fn a_deletion_is_never_red() {
 
     repo.write("a.txt", "x");
     repo.git(&["add", "-A"]);
-    repo.git_at(&["commit", "-q", "-m", "add a"], Some("2026-01-01T10:00:11Z"));
+    repo.git_at(
+        &["commit", "-q", "-m", "add a"],
+        Some("2026-01-01T10:00:11Z"),
+    );
     repo.git(&["rm", "-q", "a.txt"]);
     repo.git_at(
         &["commit", "-q", "-m", "remove a"],
@@ -98,7 +101,11 @@ fn a_deletion_is_never_red() {
             "a deletion must never make an interval red"
         );
     }
-    let broken: usize = audit.intervals.iter().flat_map(|i| i.never_landed()).count();
+    let broken: usize = audit
+        .intervals
+        .iter()
+        .flat_map(|i| i.never_landed())
+        .count();
     assert_eq!(broken, 0, "a deletion is never a broken promise");
     // The deletion commit itself carries a D in its statement — and is not red.
     let del = audit

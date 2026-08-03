@@ -85,9 +85,16 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// commits from that era show as unclaimed keyframes.
         #[arg(long)]
         all: bool,
-        /// Repo to reconcile against (default: cwd recorded in the session).
-        #[arg(long)]
+        /// A single git repo to reconcile against (default: the cwd's repo).
+        /// Mutually exclusive with --project.
+        #[arg(long, conflicts_with = "project")]
         repo: Option<PathBuf>,
+        /// A PROJECT folder holding several git repos (e.g. a public repo beside
+        /// private ops/config repos, driven in one session). Discovers every git
+        /// repo under it that has sessions and reports each — a project header
+        /// plus one section per repo. Mutually exclusive with --repo.
+        #[arg(long)]
+        project: Option<PathBuf>,
         /// The Claude Code projects directory — where session logs live, and
         /// the ONLY directory gitreceipts reads (never your settings, prompt
         /// history, or MCP auth). Default: ~/.claude/projects. To audit
@@ -304,6 +311,7 @@ fn main() -> Result<()> {
             latest,
             all,
             repo,
+            project,
             store,
             agent,
             color,
@@ -327,6 +335,7 @@ fn main() -> Result<()> {
             latest,
             all,
             repo,
+            project,
             store,
             no_pager,
             report::Options {

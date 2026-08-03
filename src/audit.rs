@@ -91,6 +91,7 @@ pub fn run(
     latest: bool,
     all: bool,
     repo: Option<PathBuf>,
+    project: Option<PathBuf>,
     store: Option<PathBuf>,
     no_pager: bool,
     mut opts: report::Options,
@@ -99,6 +100,12 @@ pub fn run(
     scan: bool,
     agent: report::Agent,
 ) -> Result<()> {
+    // Project mode: one header, then each repo under the folder reported in turn.
+    if let Some(project) = project {
+        return run_project(
+            project, sessions, latest, all, store, no_pager, opts, redact, scan, agent,
+        );
+    }
     let loaded = {
         let _status = Status::show("git receipts: auditing… reconciling against git");
         load(sessions, latest, all, repo, store, &redact, scan, agent)?
@@ -151,20 +158,83 @@ pub fn run(
     Ok(())
 }
 
-/// Run the pipeline — discover sessions and repo, merge, extract, reconcile —
-/// and return the reconciled audit with its header context.
+/// Project mode: report every git repo under the project folder in turn — one
+/// header, then each repo's own console report under a banner. Phase 1: console
+/// only; each repo reuses the single-repo pipeline (`load` + `report::print`).
 #[allow(clippy::too_many_arguments)]
-pub fn load(
+fn run_project(
+    project: PathBuf,
     sessions: Vec<PathBuf>,
     latest: bool,
     all: bool,
-    repo: Option<PathBuf>,
     store: Option<PathBuf>,
-    redact: &[String],
+    no_pager: bool,
+    mut opts: report::Options,
+    redact: Vec<String>,
     scan: bool,
     agent: report::Agent,
-) -> Result<Loaded> {
-    let store = match store {
+) -> Result<()> {
+    if opts.format == report::Format::Html {
+        bail!("--project --format html is not supported yet — use the console view for now");
+    }
+    if !sessions.is_empty() {
+        bail!("--project audits the folder's own sessions; don't also pass session file(s)");
+    }
+    let store = resolve_store(store)?;
+    let repos = discover::project_repos(&project, &store);
+    if repos.is_empty() {
+        bail!(
+            "no git repos with sessions found under {} — audit a single repo with --repo <dir>, or check the folder/store",
+            project.display()
+        );
+    }
+
+    let pager = start_pager(no_pager);
+    if pager.is_some() && opts.color == report::ColorMode::Auto {
+        opts.color = report::ColorMode::Always;
+    }
+    println!(
+        "git receipts — project {}",
+        gitreceipts::fmt::tilde(&project.display().to_string())
+    );
+    println!(
+        "{} git repo{} with sessions under this project",
+        repos.len(),
+        if repos.len() == 1 { "" } else { "s" }
+    );
+    for repo in &repos {
+        let name = repo
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("(repo)");
+        println!("\n═══ {name} ═══════════════════════════════════════════════");
+        let loaded = load(
+            Vec::new(),
+            latest,
+            all,
+            Some(repo.clone()),
+            Some(store.clone()),
+            &redact,
+            scan,
+            agent,
+        )?;
+        report::print(
+            &loaded.name,
+            &loaded.repo_display,
+            &loaded.session,
+            &loaded.stats,
+            &loaded.audit,
+            &opts,
+        );
+    }
+    finish_pager(pager);
+    Ok(())
+}
+
+/// Resolve the session store: `--store` if given (with the old-`.claude`-dir
+/// nudge), else the default `~/.claude/projects`.
+pub fn resolve_store(store: Option<PathBuf>) -> Result<PathBuf> {
+    match store {
         Some(s) => {
             if !s.is_dir() {
                 bail!("--store {} is not a directory", s.display());
@@ -177,11 +247,27 @@ pub fn load(
                     s.join("projects").display()
                 );
             }
-            s
+            Ok(s)
         }
         None => discover::default_store()
-            .context("cannot locate the home directory (default store: ~/.claude/projects)")?,
-    };
+            .context("cannot locate the home directory (default store: ~/.claude/projects)"),
+    }
+}
+
+/// Run the pipeline for ONE repo — discover sessions and repo, merge, extract,
+/// reconcile — and return the reconciled audit with its header context.
+#[allow(clippy::too_many_arguments)]
+pub fn load(
+    sessions: Vec<PathBuf>,
+    latest: bool,
+    all: bool,
+    repo: Option<PathBuf>,
+    store: Option<PathBuf>,
+    redact: &[String],
+    scan: bool,
+    agent: report::Agent,
+) -> Result<Loaded> {
+    let store = resolve_store(store)?;
     let anchor = || {
         repo.clone()
             .or_else(|| std::env::current_dir().ok())
