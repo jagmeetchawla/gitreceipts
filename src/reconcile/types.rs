@@ -475,7 +475,9 @@ impl Audit {
                     e.0.insert(path.clone());
                     e.1 += 1;
                 }
-                None => external.push((path.clone(), *frame)),
+                // Display the lexically-normalized path: a `sibling/../audited`
+                // detour must not leave a sibling's NAME in an external path.
+                None => external.push((norm.to_string_lossy().into_owned(), *frame)),
             }
         }
         let siblings = sib
