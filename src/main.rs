@@ -355,6 +355,7 @@ fn main() -> Result<()> {
                 commit: None,
                 oneline,
                 full,
+                project_section: false,
             },
             commit,
             redact,

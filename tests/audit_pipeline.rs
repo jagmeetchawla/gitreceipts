@@ -343,6 +343,7 @@ fn multibyte_commit_subject_does_not_panic_the_console_report() {
             commit: None,
             oneline: false,
             full: false,
+            project_section: false,
         },
     );
     let _ = html::render(

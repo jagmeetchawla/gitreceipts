@@ -355,4 +355,48 @@ impl Audit {
         }
         set.len()
     }
+
+    /// The whole audit's verdict = the strongest interval color: Red if any
+    /// interval is red (a broken promise), else Amber if any is amber (residue
+    /// or an execution error), else Green. The same max-color rule an interval
+    /// mark uses, lifted to the repo.
+    pub fn verdict(&self) -> Status {
+        if self.intervals.iter().any(|i| i.status() == Status::Red) {
+            Status::Red
+        } else if self.intervals.iter().any(|i| i.status() == Status::Amber) {
+            Status::Amber
+        } else {
+            Status::Green
+        }
+    }
+
+    /// One repo's headline numbers — the row a `--project` roll-up prints and
+    /// the JSON wrapper carries. Computed once so console and JSON agree.
+    pub fn landing_summary(&self) -> LandingSummary {
+        LandingSummary {
+            verdict: self.verdict(),
+            commits: self.intervals.len(),
+            claims: self.intervals.iter().map(|i| i.ledger.len()).sum(),
+            landed: self
+                .intervals
+                .iter()
+                .flat_map(|i| i.ledger.iter())
+                .filter(|l| l.landing != Landing::Never)
+                .count(),
+            broken: self.intervals.iter().flat_map(|i| i.never_landed()).count(),
+            residue_files: self.residue_files(),
+        }
+    }
+}
+
+/// A repo's headline numbers for a project roll-up — shared by the console
+/// landing table and the JSON project wrapper so the two never disagree.
+#[derive(Debug, Clone, Copy)]
+pub struct LandingSummary {
+    pub verdict: Status,
+    pub commits: usize,
+    pub claims: usize,
+    pub landed: usize,
+    pub broken: usize,
+    pub residue_files: usize,
 }

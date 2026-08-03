@@ -131,6 +131,10 @@ pub struct Options {
     /// message) — the whole chat, not just intent + summary. Most useful
     /// scoped with `--commit`; the whole session gets long.
     pub full: bool,
+    /// This report is one repo's section inside a `--project` view: skip the
+    /// redundant session-name line and privacy notice (the project header
+    /// carries them once).
+    pub project_section: bool,
 }
 
 /// The 7-char short form of a full commit hash, for display.
@@ -180,6 +184,86 @@ impl Style {
     }
 }
 
+/// A `--project` view's shared masthead: the project path, the repo count, and
+/// the one privacy notice the per-repo sections then omit.
+pub fn project_header(project_display: &str, repo_count: usize, color: ColorMode) {
+    let st = Style::new(color);
+    println!(
+        "{}",
+        st.bold(&format!(
+            "git receipts — project {}",
+            redact_home(project_display)
+        ))
+    );
+    println!(
+        "{} git repo{} with sessions under this project",
+        repo_count,
+        if repo_count == 1 { "" } else { "s" }
+    );
+    println!(
+        "{}",
+        st.dim(
+            "⚠ private audit report — from your chat/agent logs, git, and command output; handle with caution before sharing."
+        )
+    );
+}
+
+/// The `--project` roll-up: one row per repo — verdict, commits, landed/claims,
+/// broken, residue — so you see where the work landed before reading the
+/// per-repo sections. Numbers come from [`Audit::landing_summary`], the same
+/// source the JSON wrapper uses.
+pub fn landing_table(rows: &[(String, crate::reconcile::LandingSummary)], color: ColorMode) {
+    let st = Style::new(color);
+    let name_w = rows
+        .iter()
+        .map(|(n, _)| n.chars().count())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    println!();
+    println!("{}", st.bold("where it landed"));
+    println!(
+        "  {}",
+        st.dim(&format!(
+            "{:<name_w$}  {:>7}  {:>11}  {:>6}  {:>7}  verdict",
+            "repo", "commits", "landed", "broken", "residue",
+        ))
+    );
+    for (name, s) in rows {
+        let (dot, word) = match s.verdict {
+            Status::Green => (st.green("●"), st.green("green")),
+            Status::Amber => (st.yellow("●"), st.yellow("amber")),
+            Status::Red => (st.red("●"), st.red("red")),
+        };
+        // Pad to width FIRST, then colorize — ANSI escapes have no display
+        // width, so `{:>N}` on an already-colored string would misalign.
+        // broken (>0) and residue (>0) are the amber/red facts — dim the zeros
+        // so the rows that warrant a look are the ones that stand out.
+        let broken = format!("{:>6}", s.broken);
+        let broken = if s.broken == 0 {
+            st.dim(&broken)
+        } else {
+            st.red(&broken)
+        };
+        let residue = format!("{:>7}", s.residue_files);
+        let residue = if s.residue_files == 0 {
+            st.dim(&residue)
+        } else {
+            st.yellow(&residue)
+        };
+        println!(
+            "  {:<name_w$}  {:>7}  {:>11}  {}  {}  {} {}",
+            name,
+            s.commits,
+            format!("{}/{}", s.landed, s.claims),
+            broken,
+            residue,
+            dot,
+            word,
+        );
+    }
+}
+
 pub fn print(
     session_name: &str,
     repo: &str,
@@ -194,23 +278,30 @@ pub fn print(
     // says it once and per-commit would just repeat.
     let multi_model = session.models_used(None, None).len() > 1;
 
-    println!(
-        "{}",
-        st.bold(&format!("git receipts — {}", redact_home(session_name)))
-    );
+    // In a --project view the project header carries the session-name line and
+    // the privacy notice once, up top; a repo section repeats neither.
+    if !opts.project_section {
+        println!(
+            "{}",
+            st.bold(&format!("git receipts — {}", redact_home(session_name)))
+        );
+    }
     println!(
         "repo: {}   branches seen: {}",
         redact_home(repo),
         redact_home(&session.branches.join(", "))
     );
-    // Private by default: built from chat/agent logs, git contents, and command
-    // output. Warn before anyone shares it (redaction reduces, never removes).
-    println!(
-        "{}",
-        st.dim(
-            "⚠ private audit report — from your chat/agent logs, git, and command output; handle with caution before sharing."
-        )
-    );
+    if !opts.project_section {
+        // Private by default: built from chat/agent logs, git contents, and
+        // command output. Warn before anyone shares it (redaction reduces,
+        // never removes).
+        println!(
+            "{}",
+            st.dim(
+                "⚠ private audit report — from your chat/agent logs, git, and command output; handle with caution before sharing."
+            )
+        );
+    }
 
     // Scoped to one commit (--commit): show only that commit's block — none of
     // the session-wide summary above it. lspci -s: just the addressed device.

@@ -158,9 +158,11 @@ pub fn run(
     Ok(())
 }
 
-/// Project mode: report every git repo under the project folder in turn — one
-/// header, then each repo's own console report under a banner. Phase 1: console
-/// only; each repo reuses the single-repo pipeline (`load` + `report::print`).
+/// Project mode: report every git repo under the project folder — one project
+/// masthead, a "where it landed" roll-up table, then each repo's own console
+/// section (with the redundant per-repo header suppressed). A project folder
+/// with a single repo (the monorepo case) collapses to the plain single-repo
+/// report — no project chrome for one repo.
 #[allow(clippy::too_many_arguments)]
 fn run_project(
     project: PathBuf,
@@ -189,41 +191,73 @@ fn run_project(
         );
     }
 
+    // Reconcile every repo up front — the roll-up table needs all their numbers
+    // before the first section prints. `set_redaction` inside each `load` is
+    // cumulative, so the masking that protects one repo's paths also covers its
+    // siblings by the time anything is rendered.
+    let loaded: Vec<Loaded> = {
+        let _status =
+            Status::show("git receipts: auditing project… reconciling each repo against git");
+        repos
+            .iter()
+            .map(|repo| {
+                load(
+                    Vec::new(),
+                    latest,
+                    all,
+                    Some(repo.clone()),
+                    Some(store.clone()),
+                    &redact,
+                    scan,
+                    agent,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+
     let pager = start_pager(no_pager);
     if pager.is_some() && opts.color == report::ColorMode::Auto {
         opts.color = report::ColorMode::Always;
     }
-    println!(
-        "git receipts — project {}",
-        gitreceipts::fmt::tilde(&project.display().to_string())
-    );
-    println!(
-        "{} git repo{} with sessions under this project",
-        repos.len(),
-        if repos.len() == 1 { "" } else { "s" }
-    );
-    for repo in &repos {
-        let name = repo
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("(repo)");
-        println!("\n═══ {name} ═══════════════════════════════════════════════");
-        let loaded = load(
-            Vec::new(),
-            latest,
-            all,
-            Some(repo.clone()),
-            Some(store.clone()),
-            &redact,
-            scan,
-            agent,
-        )?;
+
+    // One repo → project ≡ repo: just the normal single-repo report.
+    if let [only] = loaded.as_slice() {
         report::print(
-            &loaded.name,
-            &loaded.repo_display,
-            &loaded.session,
-            &loaded.stats,
-            &loaded.audit,
+            &only.name,
+            &only.repo_display,
+            &only.session,
+            &only.stats,
+            &only.audit,
+            &opts,
+        );
+        finish_pager(pager);
+        return Ok(());
+    }
+
+    report::project_header(&project.display().to_string(), loaded.len(), opts.color);
+    let rows: Vec<(String, gitreceipts::reconcile::LandingSummary)> = repos
+        .iter()
+        .zip(&loaded)
+        .map(|(repo, l)| {
+            let name = repo
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("(repo)")
+                .to_string();
+            (name, l.audit.landing_summary())
+        })
+        .collect();
+    report::landing_table(&rows, opts.color);
+
+    opts.project_section = true;
+    for ((name, _), l) in rows.iter().zip(&loaded) {
+        println!("\n═══ {name} ═══════════════════════════════════════════════");
+        report::print(
+            &l.name,
+            &l.repo_display,
+            &l.session,
+            &l.stats,
+            &l.audit,
             &opts,
         );
     }

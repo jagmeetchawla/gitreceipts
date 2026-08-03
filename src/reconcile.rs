@@ -15,8 +15,8 @@ mod types;
 
 pub use matching::longest_prefix;
 pub use types::{
-    Audit, CommandRun, Exceptions, Grade, GradeCount, Interval, Landing, LedgerLine, McpRun,
-    RadiusCount, Status, Superseded,
+    Audit, CommandRun, Exceptions, Grade, GradeCount, Interval, Landing, LandingSummary,
+    LedgerLine, McpRun, RadiusCount, Status, Superseded,
 };
 
 use std::collections::{BTreeMap, HashMap};
