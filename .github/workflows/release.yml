@@ -1,0 +1,74 @@
+# Release binaries on a version tag (v*): build each target, checksum, and
+# attach to a GitHub Release. Development and testing happen on macOS/Apple
+# Silicon; the other targets are built and shipped best-effort — the release
+# notes say exactly that.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: musl tools (static Linux build)
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: toolchain
+        run: rustup update stable && rustup target add ${{ matrix.target }}
+      - name: test
+        run: cargo test --release --target ${{ matrix.target }}
+      - name: build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: package
+        run: |
+          BIN=target/${{ matrix.target }}/release/git-receipts
+          NAME=git-receipts-${GITHUB_REF_NAME}-${{ matrix.target }}
+          mkdir "$NAME"
+          cp "$BIN" LICENSE README.md THIRD-PARTY-NOTICES.md "$NAME/"
+          tar czf "$NAME.tar.gz" "$NAME"
+          shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: "git-receipts-*.tar.gz*"
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { merge-multiple: true }
+      - name: combined checksums
+        run: cat *.sha256 > SHA256SUMS
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "git-receipts $GITHUB_REF_NAME" \
+            --notes "$(printf '%s\n' \
+              'See what your agent actually did — reconcile a coding-agent session against git.' \
+              '' \
+              '**Tested on macOS (Apple Silicon).** The Intel macOS and Linux builds are provided best-effort and are not part of the tested claim.' \
+              '' \
+              'Install alternatives: `cargo install gitreceipts` · Homebrew tap `cloudcraft-ai/tap`.' \
+              '' \
+              'Verify downloads against `SHA256SUMS`.')" \
+            git-receipts-*.tar.gz SHA256SUMS
