@@ -230,6 +230,8 @@ pub struct ExceptionCounts {
     pub resolved_superseded: usize,
     pub resolved_deliberate: usize,
     pub resolved_persisted: usize,
+    /// Landed at a different path (moved before its first commit; content-verified).
+    pub resolved_relocated: usize,
     /// Genuine residue (unclaimed changes), before the who-split.
     pub residue: usize,
     /// Unclaimed total = residue + command-attributed + dismissed.
@@ -251,6 +253,7 @@ impl From<crate::reconcile::Exceptions> for ExceptionCounts {
             resolved_superseded: e.resolved_superseded,
             resolved_deliberate: e.resolved_deliberate,
             resolved_persisted: e.resolved_persisted,
+            resolved_relocated: e.resolved_relocated,
             residue: e.residue,
             unclaimed_total: e.unclaimed_total,
             unclaimed_by_command: e.unclaimed_by_command,

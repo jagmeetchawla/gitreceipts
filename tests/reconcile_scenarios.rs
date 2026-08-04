@@ -135,6 +135,67 @@ fn sibling_writes_collapse_to_a_count_without_paths() {
 }
 
 #[test]
+fn a_file_relocated_before_first_commit_is_not_a_broken_promise() {
+    // The agent writes a file at path A; a restructure moves it to path B
+    // before it is ever committed (package split). Git shows a plain Add at B
+    // (an untracked path cannot be a rename source), so path-exact matching
+    // calls A "deleted before any commit" → a false red. The probe pass must
+    // connect claim to landing: same basename, committed content carries the
+    // claimed edit → resolved "relocated before its first commit", not red.
+    let repo = TempRepo::new("reloc");
+    let root = repo.root.display().to_string();
+
+    // The claimed content lands at the NEW path; the old path never exists in git.
+    let body = SessionBuilder::default_body("kit/XPC/AgentClient.swift");
+    std::fs::create_dir_all(repo.root.join("xpc")).unwrap();
+    repo.write("xpc/AgentClient.swift", &body);
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "agent-split"],
+        Some("2026-01-01T10:00:20Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "split the package")
+        .write_claim(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:06Z",
+            "kit/XPC/AgentClient.swift",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add -A && git commit -m agent-split",
+        );
+    let audit = run(&repo, &s);
+
+    assert_eq!(audit.intervals.len(), 1);
+    let iv = &audit.intervals[0];
+    let line = iv
+        .ledger
+        .iter()
+        .find(|l| l.path == "kit/XPC/AgentClient.swift")
+        .expect("the claim is on the ledger");
+    let resolution = line.resolution.as_deref().unwrap_or_else(|| {
+        panic!(
+            "the relocated claim must be resolved, got diagnosis {:?}",
+            line.diagnosis
+        )
+    });
+    assert!(
+        resolution.contains("relocated before its first commit")
+            && resolution.contains("xpc/AgentClient.swift"),
+        "resolution names the landing path: {resolution}"
+    );
+    assert_ne!(iv.status(), Status::Red, "a kept promise is not red");
+    assert_eq!(audit.counts().broken, 0, "no broken promise");
+    assert!(
+        !iv.residue.iter().any(|c| c.path == "xpc/AgentClient.swift"),
+        "the landing file is explained by the claim, not residue"
+    );
+}
+
+#[test]
 fn a_teammates_commit_is_held_out_of_the_equation_by_default() {
     // Baseline-relative default: the verdict/balance cover the agent's OWN
     // commits. A teammate's commit that lands in the same window (the mature-

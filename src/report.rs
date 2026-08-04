@@ -490,15 +490,15 @@ pub fn print(
         );
     }
     // what happened to every exception — the findings, not just counts
-    let all_lines = || audit.intervals.iter().flat_map(|i| i.ledger.iter());
     let late_verified = ex.landed_late;
     let superseded = ex.resolved_superseded;
     let persisted = ex.resolved_persisted;
     let deliberate = ex.resolved_deliberate;
-    let resolved_total = superseded + persisted + deliberate;
-    let broken = all_lines()
-        .filter(|l| l.landing == crate::reconcile::Landing::Never && l.resolution.is_none())
-        .count();
+    let relocated = ex.resolved_relocated;
+    let resolved_total = superseded + persisted + deliberate + relocated;
+    // Equation-scoped, same as the balance/tiles — a keyframe's claims are not
+    // this agent's broken promises.
+    let broken = c.broken;
     let residue_all = ex.unclaimed_total;
 
     println!("  what happened to every exception:");
@@ -519,6 +519,11 @@ pub fn print(
         }
         if persisted > 0 {
             parts.push(format!("persisted on disk outside git: {persisted}"));
+        }
+        if relocated > 0 {
+            parts.push(format!(
+                "relocated before first commit, landed at a different path (content-verified): {relocated}"
+            ));
         }
         println!(
             "    · claims that never landed, resolved: {resolved_total} — {}",

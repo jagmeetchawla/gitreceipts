@@ -559,6 +559,66 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         }
     }
 
+    // 4. Relocated before its first commit: the claimed path never landed, but
+    //    a file with the SAME NAME was ADDED at a different path in this or a
+    //    later commit and its committed content carries the claimed edit — a
+    //    package split or directory restructure that moved the file before git
+    //    ever tracked it. Git shows a plain Add (an untracked path cannot be a
+    //    rename source), so only the content probe can connect claim to
+    //    landing — the same verification bar late landings use. Basename must
+    //    match: keeps the check surgical and the blob reads rare.
+    let mut relocations: Vec<(usize, usize, String, usize, String)> = Vec::new();
+    for i in 0..n_intervals {
+        for (line_idx, line) in audit.intervals[i].ledger.iter().enumerate() {
+            if line.landing != Landing::Never || line.resolution.is_some() {
+                continue;
+            }
+            let Some(probe) = line.probe.as_deref().filter(|p| usable_probe(p)) else {
+                continue;
+            };
+            let base = Path::new(&line.path).file_name();
+            if base.is_none() {
+                continue;
+            }
+            'search: for (j, later) in audit.intervals.iter().enumerate().skip(i) {
+                for change in &later.statement {
+                    if change.status != 'A'
+                        || change.path == line.path
+                        || Path::new(&change.path).file_name() != base
+                    {
+                        continue;
+                    }
+                    let verified = gitio::file_at_commit(repo, &later.commit.hash, &change.path)
+                        .is_some_and(|content| content.contains(probe));
+                    if verified {
+                        relocations.push((
+                            i,
+                            line_idx,
+                            change.path.clone(),
+                            j,
+                            later.commit.short.clone(),
+                        ));
+                        break 'search;
+                    }
+                }
+            }
+        }
+    }
+    for (i, line_idx, new_path, j, short) in relocations {
+        audit.intervals[i].ledger[line_idx].resolution = Some(format!(
+            "relocated before its first commit — landed at {new_path} in {short}, carrying the claimed content (content-verified)"
+        ));
+        // The landing interval's residue entry for the new path is explained
+        // by this claim now — same bookkeeping a late landing does.
+        if let Some(pos) = audit.intervals[j]
+            .residue
+            .iter()
+            .position(|c| c.path == new_path)
+        {
+            audit.intervals[j].residue.remove(pos);
+        }
+    }
+
     // Diagnose the survivors: why did git never see this claim?
     for interval in audit.intervals.iter_mut() {
         for line in interval

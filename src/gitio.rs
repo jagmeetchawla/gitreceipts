@@ -282,6 +282,13 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
     Ok(commits)
 }
 
+/// A file's content as committed — `git show <hash>:<path>`. `None` when the
+/// path isn't in that commit's tree. Binary content comes back lossy, which is
+/// fine for the probe-containment checks this feeds.
+pub fn file_at_commit(repo: &Path, hash: &str, path: &str) -> Option<String> {
+    git(repo, &["show", &format!("{hash}:{path}")]).ok()
+}
+
 /// Commits reachable from any remote-tracking ref — i.e. pushed, as of the
 /// repo's last fetch. A local-only commit is absent. This is a local check
 /// (no network), so it reflects the last-known remote state, not live.

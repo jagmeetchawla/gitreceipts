@@ -228,6 +228,8 @@ pub struct Exceptions {
     pub resolved_superseded: usize,
     pub resolved_deliberate: usize,
     pub resolved_persisted: usize,
+    /// Landed at a DIFFERENT path (moved before its first commit; content-verified).
+    pub resolved_relocated: usize,
     /// Genuine residue (unclaimed changes git recorded), before the who-split.
     pub residue: usize,
     /// Unclaimed total = residue + command-attributed + dismissed.
@@ -348,6 +350,7 @@ impl Audit {
             resolved_superseded: resolved("superseded"),
             resolved_deliberate: resolved("deliberately"),
             resolved_persisted: resolved("persisted outside git"),
+            resolved_relocated: resolved("relocated before its first commit"),
             residue,
             unclaimed_total: residue + by_command + dismissed,
             unclaimed_by_command: by_command,
