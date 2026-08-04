@@ -2,7 +2,7 @@
   <br>
   <strong style="font-size: 1.5em;">git receipts</strong>
   <br><br>
-  See what your agent <b>actually</b> did — every prompt → commands → files → commit,
+  See what your agent <b>actually</b> did — every prompt → commands → MCP → files → commit,
   <br>reconciled against the one record the agent can't rewrite: <b>git</b>.
   <br><br>
   <a href="#install">Install</a> ·
@@ -20,8 +20,8 @@ happened is now the slow part. The raw session log is tens of megabytes of
 JSON nobody reads.
 
 gitreceipts turns that log into an account you can read at reading speed:
-each prompt you typed → the commands it ran → the files it touched → the
-commit that resulted. An 11,000-event session becomes a spine of commits you
+each prompt you typed → the commands and MCP calls it made → the files it
+touched → the commit that resulted. An 11,000-event session becomes a spine of commits you
 scan in a minute and expand only where something looks off.
 
 And you can trust the account, because it's audited, not narrated. The
