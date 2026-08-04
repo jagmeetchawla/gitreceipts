@@ -24,7 +24,7 @@ use crate::report::{Filter, Show};
 /// expected to evolve: the shape is not yet stable, so consumers should not
 /// assume compatibility across minor bumps. A future "1.0" is the stability
 /// commitment; a breaking change before then bumps the minor.
-pub const SCHEMA_VERSION: &str = "0.6";
+pub const SCHEMA_VERSION: &str = "0.7";
 
 /// The privacy caution stamped on every receipt (single-repo and project).
 const NOTICE: &str = "Private audit report — built from chat/agent logs, git contents, \
@@ -189,7 +189,12 @@ pub struct Ingest {
 #[derive(Debug, Serialize)]
 pub struct Summary {
     pub prompts: usize,
+    /// Commits in the equation — the agent's OWN commits by default, or every
+    /// in-window commit under `--full-history`.
     pub commits: usize,
+    /// Non-agent commits (teammate commits, pulls, pre-agent history) held OUT
+    /// of the equation — 0 under `--full-history`. Context, not the agent's work.
+    pub keyframes_excluded: usize,
     pub file_claims: usize,
     pub commands: usize,
     pub mcp_calls: usize,
@@ -538,6 +543,9 @@ impl Receipt {
             .intervals
             .iter()
             .enumerate()
+            // Default: hold out non-agent keyframes (teammate commits, pulls) —
+            // they aren't the agent's account. --full-history includes them.
+            .filter(|(_, i)| audit.full_history || i.agent_committed)
             .filter(|(_, i)| commit.is_none_or(|h| i.commit.hash == h))
             .filter(|(_, i)| filter.keeps(i.status()))
             .map(|(idx, i)| {
@@ -550,29 +558,15 @@ impl Receipt {
             })
             .collect();
 
-        let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
-        let claims_landed: usize = audit
-            .intervals
-            .iter()
-            .flat_map(|i| i.ledger.iter())
-            .filter(|l| l.landing != Landing::Never)
-            .count();
-        let broken_promises: usize = audit
-            .intervals
-            .iter()
-            .flat_map(|i| i.never_landed())
-            .count();
-        let green = audit.intervals.iter().filter(|i| i.balanced()).count();
-        let amber = audit
-            .intervals
-            .iter()
-            .filter(|i| i.status() == Status::Amber)
-            .count();
-        let red = audit
-            .intervals
-            .iter()
-            .filter(|i| i.status() == Status::Red)
-            .count();
+        // Headline counts over the EQUATION set (agent's own commits by default,
+        // all under --full-history) — the same source console and HTML use.
+        let counts = audit.counts();
+        let claims_total = counts.claims_total;
+        let claims_landed = counts.claims_landed;
+        let broken_promises = counts.broken;
+        let green = counts.green;
+        let amber = counts.amber;
+        let red = counts.red;
 
         // --no-identity drops the names (like --no-intent drops prompt text):
         // the roll-up and per-commit author/co-authors go empty. agent_committed
@@ -597,7 +591,8 @@ impl Receipt {
         let tk = &session.tokens;
         let summary = Summary {
             prompts: audit.prompts,
-            commits: audit.intervals.len(),
+            commits: counts.total,
+            keyframes_excluded: counts.keyframes_excluded,
             file_claims: audit.file_claims,
             commands: audit.commands,
             mcp_calls: audit.mcp_calls,
@@ -619,7 +614,7 @@ impl Receipt {
                 green,
                 amber,
                 red,
-                total: audit.intervals.len(),
+                total: counts.total,
             },
             provenance: Provenance {
                 landed: claims_landed,

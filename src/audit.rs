@@ -99,16 +99,37 @@ pub fn run(
     redact: Vec<String>,
     scan: bool,
     agent: report::Agent,
+    full_history: bool,
 ) -> Result<()> {
     // Project mode: one header, then each repo under the folder reported in turn.
     if let Some(project) = project {
         return run_project(
-            project, sessions, latest, all, store, no_pager, opts, redact, scan, agent,
+            project,
+            sessions,
+            latest,
+            all,
+            store,
+            no_pager,
+            opts,
+            redact,
+            scan,
+            agent,
+            full_history,
         );
     }
     let loaded = {
         let _status = Status::show("git receipts: auditing… reconciling against git");
-        load(sessions, latest, all, repo, store, &redact, scan, agent)?
+        load(
+            sessions,
+            latest,
+            all,
+            repo,
+            store,
+            &redact,
+            scan,
+            agent,
+            full_history,
+        )?
     };
     let Loaded {
         name,
@@ -175,6 +196,7 @@ fn run_project(
     redact: Vec<String>,
     scan: bool,
     agent: report::Agent,
+    full_history: bool,
 ) -> Result<()> {
     if !sessions.is_empty() {
         bail!("--project audits the folder's own sessions; don't also pass session file(s)");
@@ -207,6 +229,7 @@ fn run_project(
                     &redact,
                     scan,
                     agent,
+                    full_history,
                 )
             })
             .collect::<Result<Vec<_>>>()?
@@ -362,6 +385,7 @@ pub fn load(
     redact: &[String],
     scan: bool,
     agent: report::Agent,
+    full_history: bool,
 ) -> Result<Loaded> {
     let store = resolve_store(store)?;
     let anchor = || {
@@ -418,7 +442,9 @@ pub fn load(
         },
     };
 
-    let audit = reconcile::reconcile(&repo_path, &session_data)?;
+    let mut audit = reconcile::reconcile(&repo_path, &session_data)?;
+    // reconcile always leaves full_history false; the caller sets it from --full-history.
+    audit.full_history = full_history;
     Ok(Loaded {
         name: session_name(&session_paths),
         repo_display: repo_path.display().to_string(),

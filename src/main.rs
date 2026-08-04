@@ -186,6 +186,14 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// pager; a pipe or redirect never does.)
         #[arg(long)]
         no_pager: bool,
+        /// Include the WHOLE in-window spine, not just your own commits. By
+        /// default the verdict/balance/spine cover only the commits THIS agent
+        /// made — so adopting agentic development on an existing codebase
+        /// doesn't drown you in residue for the team's pre-existing history.
+        /// Pass this to audit every in-window commit (teammate commits, pulls,
+        /// merges) as before.
+        #[arg(long)]
+        full_history: bool,
     },
     /// Export the reconciled audit as a versioned JSON receipt.
     #[command(
@@ -298,6 +306,10 @@ EXAMPLES:
         /// Emit single-line JSON instead of indented (for streaming/piping).
         #[arg(long)]
         compact: bool,
+        /// Include the WHOLE in-window spine in the receipt, not just this
+        /// agent's own commits (the default). See `audit --full-history`.
+        #[arg(long)]
+        full_history: bool,
     },
 }
 
@@ -336,6 +348,7 @@ fn main() -> Result<()> {
             redact,
             no_scan,
             no_pager,
+            full_history,
         } => audit::run(
             sessions,
             latest,
@@ -368,6 +381,7 @@ fn main() -> Result<()> {
             redact,
             !no_scan,
             agent,
+            full_history,
         ),
         Cmd::Export {
             sessions,
@@ -388,6 +402,7 @@ fn main() -> Result<()> {
             no_scan,
             full,
             compact,
+            full_history,
         } => export::run(
             sessions,
             latest,
@@ -408,6 +423,7 @@ fn main() -> Result<()> {
             redact,
             !no_scan,
             agent,
+            full_history,
         ),
     }
 }

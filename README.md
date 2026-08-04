@@ -331,6 +331,21 @@ them, so commits older than your oldest surviving session will show as
 unclaimed keyframes. The event model is deliberately harness-neutral;
 adapters for other agent CLIs are on the roadmap.
 
+## Your commits, not the whole repo
+
+By default the verdict, balance, and spine cover **only the commits this agent
+made**. Commits in the same window that the agent *didn't* make — a teammate's
+push, a `git pull`/merge, your own hand-commits, an existing codebase's history
+swept into the window — are **held out** as context, never counted as the
+agent's residue or broken promises. This is what makes gitreceipts usable when
+you adopt agentic development **on top of a mature codebase**: you get an account
+of *your agent's* work, not a wall of red for years of history it never touched.
+
+Pass `--full-history` to put every in-window commit back in the equation (the
+older whole-history behavior). A count of what was held out is always shown, so
+nothing is hidden — e.g. *"99 agent commits · 3 commits by others held out."*
+(`--baseline <ref>` to pin the reference commit explicitly is on the roadmap.)
+
 ## Projects — several repos, one session
 
 Most of the time the working directory **is** the repo (`git init`, `cd`,

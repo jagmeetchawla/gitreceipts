@@ -287,6 +287,31 @@ pub struct Audit {
     pub mcp_errored: usize,
     pub mcp_aborted: usize,
     pub observations: usize,
+    /// Audit the WHOLE in-window spine, including commits this agent did not
+    /// make (teammate commits, pulls/merges, pre-agent history swept into the
+    /// window). Default false: the verdict/balance/spine cover only the agent's
+    /// OWN commits — the honest picture when agentic development sits on top of
+    /// an existing codebase. `--full-history` sets it true (the old behavior).
+    /// Set by the caller after `reconcile` (which always leaves it false).
+    pub full_history: bool,
+}
+
+/// The headline numbers, computed over the equation set once so console, HTML,
+/// and JSON never disagree. "Equation set" = the agent's own commits by default,
+/// or every interval under `--full-history`.
+#[derive(Debug, Clone, Copy)]
+pub struct Counts {
+    pub green: usize,
+    pub amber: usize,
+    pub red: usize,
+    pub total: usize,
+    pub claims_total: usize,
+    pub claims_landed: usize,
+    /// Never-landed unexplained claims (the broken-promise headline).
+    pub broken: usize,
+    /// Non-agent commits excluded from the equation (0 under --full-history) —
+    /// reported as context, never as the agent's residue or broken promises.
+    pub keyframes_excluded: usize,
 }
 
 impl Audit {
@@ -358,34 +383,81 @@ impl Audit {
         set.len()
     }
 
-    /// The whole audit's verdict = the strongest interval color: Red if any
-    /// interval is red (a broken promise), else Amber if any is amber (residue
-    /// or an execution error), else Green. The same max-color rule an interval
-    /// mark uses, lifted to the repo.
+    /// The intervals that shape the verdict/balance: the agent's OWN commits,
+    /// or every interval under `--full-history`. Non-agent keyframes (teammate
+    /// commits, pulls, pre-agent history) are context, not the agent's account.
+    pub fn equation(&self) -> impl Iterator<Item = &Interval> {
+        let full = self.full_history;
+        self.intervals
+            .iter()
+            .filter(move |i| full || i.agent_committed)
+    }
+
+    /// Non-agent commits held OUT of the equation (0 under --full-history) —
+    /// surfaced as a context count, never counted as the agent's work.
+    pub fn keyframes_excluded(&self) -> usize {
+        if self.full_history {
+            0
+        } else {
+            self.intervals.iter().filter(|i| !i.agent_committed).count()
+        }
+    }
+
+    /// The whole audit's verdict = the strongest color across the equation set:
+    /// Red if any equation interval is red (a broken promise), else Amber if any
+    /// is amber, else Green. A teammate's keyframe never sets your verdict.
     pub fn verdict(&self) -> Status {
-        if self.intervals.iter().any(|i| i.status() == Status::Red) {
+        if self.equation().any(|i| i.status() == Status::Red) {
             Status::Red
-        } else if self.intervals.iter().any(|i| i.status() == Status::Amber) {
+        } else if self.equation().any(|i| i.status() == Status::Amber) {
             Status::Amber
         } else {
             Status::Green
         }
     }
 
+    /// The headline numbers over the equation set — the single source console,
+    /// HTML, and JSON all render, so they cannot drift.
+    pub fn counts(&self) -> Counts {
+        let mut c = Counts {
+            green: 0,
+            amber: 0,
+            red: 0,
+            total: 0,
+            claims_total: 0,
+            claims_landed: 0,
+            broken: 0,
+            keyframes_excluded: self.keyframes_excluded(),
+        };
+        for i in self.equation() {
+            c.total += 1;
+            match i.status() {
+                Status::Green => c.green += 1,
+                Status::Amber => c.amber += 1,
+                Status::Red => c.red += 1,
+            }
+            c.claims_total += i.ledger.len();
+            c.claims_landed += i
+                .ledger
+                .iter()
+                .filter(|l| l.landing != Landing::Never)
+                .count();
+            c.broken += i.never_landed().count();
+        }
+        c
+    }
+
     /// One repo's headline numbers — the row a `--project` roll-up prints and
-    /// the JSON wrapper carries. Computed once so console and JSON agree.
+    /// the JSON wrapper carries. Computed once (over the equation set) so console
+    /// and JSON agree.
     pub fn landing_summary(&self) -> LandingSummary {
+        let c = self.counts();
         LandingSummary {
             verdict: self.verdict(),
-            commits: self.intervals.len(),
-            claims: self.intervals.iter().map(|i| i.ledger.len()).sum(),
-            landed: self
-                .intervals
-                .iter()
-                .flat_map(|i| i.ledger.iter())
-                .filter(|l| l.landing != Landing::Never)
-                .count(),
-            broken: self.intervals.iter().flat_map(|i| i.never_landed()).count(),
+            commits: c.total,
+            claims: c.claims_total,
+            landed: c.claims_landed,
+            broken: c.broken,
             residue_files: self.residue_files(),
         }
     }

@@ -34,6 +34,7 @@ pub fn run(
     redact: Vec<String>,
     scan: bool,
     agent: gitreceipts::report::Agent,
+    full_history: bool,
 ) -> Result<()> {
     if let Some(project) = project {
         return run_project(
@@ -52,6 +53,7 @@ pub fn run(
             redact,
             scan,
             agent,
+            full_history,
         );
     }
 
@@ -64,7 +66,17 @@ pub fn run(
         audit,
     } = {
         let _status = audit::Status::show("git receipts: preparing data for export…");
-        audit::load(sessions, latest, all, repo, store, &redact, scan, agent)?
+        audit::load(
+            sessions,
+            latest,
+            all,
+            repo,
+            store,
+            &redact,
+            scan,
+            agent,
+            full_history,
+        )?
     };
 
     // Resolve --commit against the actual spine (fails on unknown/ambiguous).
@@ -116,6 +128,7 @@ fn run_project(
     redact: Vec<String>,
     scan: bool,
     agent: gitreceipts::report::Agent,
+    full_history: bool,
 ) -> Result<()> {
     if !sessions.is_empty() {
         bail!("--project exports the folder's own sessions; don't also pass session file(s)");
@@ -152,6 +165,7 @@ fn run_project(
             &redact,
             scan,
             agent,
+            full_history,
         )?;
         let landing = loaded.audit.landing_summary();
         let receipt = Receipt::build(

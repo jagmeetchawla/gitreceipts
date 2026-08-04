@@ -15,7 +15,7 @@ mod types;
 
 pub use matching::longest_prefix;
 pub use types::{
-    Audit, CommandRun, Exceptions, Grade, GradeCount, Interval, Landing, LandingSummary,
+    Audit, CommandRun, Counts, Exceptions, Grade, GradeCount, Interval, Landing, LandingSummary,
     LedgerLine, McpRun, RadiusCount, SiblingWrites, Status, Superseded,
 };
 
@@ -169,6 +169,9 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         mcp_errored: 0,
         mcp_aborted: 0,
         observations: 0,
+        // Default: verdict/balance cover the agent's own commits. The caller
+        // flips this on for --full-history after reconcile returns.
+        full_history: false,
     };
 
     for prompt in &session.prompts {

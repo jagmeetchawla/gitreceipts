@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 use crate::extract::Session;
 use crate::fmt::{abbrev, command_summary, redact_home, tilde};
 use crate::ingest::IngestStats;
-use crate::reconcile::{Audit, Landing, Status};
+use crate::reconcile::{Audit, Status};
 use crate::report::{Expand, Show};
 
 /// Redact, then HTML-escape. This is the single sanitizer every dynamic string
@@ -64,38 +64,22 @@ fn render_body(
     show_notice: bool,
     filter_controls: bool,
 ) -> String {
-    let total = audit.intervals.len();
-    let green = audit.intervals.iter().filter(|i| i.balanced()).count();
-    let red = audit
-        .intervals
-        .iter()
-        .filter(|i| i.status() == Status::Red)
-        .count();
-    let amber = audit
-        .intervals
-        .iter()
-        .filter(|i| i.status() == Status::Amber)
-        .count();
-    // Your unexplained residue — unique files in your own commits (deduped, not
-    // per-commit occurrences, not another contributor's keyframe residue). The
-    // honest "residue" tile: ~11, not the 345 a per-interval sum would show.
+    // Headline counts over the EQUATION set (agent's own commits by default,
+    // everything under --full-history) — same source as console/JSON, so a
+    // teammate's keyframe never shapes the numbers.
+    let c = audit.counts();
+    let total = c.total;
+    let green = c.green;
+    let red = c.red;
+    let amber = c.amber;
+    let claims_total = c.claims_total;
+    let claims_landed = c.claims_landed;
+    let broken = c.broken;
+    let keyframes_excluded = c.keyframes_excluded;
+    // Your unexplained residue — unique files in your own commits (deduped).
     let residue_files = audit.residue_files();
-    // Broken PROMISES = never-landed unexplained CLAIMS (the headline metric),
-    // not the red-interval count — several can sit in one red interval. Used by
-    // the stat tile AND the bottomline so the HTML agrees with console/JSON; the
-    // red-interval count still appears in the balance line below.
-    let broken = audit
-        .intervals
-        .iter()
-        .flat_map(|i| i.never_landed())
-        .count();
-    let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
-    let claims_landed: usize = audit
-        .intervals
-        .iter()
-        .flat_map(|i| i.ledger.iter())
-        .filter(|l| l.landing != Landing::Never)
-        .count();
+    let full_history = audit.full_history;
+    let in_eq = |iv: &crate::reconcile::Interval| full_history || iv.agent_committed;
     let pct = |n: usize, d: usize| {
         if d == 0 {
             100.0
@@ -216,11 +200,16 @@ fn render_body(
     );
 
     // ---- controls ------------------------------------------------------
-    let _ = write!(
-        b,
-        "<div class=\"controls\"><h2>interval spine — {total} commits ({} agent-committed)</h2>",
-        audit.intervals.iter().filter(|i| i.agent_committed).count(),
-    );
+    let spine_h = if full_history {
+        format!("interval spine — {total} commits")
+    } else if keyframes_excluded > 0 {
+        format!(
+            "interval spine — {total} agent commits <span class=\"dim\">({keyframes_excluded} by others held out; --full-history to include)</span>"
+        )
+    } else {
+        format!("interval spine — {total} agent commits")
+    };
+    let _ = write!(b, "<div class=\"controls\"><h2>{spine_h}</h2>");
     if filter_controls {
         b.push_str(FILTER_HTML);
     }
@@ -233,6 +222,10 @@ fn render_body(
         if let Some(h) = commit
             && iv.commit.hash != h
         {
+            continue;
+        }
+        // Default: hold out non-agent keyframes — they aren't the agent's account.
+        if !in_eq(iv) {
             continue;
         }
         let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);

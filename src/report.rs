@@ -395,29 +395,17 @@ pub fn print(
         audit.radii.read_only
     );
 
-    let green = audit.intervals.iter().filter(|i| i.balanced()).count();
-    let total = audit.intervals.len();
-    let red_n = audit
-        .intervals
-        .iter()
-        .filter(|i| i.status() == Status::Red)
-        .count();
-    let residue_n = audit
-        .intervals
-        .iter()
-        .filter(|i| i.status() == Status::Amber)
-        .count();
-    let claims_total: usize = audit.intervals.iter().map(|i| i.ledger.len()).sum();
-    let claims_landed: usize = audit
-        .intervals
-        .iter()
-        .map(|i| {
-            i.ledger
-                .iter()
-                .filter(|l| l.landing != crate::reconcile::Landing::Never)
-                .count()
-        })
-        .sum();
+    // Headline counts over the EQUATION set (the agent's own commits by default,
+    // everything under --full-history) — one source, so console/HTML/JSON agree
+    // and a teammate's keyframe never shapes your numbers.
+    let c = audit.counts();
+    let green = c.green;
+    let total = c.total;
+    let red_n = c.red;
+    let residue_n = c.amber;
+    let claims_total = c.claims_total;
+    let claims_landed = c.claims_landed;
+    let keyframes_excluded = c.keyframes_excluded;
     // Exception + attribution aggregates — computed once on the Audit and shared
     // with the HTML and JSON receipt, so all three surfaces show the same numbers.
     let ex = audit.exceptions();
@@ -696,18 +684,35 @@ pub fn print(
             }
         }
     };
-    println!(
-        "{}",
-        st.bold(&format!(
+    let spine_header = if audit.full_history {
+        format!(
             "interval spine: {} commits ({} agent-committed, {} unclaimed keyframes){}{}",
-            audit.intervals.len(),
-            agent_commits,
-            keyframes,
-            source_note,
+            total, agent_commits, keyframes, source_note, filter_note
+        )
+    } else {
+        // Default: the spine IS the agent's own commits; commits by others in the
+        // window are held out (a teammate's work is not the agent's account).
+        let held = if keyframes_excluded > 0 {
+            format!(
+                " · {keyframes_excluded} commit{} by others held out ({})",
+                if keyframes_excluded == 1 { "" } else { "s" },
+                st.dim("--full-history to include")
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "interval spine: {} agent commit{}{}{}",
+            total,
+            if total == 1 { "" } else { "s" },
+            held,
             filter_note
-        ))
-    );
+        )
+    };
+    println!("{}", st.bold(&spine_header));
 
+    let full_history = audit.full_history;
+    let in_eq = |iv: &Interval| full_history || iv.agent_committed;
     // --commit scoping returned early above, so `opts.commit` is None here.
     if opts.oneline {
         // Terse spine: a column header, then one line per commit — the
@@ -720,13 +725,13 @@ pub fn print(
             ))
         );
         for interval in &audit.intervals {
-            if opts.filter.keeps(interval.status()) {
+            if in_eq(interval) && opts.filter.keeps(interval.status()) {
                 render_oneline_row(&st, interval);
             }
         }
     } else {
         for (i, interval) in audit.intervals.iter().enumerate() {
-            if opts.filter.keeps(interval.status()) {
+            if in_eq(interval) && opts.filter.keeps(interval.status()) {
                 let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
                 let prov = commit_provenance(session, after, interval.commit.ts, multi_model);
                 let cost = session.cost_in(after, Some(interval.commit.ts));

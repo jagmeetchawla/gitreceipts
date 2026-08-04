@@ -135,6 +135,69 @@ fn sibling_writes_collapse_to_a_count_without_paths() {
 }
 
 #[test]
+fn a_teammates_commit_is_held_out_of_the_equation_by_default() {
+    // Baseline-relative default: the verdict/balance cover the agent's OWN
+    // commits. A teammate's commit that lands in the same window (the mature-
+    // codebase case) is a keyframe — held out by default, counted only under
+    // --full-history. This is what stops a fresh adopter from drowning in
+    // "residue" for their team's pre-existing history.
+    let repo = TempRepo::new("team");
+    let root = repo.root.display().to_string();
+
+    // the agent's own commit (created via a session Bash claim)
+    repo.write("a.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "agent"],
+        Some("2026-01-01T10:00:20Z"),
+    );
+    // a teammate's commit, in-window, NOT made by the session — a keyframe.
+    // (unclaimed files → it would go amber under the old whole-history model)
+    repo.write("b.txt", "y");
+    repo.write("c.txt", "z");
+    repo.git(&["add", "-A"]);
+    repo.commit_as(
+        "Tess",
+        "tess@example.com",
+        "2026-01-01T10:00:40+00:00",
+        "teammate work",
+        None,
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "go")
+        .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+        .bash_claim(
+            "2026-01-01T10:00:19Z",
+            "2026-01-01T10:00:21Z",
+            "git add -A && git commit -m agent",
+        );
+    let mut audit = run(&repo, &s);
+
+    // both commits are on the spine; exactly one is the agent's
+    assert_eq!(audit.intervals.len(), 2, "agent commit + teammate keyframe");
+    assert_eq!(
+        audit.intervals.iter().filter(|i| i.agent_committed).count(),
+        1,
+        "only the agent's commit is agent-committed"
+    );
+
+    // DEFAULT (baseline-relative): the equation is the agent's own commit; the
+    // teammate keyframe is held out and never shapes the verdict.
+    assert!(!audit.full_history);
+    let c = audit.counts();
+    assert_eq!(c.total, 1, "only the agent's commit counts");
+    assert_eq!(c.keyframes_excluded, 1, "the teammate commit is held out");
+    assert_eq!(audit.verdict(), audit.intervals[0].status());
+
+    // --full-history: the whole in-window spine is back in the equation.
+    audit.full_history = true;
+    let c = audit.counts();
+    assert_eq!(c.total, 2, "both commits count");
+    assert_eq!(c.keyframes_excluded, 0);
+}
+
+#[test]
 fn a_deletion_is_never_red() {
     // A commit that DELETES a file is a change git recorded, not a claimed edit
     // that failed to land. Deletions are intentional; RED is reserved for a
