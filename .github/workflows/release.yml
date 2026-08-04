@@ -10,6 +10,10 @@ on:
 
 permissions:
   contents: write
+  # Build-provenance attestations: cryptographically link each tarball to the
+  # exact commit + workflow run that built it (Sigstore, via GitHub OIDC).
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -60,6 +64,10 @@ jobs:
         with: { merge-multiple: true }
       - name: combined checksums
         run: cat *.sha256 > SHA256SUMS
+      - name: attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "git-receipts-*.tar.gz"
       - name: create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,5 +82,5 @@ jobs:
               '' \
               'Install alternatives: `cargo install gitreceipts` · Homebrew tap `cloudcraft-ai/tap`.' \
               '' \
-              'Verify downloads against `SHA256SUMS`.')" \
+              'Verify downloads against `SHA256SUMS` — and verify provenance (which commit + which CI run built each tarball) with `gh attestation verify <file> -R cloudcraft-ai/gitreceipts`.')" \
             git-receipts-*.tar.gz SHA256SUMS

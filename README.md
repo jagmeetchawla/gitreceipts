@@ -178,6 +178,47 @@ interpretation.** Verification is content-level (claimed bytes checked
 against later blobs), not name-level, so a coincidental change to the
 same file cannot launder a lost claim.
 
+## Tests, QA, and our own dogfood
+
+A tool that audits agents should show its receipts. Three layers:
+
+**Tests.** 100+ unit and end-to-end tests, heavy on the adversarial cases the
+reconciliation has to survive: amend collapse, git's second-granular
+timestamps, forged/anomalous clocks (the reflog sandwich), multi-commit Bash
+calls, partial staging, files relocated before their first commit, a
+teammate's commit landing mid-window, hostile HTML in prompts, home-path
+redaction. Every behavior a real session exercised is pinned by a test.
+
+**Cross-format reconciliation QA.** A harness runs the shipped binary across
+every CLI switch on real repos and checks *invariants*, not golden files:
+exit codes, JSON parses, HTML is self-contained, no home-path leaks — and the
+core promise, that **console, HTML, and JSON render identical numbers**,
+verified to the digit (~15 headline and exception counts per repo, plus the
+`--project` roll-up across all three formats). This harness has caught real
+bugs before every release; nothing ships while any number disagrees.
+
+**Dogfood.** gitreceipts was built by a coding agent and audited with itself,
+alongside every other agent-driven project on this machine: **14 sessions ·
+11 repos · 5 projects · ~221k LOC across Swift, Rust, Svelte, Astro, and
+Tauri · 106 days · 3 models · 836 agent commits · 1,719 file claims — 96%
+landed in git, every exception diagnosed**, and 50 broken promises each
+carrying its reason. The largest subject is a ~115k-LOC macOS app with 7
+sessions coordinating across 3 git worktrees. gitreceipts' own repo, audited
+by the shipped binary: 316/316 claims landed, 0 broken promises — earned,
+not asserted.
+
+**Release provenance.** Every release tarball is built by a public GitHub
+Actions run (tests execute per-target) and carries a **build-provenance
+attestation** cryptographically linking it to the exact commit and workflow
+run that produced it:
+
+```sh
+gh attestation verify git-receipts-*.tar.gz -R cloudcraft-ai/gitreceipts
+```
+
+Checksums ship beside the binaries (`SHA256SUMS`). The same standard we hold
+agents to — don't trust the claim, verify the receipt — applies to us.
+
 ## Install
 
 ```sh
