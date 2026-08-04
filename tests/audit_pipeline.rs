@@ -364,3 +364,83 @@ fn multibyte_commit_subject_does_not_panic_the_console_report() {
         false,
     );
 }
+
+#[test]
+fn project_html_is_one_self_contained_page_with_a_section_per_repo() {
+    // A --project HTML page must be ONE self-contained document: a single
+    // doctype/notice/filter/closing, the landing table, and one section per
+    // repo. The single-repo shell parts (notice, color filter) appear exactly
+    // once, not once per section.
+    let build = |name: &str| {
+        let repo = TempRepo::new(name);
+        let root = repo.root.display().to_string();
+        repo.write("a.txt", "x");
+        repo.git(&["add", "-A"]);
+        repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:20Z"));
+        let mut s = SessionBuilder::new(&root);
+        s.user_text("2026-01-01T10:00:00Z", "go")
+            .write_claim("2026-01-01T10:00:05Z", "2026-01-01T10:00:06Z", "a.txt")
+            .bash_claim(
+                "2026-01-01T10:00:19Z",
+                "2026-01-01T10:00:21Z",
+                "git add -A && git commit -m one",
+            );
+        let path = repo.root.join("s.jsonl");
+        s.save(&path);
+        let (records, stats) = ingest::ingest(&path).unwrap();
+        let session = extract::extract(&causal::order(records));
+        let audit = reconcile::reconcile(&repo.root, &session).unwrap();
+        (repo, root, session, stats, audit)
+    };
+    let (_r1, root1, sess1, stats1, audit1) = build("alpha");
+    let (_r2, root2, sess2, stats2, audit2) = build("beta");
+
+    let sections = vec![
+        html::HtmlSection {
+            name: "alpha",
+            session_name: "s",
+            repo: &root1,
+            session: &sess1,
+            stats: &stats1,
+            audit: &audit1,
+        },
+        html::HtmlSection {
+            name: "beta",
+            session_name: "s",
+            repo: &root2,
+            session: &sess2,
+            stats: &stats2,
+            audit: &audit2,
+        },
+    ];
+    let page = html::render_project(
+        "/tmp/myproject",
+        &sections,
+        report::Show {
+            prompt: true,
+            summary: true,
+        },
+        true,
+        report::Expand::Auto,
+        false,
+        false,
+    );
+
+    let count = |needle: &str| page.matches(needle).count();
+    assert_eq!(count("<!doctype html>"), 1, "one document");
+    assert_eq!(count("</body></html>"), 1, "one closing");
+    assert_eq!(count("private audit report"), 1, "notice appears once");
+    assert_eq!(count("id=\"f-all\""), 1, "one global color filter");
+    assert_eq!(count("class=\"repo-section\""), 2, "one section per repo");
+    assert!(
+        page.contains("class=\"landing\""),
+        "the roll-up table is present"
+    );
+    // self-contained: no external stylesheet/script/image
+    assert!(
+        !page.contains("<link") && !page.contains("src=\"http") && !page.contains("href=\"http"),
+        "must not reference external assets"
+    );
+    // both repos appear in the landing table
+    assert!(page.contains(">alpha</a>") && page.contains(">beta</a>"));
+}

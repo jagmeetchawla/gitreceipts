@@ -43,8 +43,13 @@ fn esc(s: &str) -> String {
 const STYLE: &str = include_str!("html/report.css");
 const SCRIPT: &str = include_str!("html/report.js");
 
+/// One repo's report body: the sub-header through the balance line — everything
+/// except the document shell (doctype/head/`<h1>`) and footer, which the page
+/// owns. `show_notice` prints the privacy notice (once per page, so a project
+/// page passes false on sections); `filter_controls` prints the color filter
+/// (a project page has ONE global filter instead of one per section).
 #[allow(clippy::too_many_arguments)]
-pub fn render(
+fn render_body(
     session_name: &str,
     repo: &str,
     session: &Session,
@@ -56,6 +61,8 @@ pub fn render(
     with_output: bool,
     commit: Option<&str>,
     full: bool,
+    show_notice: bool,
+    filter_controls: bool,
 ) -> String {
     let total = audit.intervals.len();
     let green = audit.intervals.iter().filter(|i| i.balanced()).count();
@@ -100,15 +107,10 @@ pub fn render(
 
     let mut b = String::with_capacity(64 * 1024);
 
-    // ---- document head -------------------------------------------------
+    // ---- section sub-header (session + repo + window) ------------------
     let _ = write!(
         b,
-        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n\
-         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-         <title>git receipts — {name}</title>\n<style>{STYLE}</style>\n</head><body>\n\
-         <div class=\"wrap\">\n\
-         <h1><span class=\"cmd\">git receipts</span> — what your agent actually did</h1>\n\
-         <div class=\"sub\">{name}<br>repo {repo}",
+        "<div class=\"sub\">{name}<br>repo {repo}",
         name = esc(session_name),
         repo = esc(&tilde(repo)),
     );
@@ -125,17 +127,13 @@ pub fn render(
     }
     b.push_str("</div>\n");
 
-    // ---- privacy notice ------------------------------------------------
+    // ---- privacy notice (once per page) --------------------------------
     // These reports bundle chat/agent logs, git contents, and command output
     // — private by default. Warn before anyone shares one. Unconditional:
     // --no-intent/--no-identity/--redact reduce exposure but don't remove it.
-    b.push_str(
-        "<div class=\"notice\"><b>\u{26a0} private audit report</b> \u{2014} \
-         built from your chat &amp; agent logs, code and history from git, and the \
-         output of the commands that ran. It is meant for developers to review and \
-         audit their own work, and can contain sensitive detail. Handle it with \
-         extreme caution and treat it like any private record before sharing.</div>\n",
-    );
+    if show_notice {
+        b.push_str(NOTICE_HTML);
+    }
 
     // ---- meta line -----------------------------------------------------
     let dup = if stats.duplicates > 0 {
@@ -220,15 +218,13 @@ pub fn render(
     // ---- controls ------------------------------------------------------
     let _ = write!(
         b,
-        "<div class=\"controls\"><h2>interval spine — {total} commits ({} agent-committed)</h2>\
-         <fieldset class=\"filter\">show \
-         <label><input type=\"checkbox\" id=\"f-all\" checked> all</label>\
-         <label class=\"c-green\"><input type=\"checkbox\" class=\"fc\" value=\"green\" checked> green</label>\
-         <label class=\"c-amber\"><input type=\"checkbox\" class=\"fc\" value=\"amber\" checked> amber</label>\
-         <label class=\"c-red\"><input type=\"checkbox\" class=\"fc\" value=\"red\" checked> red</label>\
-         </fieldset></div>\n<section class=\"ledger\">\n",
+        "<div class=\"controls\"><h2>interval spine — {total} commits ({} agent-committed)</h2>",
         audit.intervals.iter().filter(|i| i.agent_committed).count(),
     );
+    if filter_controls {
+        b.push_str(FILTER_HTML);
+    }
+    b.push_str("</div>\n<section class=\"ledger\">\n");
 
     // A per-commit model line only earns its place when the session spanned
     // more than one model; otherwise the header roll-up already covers it.
@@ -279,7 +275,41 @@ pub fn render(
         pct(green, total),
     );
 
-    // Secret-scanner tally — complete by here (accrues as the body is rendered).
+    b
+}
+
+/// The privacy notice — emitted once per page (a project page carries it in the
+/// masthead, not per section).
+const NOTICE_HTML: &str = "<div class=\"notice\"><b>\u{26a0} private audit report</b> \u{2014} \
+     built from your chat &amp; agent logs, code and history from git, and the \
+     output of the commands that ran. It is meant for developers to review and \
+     audit their own work, and can contain sensitive detail. Handle it with \
+     extreme caution and treat it like any private record before sharing.</div>\n";
+
+/// The color filter — one per page. A single-repo report puts it in its controls
+/// row; a project page puts one global filter above all the sections.
+const FILTER_HTML: &str = "<fieldset class=\"filter\">show \
+     <label><input type=\"checkbox\" id=\"f-all\" checked> all</label>\
+     <label class=\"c-green\"><input type=\"checkbox\" class=\"fc\" value=\"green\" checked> green</label>\
+     <label class=\"c-amber\"><input type=\"checkbox\" class=\"fc\" value=\"amber\" checked> amber</label>\
+     <label class=\"c-red\"><input type=\"checkbox\" class=\"fc\" value=\"red\" checked> red</label>\
+     </fieldset>";
+
+/// Open the document: doctype, head (title + inlined CSS), and the page `<h1>`.
+fn doc_head(b: &mut String, title: &str) {
+    let _ = write!(
+        b,
+        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
+         <title>git receipts — {title}</title>\n<style>{STYLE}</style>\n</head><body>\n\
+         <div class=\"wrap\">\n\
+         <h1><span class=\"cmd\">git receipts</span> — what your agent actually did</h1>\n",
+    );
+}
+
+/// Close the document: the secret-scanner tally (complete once every body has
+/// rendered), the footer, the inlined script, and the closing tags.
+fn doc_tail(b: &mut String) {
     let (secrets, pii) = crate::fmt::scan_counts();
     if secrets + pii > 0 {
         let _ = write!(
@@ -290,12 +320,146 @@ pub fn render(
             if pii == 1 { "" } else { "s" },
         );
     }
-
     b.push_str(
         "<footer>Generated by <code>git receipts</code>. Every line is derived from a receipt — \
          the log's own tool calls, or git's own diffs. Broken promises are content-verified, not assumed.</footer>\n",
     );
     let _ = write!(b, "<script>{SCRIPT}</script>\n</div>\n</body></html>\n");
+}
+
+/// A single-repo HTML report: the document shell wrapped around one report body.
+#[allow(clippy::too_many_arguments)]
+pub fn render(
+    session_name: &str,
+    repo: &str,
+    session: &Session,
+    stats: &IngestStats,
+    audit: &Audit,
+    show: Show,
+    show_identity: bool,
+    expand: Expand,
+    with_output: bool,
+    commit: Option<&str>,
+    full: bool,
+) -> String {
+    let mut b = String::with_capacity(64 * 1024);
+    doc_head(&mut b, &esc(session_name));
+    b.push_str(&render_body(
+        session_name,
+        repo,
+        session,
+        stats,
+        audit,
+        show,
+        show_identity,
+        expand,
+        with_output,
+        commit,
+        full,
+        true,
+        true,
+    ));
+    doc_tail(&mut b);
+    b
+}
+
+/// One repo's slice of a `--project` HTML page: the section header context plus
+/// the reconciled audit its body renders from. Uses only library types (the
+/// binary's `Loaded` can't cross into this crate).
+pub struct HtmlSection<'a> {
+    /// The repo's directory name — the section heading and landing-table row.
+    pub name: &'a str,
+    pub session_name: &'a str,
+    pub repo: &'a str,
+    pub session: &'a Session,
+    pub stats: &'a IngestStats,
+    pub audit: &'a Audit,
+}
+
+/// A `--project` HTML page: one masthead (project path + notice + where-it-landed
+/// roll-up + a single global color filter), then one section per repo — the HTML
+/// twin of `audit --project`. Self-contained, like the single-repo report.
+pub fn render_project(
+    project_display: &str,
+    sections: &[HtmlSection],
+    show: Show,
+    show_identity: bool,
+    expand: Expand,
+    with_output: bool,
+    full: bool,
+) -> String {
+    let mut b = String::with_capacity(128 * 1024);
+    // tilde the path first: it must never ship the home dir in the <title>.
+    doc_head(&mut b, &esc(&tilde(project_display)));
+    let _ = write!(
+        b,
+        "<div class=\"sub\">project {}<br>{} git repos with sessions</div>\n",
+        esc(&tilde(project_display)),
+        sections.len(),
+    );
+    b.push_str(NOTICE_HTML);
+
+    // ---- where-it-landed roll-up --------------------------------------
+    b.push_str(
+        "<table class=\"landing\"><caption>where it landed</caption><thead><tr>\
+         <th>repo</th><th>commits</th><th>landed</th><th>broken</th><th>residue</th><th>verdict</th>\
+         </tr></thead><tbody>\n",
+    );
+    for s in sections {
+        let l = s.audit.landing_summary();
+        let (cls, word) = match l.verdict {
+            Status::Green => ("good", "green"),
+            Status::Amber => ("warn", "amber"),
+            Status::Red => ("bad", "red"),
+        };
+        let _ = write!(
+            b,
+            "<tr><td><a href=\"#repo-{anchor}\">{name}</a></td><td>{commits}</td>\
+             <td>{landed}/{claims}</td><td class=\"{bk}\">{broken}</td>\
+             <td class=\"{rs}\">{residue}</td><td class=\"verdict {cls}\">\u{25cf} {word}</td></tr>\n",
+            anchor = esc(s.name),
+            name = esc(s.name),
+            commits = l.commits,
+            landed = l.landed,
+            claims = l.claims,
+            bk = if l.broken == 0 { "dim" } else { "bad" },
+            broken = l.broken,
+            rs = if l.residue_files == 0 { "dim" } else { "warn" },
+            residue = l.residue_files,
+        );
+    }
+    b.push_str("</tbody></table>\n");
+
+    // ---- one global color filter for the whole page -------------------
+    let _ = write!(b, "<div class=\"controls\">{FILTER_HTML}</div>\n");
+
+    // ---- one section per repo -----------------------------------------
+    for s in sections {
+        let _ = write!(
+            b,
+            "<section class=\"repo-section\" id=\"repo-{anchor}\"><h2 class=\"repo-h\">{name}</h2>\n",
+            anchor = esc(s.name),
+            name = esc(s.name),
+        );
+        b.push_str(&render_body(
+            s.session_name,
+            s.repo,
+            s.session,
+            s.stats,
+            s.audit,
+            show,
+            show_identity,
+            expand,
+            with_output,
+            None,
+            full,
+            false,
+            false,
+        ));
+        b.push_str("</section>\n");
+    }
+
+    doc_tail(&mut b);
     b
 }
 

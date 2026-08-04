@@ -280,6 +280,9 @@ git receipts audit --project ~/Developer/Projects/myproject
 
 # the JSON twin — a { project, summary, repos: [receipt, …] } wrapper
 git receipts export --project ~/Developer/Projects/myproject > project.json
+
+# the HTML twin — one self-contained page: masthead + roll-up + a section per repo
+git receipts audit --project ~/Developer/Projects/myproject --format html > project.html
 ```
 
 ## Receipts (JSON export)
@@ -349,7 +352,9 @@ glance — then a full section per repo. A folder that is itself a single repo (
 monorepo, one `.git` at the root) collapses to the ordinary single-repo report:
 project ≡ repo. `export --project` emits the JSON twin — a
 `{ project, summary, repos: [receipt, …] }` wrapper whose `summary.landing`
-mirrors the roll-up, so console and JSON reconcile.
+mirrors the roll-up — and `--format html` emits the HTML twin: one
+self-contained page with the masthead, the roll-up table, and a section per
+repo. All three formats reconcile.
 
 **Sibling protection.** Each repo's section shows only *that* repo. Writes its
 session made into a **sibling** project repo don't vanish and don't leak: they

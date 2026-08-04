@@ -115,6 +115,24 @@ details.section[open] > summary.section-h::before { transform: rotate(90deg); }
 .radtag.push { color: var(--amber); border-color: currentColor; }
 .radtag.fail { color: var(--amber); border-color: currentColor; }
 .radtag.mcp { color: var(--intent); border-color: currentColor; }
+/* --project: the where-it-landed roll-up and per-repo sections */
+.landing { width: 100%; border-collapse: collapse; margin: 1rem 0 1.5rem; font-size: 0.82rem; }
+.landing caption { text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); padding-bottom: 0.4rem; }
+.landing th { text-align: right; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); font-weight: 500; padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--rule); }
+.landing th:first-child { text-align: left; }
+.landing td { text-align: right; padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+.landing td:first-child { text-align: left; }
+.landing td a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.landing td.dim { color: var(--dim); }
+.landing td.warn { color: var(--amber); }
+.landing td.bad { color: var(--red); }
+.landing td.verdict { text-align: right; white-space: nowrap; }
+.landing td.verdict.good { color: var(--green); }
+.landing td.verdict.warn { color: var(--amber); }
+.landing td.verdict.bad { color: var(--red); }
+.repo-section { border-top: 2px solid var(--rule); margin-top: 2.5rem; padding-top: 0.5rem; }
+.repo-h { font-size: 1.05rem; font-weight: 600; color: var(--ink); margin: 0.5rem 0; }
+.repo-h::before { content: "\25a0  "; color: var(--accent); }
 .mark { font-weight: 700; }
 .interval.green .mark { color: var(--green); }
 .interval.amber .mark { color: var(--amber); }

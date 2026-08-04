@@ -176,9 +176,6 @@ fn run_project(
     scan: bool,
     agent: report::Agent,
 ) -> Result<()> {
-    if opts.format == report::Format::Html {
-        bail!("--project --format html is not supported yet — use the console view for now");
-    }
     if !sessions.is_empty() {
         bail!("--project audits the folder's own sessions; don't also pass session file(s)");
     }
@@ -214,6 +211,63 @@ fn run_project(
             })
             .collect::<Result<Vec<_>>>()?
     };
+
+    let repo_name = |repo: &Path| -> String {
+        repo.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("(repo)")
+            .to_string()
+    };
+
+    // HTML: one self-contained page — masthead + roll-up + a section per repo.
+    // (A single-repo project collapses to the ordinary single-repo report.)
+    if opts.format == report::Format::Html {
+        if let [only] = loaded.as_slice() {
+            print!(
+                "{}",
+                html::render(
+                    &only.name,
+                    &only.repo_display,
+                    &only.session,
+                    &only.stats,
+                    &only.audit,
+                    opts.show,
+                    opts.show_identity,
+                    opts.expand,
+                    opts.with_output,
+                    opts.commit.as_deref(),
+                    opts.full,
+                )
+            );
+            return Ok(());
+        }
+        let names: Vec<String> = repos.iter().map(|r| repo_name(r)).collect();
+        let sections: Vec<html::HtmlSection> = names
+            .iter()
+            .zip(&loaded)
+            .map(|(name, l)| html::HtmlSection {
+                name,
+                session_name: &l.name,
+                repo: &l.repo_display,
+                session: &l.session,
+                stats: &l.stats,
+                audit: &l.audit,
+            })
+            .collect();
+        print!(
+            "{}",
+            html::render_project(
+                &project.display().to_string(),
+                &sections,
+                opts.show,
+                opts.show_identity,
+                opts.expand,
+                opts.with_output,
+                opts.full,
+            )
+        );
+        return Ok(());
+    }
 
     let pager = start_pager(no_pager);
     if pager.is_some() && opts.color == report::ColorMode::Auto {
