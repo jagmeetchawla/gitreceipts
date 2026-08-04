@@ -200,8 +200,8 @@ The binary is `git-receipts`, which git picks up as a subcommand:
 `git receipts …`.
 
 **Verified on macOS (Apple Silicon) and Linux (x86_64).** The Intel macOS
-binary passes the full test suite on real Intel hardware in CI, but hasn't
-been hand-verified — reports welcome.
+binary passes the full test suite as x86_64 code (under Rosetta 2 translation
+in CI), but hasn't been hand-verified on Intel silicon — reports welcome.
 
 ## Usage
 
