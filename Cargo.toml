@@ -2,13 +2,25 @@
 name = "gitreceipts"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.90"
 description = "See what your agent actually did: reconcile a coding-agent session against the git history it claims to explain."
 license = "MIT"
 repository = "https://github.com/cloudcraft-ai/gitreceipts"
+readme = "README.md"
+keywords = ["git", "agent", "audit", "ai", "claude"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "git-receipts"
 path = "src/main.rs"
+
+# The shipped binary: thin, fast, honest-sized. LTO + one codegen unit for the
+# optimizer's full view; symbols stripped (backtraces aren't part of the UX —
+# errors are anyhow contexts).
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
 
 [dependencies]
 anyhow = "1"
