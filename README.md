@@ -39,6 +39,10 @@ mirror for your own work, not a badge to show anyone. Details in
 Here's what a session looks like after the audit:
 
 ```
+claims: 219 file mutations · 412 commands · 63 MCP calls · 187 observations
+  OS/FS: 412 commands · 3 failed · 1 aborted by you
+  MCP:    63 calls · 2 errored · 0 aborted by you
+
 intent → outcome
   173 prompts drove 52 commits; 214/219 claimed files landed (98%), 49 intervals fully balanced
   agent effort: 412 commands · ~5.0M output tokens across 3,413 requests (est., not billing)
@@ -208,6 +212,12 @@ What it **surfaces** — the rest of the story, honestly labeled:
 - **Agent effort** — the work behind each commit: commands, MCP calls, API
   requests, and an estimated token count (deduplicated per request; marked
   *estimated, not billing*).
+- **MCP calls** — first-class actions, not observations. Every call is
+  classified like a command: the server's own response is its receipt
+  (the `tool_result` is the oracle — receipted vs errored), and an
+  errored call tints the commit **amber**: worth a look, never
+  manufactured into red. Your own aborts count as your stop, not the
+  agent's failure.
 - **Model provenance** — which model(s) produced the session, per commit. A
   mid-session switch (say Opus → Fable) shows exactly what wrote what.
   Reasoning effort rides along where the log records it, labeled with its
@@ -229,8 +239,10 @@ Think of it as bank reconciliation for agent work:
   commit created *between* two in-window commits stays in the audit no
   matter what its dates claim — dates are forgeable, creation order is not).
 - **The ledger** — the session log's own tool calls are the claims. File
-  edits carry their exact content; shell commands carry a blast radius and,
-  at best, captured output as a receipt.
+  edits carry their exact content. Shell commands carry a blast radius
+  and, at best, captured output as a receipt. MCP calls carry the
+  server's response as theirs — a second oracle next to the OS,
+  reported per-oracle in the header (`OS/FS: … failed · MCP: … errored`).
 - **The equation** — per interval, claims are matched against the statement.
   Green when it balances. Everything else is itemized, investigated, and
   labeled with its evidence:
