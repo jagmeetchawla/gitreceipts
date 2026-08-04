@@ -13,3 +13,4 @@
 *.html
 /*.json
 *.receipt.json
+qa/output/

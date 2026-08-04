@@ -223,7 +223,8 @@ exit codes, JSON parses, HTML is self-contained, no home-path leaks — and the
 core promise, that **console, HTML, and JSON render identical numbers**,
 verified to the digit (~15 headline and exception counts per repo, plus the
 `--project` roll-up across all three formats). This harness has caught real
-bugs before every release; nothing ships while any number disagrees.
+bugs before every release; nothing ships while any number disagrees. It
+ships in [`qa/`](qa/) — point it at your own repos.
 
 **Dogfood.** gitreceipts was built by a coding agent and audited with itself,
 alongside every other agent-driven project on this machine: **14 sessions ·
