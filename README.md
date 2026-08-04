@@ -199,9 +199,9 @@ cargo install --path .
 The binary is `git-receipts`, which git picks up as a subcommand:
 `git receipts …`.
 
-**Verified on macOS (Apple Silicon) and Linux (x86_64).** An Intel macOS
-binary is built from the same tagged source by CI but is unverified —
-reports welcome.
+**Verified on macOS (Apple Silicon) and Linux (x86_64).** The Intel macOS
+binary passes the full test suite on real Intel hardware in CI, but hasn't
+been hand-verified — reports welcome.
 
 ## Usage
 
