@@ -181,15 +181,27 @@ same file cannot launder a lost claim.
 ## Install
 
 ```sh
-# from source (Rust 1.90+)
+# crates.io (Rust 1.90+)
+cargo install gitreceipts
+
+# Homebrew
+brew install cloudcraft-ai/tap/gitreceipts
+
+# prebuilt binaries (checksums attached)
+# → https://github.com/cloudcraft-ai/gitreceipts/releases
+
+# from source
 git clone https://github.com/cloudcraft-ai/gitreceipts
 cd gitreceipts
 cargo install --path .
 ```
 
 The binary is `git-receipts`, which git picks up as a subcommand:
-`git receipts …`. Publication to crates.io and a Homebrew tap are
-planned.
+`git receipts …`.
+
+**Verified on macOS (Apple Silicon) and Linux (x86_64).** An Intel macOS
+binary is built from the same tagged source by CI but is unverified —
+reports welcome.
 
 ## Usage
 

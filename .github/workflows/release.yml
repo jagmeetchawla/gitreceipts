@@ -66,7 +66,7 @@ jobs:
             --notes "$(printf '%s\n' \
               'See what your agent actually did — reconcile a coding-agent session against git.' \
               '' \
-              'Built for macOS (Apple Silicon + Intel) and x86_64 Linux (static). Developed and dogfooded on macOS (Apple Silicon).' \
+              '**Verified on macOS (Apple Silicon) and Linux (x86_64).** The Intel macOS build is produced from the same tagged source by CI but is unverified — reports welcome.' \
               '' \
               'Install alternatives: `cargo install gitreceipts` · Homebrew tap `cloudcraft-ai/tap`.' \
               '' \
