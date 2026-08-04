@@ -108,7 +108,9 @@ details.section[open] > summary.section-h::before { transform: rotate(90deg); }
 .radtag { font-size: 0.65rem; padding: 0 0.35rem; border-radius: 2px; white-space: nowrap; flex: none; border: 1px solid var(--rule); color: var(--dim); }
 .radtag.local-fs { color: var(--intent); } .radtag.local-git { color: var(--intent); }
 .radtag.remote-git { color: var(--amber); border-color: currentColor; }
-.radtag.network { color: var(--red); border-color: currentColor; }
+/* network reached beyond this machine — amber, like remote-git/push. NOT red:
+   red is the verdict (a broken promise); a network command is a fact, not a lie. */
+.radtag.network { color: var(--amber); border-color: currentColor; }
 .radtag.commit { color: var(--green); border-color: currentColor; }
 .radtag.push { color: var(--amber); border-color: currentColor; }
 .radtag.fail { color: var(--amber); border-color: currentColor; }
