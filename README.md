@@ -1,10 +1,27 @@
 # `git receipts` — see what your agent actually did.
 
-**The name is the thesis: git is the oracle.** A coding agent tells you
-what it did; git kept its own record of what actually persisted — a log
-the agent can't fabricate after the fact. **gitreceipts** reads your
-Claude Code session alongside the repo and reconciles the two, claim by
-claim, against that record. Not the agent's word. Git's.
+**Developer velocity is no longer the bottleneck. Comprehension velocity is.**
+An agent can produce a day's worth of commits in an hour; understanding
+what actually happened is now the slow part. The raw session log is tens
+of megabytes of JSON nobody reads. gitreceipts turns it into an account
+you can read at reading speed: each prompt you typed → the commands it
+ran → the files it touched → the commit that resulted. An 11,000-event
+session becomes a spine of commits you scan in a minute and expand only
+where something looks off.
+
+And you can *trust* that account, because it's audited, not narrated.
+**The name is the thesis: git is the oracle.** The session log is the
+agent's own story of what it did; git kept an independent record of what
+actually persisted — a log the agent can't fabricate after the fact.
+gitreceipts reads the two side by side and reconciles them, claim by
+claim, content-level against the actual commit blobs. You're not reading
+the agent's memoir; you're reading an audited one. Not the agent's word.
+Git's.
+
+The account is also **yours**. Everything runs locally, reads exactly one
+directory (your session logs) plus your repo, and sends nothing anywhere —
+a mirror for your own work, not a badge to show anyone. See
+[what the report contains — and what it doesn't](#what-the-report-contains--and-what-it-doesnt).
 
 **When you'd reach for it** — two moments especially, both where you
 can't just reconstruct what happened by hand:
@@ -17,6 +34,12 @@ can't just reconstruct what happened by hand:
   is impractical to trawl. git still holds the truth; gitreceipts
   distills what you *asked* and what the agent *did* into a receipt you
   can actually read.
+
+And the value isn't only in catching problems. A 100%-green session
+still comes out as something you can *read* — intent → outcome, ask →
+what landed — instead of a log to trawl. Verification is what makes the
+account trustworthy; comprehension is why you run it on every session,
+not just the suspicious ones.
 
 Reconciliation runs both directions, and both get billing:
 - **Claimed → didn't land** — the agent said it, git never got it. If
@@ -82,6 +105,11 @@ intent → outcome
 
 That last line above the identity block is the point. Zero is not
 assumed — it is earned against the repo's own receipts.
+
+And when the number isn't zero, a red line is a **question, not a
+conviction**: it means nothing on record explains the claim. You may
+know something the log doesn't — each explainable red is a candidate
+for a new resolution category.
 
 ## Why git — and where it stops
 
