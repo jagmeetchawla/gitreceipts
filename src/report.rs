@@ -706,11 +706,15 @@ pub fn print(
         } else {
             String::new()
         };
+        // source_note ("N created elsewhere") stays in both modes — it's a
+        // whole-spine provenance fact the JSON also carries; dropping it here
+        // would desync the formats.
         format!(
-            "interval spine: {} agent commit{}{}{}",
+            "interval spine: {} agent commit{}{}{}{}",
             total,
             if total == 1 { "" } else { "s" },
             held,
+            source_note,
             filter_note
         )
     };
