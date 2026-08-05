@@ -114,6 +114,25 @@ from you; the path matching is exact, and on Linux the difference is real.
 Copy with tools that preserve names as-is (rsync does; retyping paths by hand
 may not).
 
+**Two more path-dependent conveniences that degrade cross-machine:**
+
+- **Bare-command repo inference.** With no `--repo`, and run outside a git
+  repo, the tool infers the target from the session's recorded working
+  directories — which are the *original machine's* paths. If they don't exist
+  locally, inference fails with "pass --repo". Workaround: `cd` into the
+  actual repo (nothing to infer), or name it — `--repo <dir>` /
+  `--project <dir>`.
+- **The name-suffix store fallback can over-match.** When no exact store
+  directory matches, sessions are found by matching *every ancestor
+  directory's name* — and a generic ancestor like `dev` or `src` can match an
+  unrelated project (observed: a copy under `/data/dev/...` pulled in a
+  `something.dev` site's sessions). The tool prints a
+  `matched … by name` note for every fallback match — **read those notes**;
+  an unrelated project there means foreign sessions are being merged in and
+  the effort/prompt numbers are polluted. Workarounds: keep the copied layout's
+  directory names distinctive, or pass the session `.jsonl` file(s)
+  explicitly. v0.1.1 tightens the fallback to the repo's own name.
+
 A first-class `--map-root OLD=NEW` (rewrite claim roots at ingest) is on the
 roadmap to make all of this explicit.
 
