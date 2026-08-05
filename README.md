@@ -110,6 +110,10 @@ The binary is **`git-receipts`** (note the hyphen — that's what makes git
 pick it up as a subcommand): run it as `git receipts …`, `git-receipts …`,
 or plain `gitreceipts` (the brew install aliases the package name too).
 
+For help use `git receipts -h` or `git-receipts --help`. (Plain
+`git receipts --help` makes git look for a man page, which we don't ship
+yet — coming in 0.1.1.)
+
 **Verified on macOS (Apple Silicon) and Linux (x86_64).** The Intel macOS
 binary passes the full test suite as x86_64 code (under Rosetta 2 translation
 in CI), but hasn't been hand-verified on Intel silicon — reports welcome.
