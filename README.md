@@ -106,8 +106,9 @@ cd gitreceipts
 cargo install --path .
 ```
 
-The binary is `git-receipts`, which git picks up as a subcommand:
-`git receipts …`.
+The binary is **`git-receipts`** (note the hyphen — that's what makes git
+pick it up as a subcommand): run it as `git receipts …`, `git-receipts …`,
+or plain `gitreceipts` (the brew install aliases the package name too).
 
 **Verified on macOS (Apple Silicon) and Linux (x86_64).** The Intel macOS
 binary passes the full test suite as x86_64 code (under Rosetta 2 translation
