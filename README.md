@@ -36,7 +36,13 @@ directory (your session logs) plus your repo, and sends nothing anywhere. A
 mirror for your own work, not a badge to show anyone. Details in
 [what the report contains — and what it doesn't](#what-the-report-contains--and-what-it-doesnt).
 
-Here's what a session looks like after the audit:
+Here's a real multi-repo audit — `--project` on a workspace where a public
+repo lives beside private ones (two sibling names masked with `--redact`,
+prompts dropped with `--no-intent`; the numbers are untouched):
+
+![git receipts --project roll-up: a where-it-landed table over four repos, two redacted, with green/amber verdicts, and a per-repo section with stat tiles](docs/images/project-rollup.png)
+
+And here's what a single session looks like after the audit:
 
 ```
 claims: 219 file mutations · 412 commands · 63 MCP calls · 187 observations
