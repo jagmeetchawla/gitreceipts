@@ -274,6 +274,11 @@ Think of it as bank reconciliation for agent work:
 The operating principle throughout: **when the evidence is ambiguous, the
 report says "ambiguous"** — it never picks the flattering interpretation.
 
+A real interval from this repo's own audit — badges, per-commit model, the
+files git recorded, and every command with its blast radius:
+
+![A commit drill-down: committed-by-agent and pushed badges, model provenance, 8 modified files git recorded, and radius-tagged commands](docs/images/commit-drilldown.png)
+
 ## Your commits, not the whole repo
 
 By default the verdict, balance, and spine cover **only the commits this
@@ -420,6 +425,11 @@ Astro, and Tauri · 106 days · 3 models · 836 agent commits · 1,719 file
 claims — 96% landed in git, every exception diagnosed.** The full corpus
 table, including the per-project numbers and what the 50 broken promises
 turned out to be, is in [RECEIPTS.md](RECEIPTS.md).
+
+The self-audit of this very repo — every claim landed, `broken promises: 0`
+earned, not asserted:
+
+![The self-audit of gitreceipts' own repo: 100% claims landed (324/324), 0 broken promises, the exception waterfall with every unclaimed change attributed, and the spine header noting one held-out commit](docs/images/self-audit-section.png)
 
 **Release provenance.** Every release tarball is built by a public GitHub
 Actions run (tests execute per-target) and carries a **build-provenance
