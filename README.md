@@ -108,7 +108,9 @@ cargo install --path .
 
 The binary is **`git-receipts`** (note the hyphen — that's what makes git
 pick it up as a subcommand): run it as `git receipts …`, `git-receipts …`,
-or plain `gitreceipts` (the brew install aliases the package name too).
+or plain `gitreceipts` (the brew install aliases the package name too;
+`cargo install` gives only `git-receipts` — cargo convention, like
+`ripgrep` → `rg` — symlink it yourself if you want the alias).
 
 For help use `git receipts -h` or `git-receipts --help`. (Plain
 `git receipts --help` makes git look for a man page, which we don't ship
