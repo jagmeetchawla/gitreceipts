@@ -65,76 +65,39 @@ doesn't ship — so plain `git receipts --help` fails. Use `git receipts -h` or
 the next version, at which point `git receipts --help` opens proper docs like
 any native git command.
 
-## 8. Mounted-drive / other-machine audits: single repo is full-fidelity, `--project` sibling protection is not
+## 8. Cross-machine / mounted-drive audits are NOT supported in v0.1
 
-Auditing sessions recorded on a **different machine** (a mounted backup drive,
-a copied `~/.claude/projects`, a second computer) is supported and works better
-than you might expect — with one sharp edge.
+Auditing sessions recorded on a **different machine** — a mounted backup
+drive, a copied `~/.claude/projects`, a second computer — is **not a
+supported flow in v0.1**. First-class cross-machine support is **on the
+roadmap** (a `--map-root OLD=NEW` to remap the original machine's paths
+explicitly, plus stricter store matching); until it ships, treat everything
+below as unsupported behavior, not a contract.
 
-**What works, fully.** A **single-repo audit** cross-machine has the same
-fidelity as a local one. Claims resolve through the session's *own recorded
-working directories* (validated against the repo's git history), then
-content-verify against your local clone — so landings, late landings, broken
-promises, verdicts, and all three formats reconcile exactly. Verified on a
-Linux box auditing a macOS-recorded corpus: identical claim-landing numbers.
+What breaks today, concretely:
 
-```bash
-git receipts audit --store /Volumes/backup/Users/me/.claude/projects --repo ~/anywhere/myapp
-```
+- **Repo inference fails.** With no `--repo`, the tool infers the target from
+  the session's recorded working directories — the *original machine's*
+  paths, which don't exist locally.
+- **The store-lookup fallback can silently merge the wrong sessions.** With
+  no exact store match, sessions are found by directory-*name* matching, and
+  a generic path component (`dev`, `src`) can pull in an unrelated project's
+  sessions — polluting prompt/effort numbers. Every fallback match prints a
+  `matched … by name` note; if you see one naming an unrelated project, the
+  merge is wrong.
+- **`--project` sibling protection does not engage** (original-machine claim
+  paths never match local sibling roots), so the "sibling paths withheld"
+  privacy guarantee lapses. Treat any cross-machine `--project` export as
+  private.
 
-The repo can live at any local path; the store can be a mount or a copy.
-
-**The sharp edge: `--project` sibling protection does NOT engage
-cross-machine.** Sibling collapse works by matching out-of-repo write paths
-against the *local* paths of the sibling repos. Claims from the original
-machine carry *that* machine's absolute paths, which never prefix-match your
-local sibling roots — so writes into a sibling repo stay listed as raw
-original-machine paths instead of collapsing to a count. The audit is still
-correct; the **privacy guarantee** ("sibling paths withheld") is what lapses.
-**Treat a cross-machine `--project` export as private.**
-
-**Workarounds:**
-
-1. **Recreate the original absolute path** and sibling protection engages
-   normally — a symlink is enough:
-
-   ```bash
-   # claims were recorded under /Users/alice/Developer on the original Mac
-   sudo mkdir -p /Users/alice
-   sudo ln -s /Volumes/backup/Users/alice/Developer /Users/alice/Developer
-   git receipts audit --project /Users/alice/Developer/myproject --store /Volumes/backup/Users/alice/.claude/projects
-   ```
-
-2. Or generate shareable per-repo exports **on the original machine**, and use
-   the cross-machine audit for your own (private) review only.
-
-**One more copying gotcha:** preserve **exact directory casing**. macOS
-filesystems are case-insensitive and will hide a `Sites` vs `sites` mismatch
-from you; the path matching is exact, and on Linux the difference is real.
-Copy with tools that preserve names as-is (rsync does; retyping paths by hand
-may not).
-
-**Two more path-dependent conveniences that degrade cross-machine:**
-
-- **Bare-command repo inference.** With no `--repo`, and run outside a git
-  repo, the tool infers the target from the session's recorded working
-  directories — which are the *original machine's* paths. If they don't exist
-  locally, inference fails with "pass --repo". Workaround: `cd` into the
-  actual repo (nothing to infer), or name it — `--repo <dir>` /
-  `--project <dir>`.
-- **The name-suffix store fallback can over-match.** When no exact store
-  directory matches, sessions are found by matching *every ancestor
-  directory's name* — and a generic ancestor like `dev` or `src` can match an
-  unrelated project (observed: a copy under `/data/dev/...` pulled in a
-  `something.dev` site's sessions). The tool prints a
-  `matched … by name` note for every fallback match — **read those notes**;
-  an unrelated project there means foreign sessions are being merged in and
-  the effort/prompt numbers are polluted. Workarounds: keep the copied layout's
-  directory names distinctive, or pass the session `.jsonl` file(s)
-  explicitly. v0.1.1 tightens the fallback to the repo's own name.
-
-A first-class `--map-root OLD=NEW` (rewrite claim roots at ingest) is on the
-roadmap to make all of this explicit.
+In our own testing, *single-repo* audits with an explicit `--repo` produced
+full-fidelity results cross-machine (claims resolve through the session's own
+recorded roots and content-verify against the local clone) — which is why the
+roadmap item is confidence-backed. But "worked in our testing" is not
+"supported": if you try it anyway, name the repo explicitly, read every
+`matched … by name` note, replicate the original absolute paths when you can
+(a symlink to the mount is enough), preserve exact directory casing, and keep
+the outputs private.
 
 ## 9. One harness today
 
