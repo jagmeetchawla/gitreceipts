@@ -57,7 +57,15 @@ own audit. The tool guards against accidents (clock anomalies, amends, rebases)
 and you get a wall of red: the tool correctly saying "these claims have nothing
 to do with this repo."
 
-## 7. One harness today
+## 7. No man page yet — `git receipts --help` doesn't work
+
+git intercepts `--help` for subcommands and looks for a man page, which v0.1.0
+doesn't ship — so plain `git receipts --help` fails. Use `git receipts -h` or
+`git-receipts --help` (both print full help). A generated man page ships in
+the next version, at which point `git receipts --help` opens proper docs like
+any native git command.
+
+## 8. One harness today
 
 v0.1 reads Claude Code session logs. The event model is deliberately
 harness-neutral; adapters for other agent CLIs are on the roadmap — the
