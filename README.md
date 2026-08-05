@@ -179,16 +179,15 @@ git receipts audit --project ~/Developer/Projects/myproject --format html > proj
 
 # include commits the agent DIDN'T make in the verdict (see below)
 git receipts audit --full-history
-
-# audit another machine's sessions from a mounted drive — single-repo audits
-# are full-fidelity cross-machine; --project sibling protection is not
-# (see KNOWN-LIMITATIONS.md §8 for the why and the symlink workaround)
-git receipts audit --store /Volumes/studio/Users/me/.claude/projects --repo /Volumes/studio/Users/me/code/myapp
 ```
 
 On a terminal the report auto-pages through `$PAGER` (like git), colors
 intact. `--no-pager` opts out; `--color always` forces colors through your
 own pipe.
+
+Auditing sessions recorded on a **different machine** (a mounted drive, a
+copied store) is **not supported in v0.1** — first-class support is on the
+roadmap. See [KNOWN-LIMITATIONS.md §8](KNOWN-LIMITATIONS.md).
 
 ## What it checks
 
