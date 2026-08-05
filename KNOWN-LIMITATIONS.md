@@ -65,7 +65,59 @@ doesn't ship — so plain `git receipts --help` fails. Use `git receipts -h` or
 the next version, at which point `git receipts --help` opens proper docs like
 any native git command.
 
-## 8. One harness today
+## 8. Mounted-drive / other-machine audits: single repo is full-fidelity, `--project` sibling protection is not
+
+Auditing sessions recorded on a **different machine** (a mounted backup drive,
+a copied `~/.claude/projects`, a second computer) is supported and works better
+than you might expect — with one sharp edge.
+
+**What works, fully.** A **single-repo audit** cross-machine has the same
+fidelity as a local one. Claims resolve through the session's *own recorded
+working directories* (validated against the repo's git history), then
+content-verify against your local clone — so landings, late landings, broken
+promises, verdicts, and all three formats reconcile exactly. Verified on a
+Linux box auditing a macOS-recorded corpus: identical claim-landing numbers.
+
+```bash
+git receipts audit --store /Volumes/backup/Users/me/.claude/projects --repo ~/anywhere/myapp
+```
+
+The repo can live at any local path; the store can be a mount or a copy.
+
+**The sharp edge: `--project` sibling protection does NOT engage
+cross-machine.** Sibling collapse works by matching out-of-repo write paths
+against the *local* paths of the sibling repos. Claims from the original
+machine carry *that* machine's absolute paths, which never prefix-match your
+local sibling roots — so writes into a sibling repo stay listed as raw
+original-machine paths instead of collapsing to a count. The audit is still
+correct; the **privacy guarantee** ("sibling paths withheld") is what lapses.
+**Treat a cross-machine `--project` export as private.**
+
+**Workarounds:**
+
+1. **Recreate the original absolute path** and sibling protection engages
+   normally — a symlink is enough:
+
+   ```bash
+   # claims were recorded under /Users/alice/Developer on the original Mac
+   sudo mkdir -p /Users/alice
+   sudo ln -s /Volumes/backup/Users/alice/Developer /Users/alice/Developer
+   git receipts audit --project /Users/alice/Developer/myproject --store /Volumes/backup/Users/alice/.claude/projects
+   ```
+
+2. Or generate shareable per-repo exports **on the original machine**, and use
+   the cross-machine audit for your own (private) review only.
+
+**One more copying gotcha:** preserve **exact directory casing**. macOS
+filesystems are case-insensitive and will hide a `Sites` vs `sites` mismatch
+from you; the path matching is exact, and on Linux the difference is real.
+Copy with tools that preserve names as-is (rsync does; retyping paths by hand
+may not).
+
+A first-class `--map-root OLD=NEW` (rewrite claim roots at ingest) is on the
+roadmap to make all of this explicit.
+
+## 9. One harness today
 
 v0.1 reads Claude Code session logs. The event model is deliberately
 harness-neutral; adapters for other agent CLIs are on the roadmap — the

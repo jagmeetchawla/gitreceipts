@@ -180,7 +180,9 @@ git receipts audit --project ~/Developer/Projects/myproject --format html > proj
 # include commits the agent DIDN'T make in the verdict (see below)
 git receipts audit --full-history
 
-# audit another machine's sessions from a mounted drive
+# audit another machine's sessions from a mounted drive — single-repo audits
+# are full-fidelity cross-machine; --project sibling protection is not
+# (see KNOWN-LIMITATIONS.md §8 for the why and the symlink workaround)
 git receipts audit --store /Volumes/studio/Users/me/.claude/projects --repo /Volumes/studio/Users/me/code/myapp
 ```
 
