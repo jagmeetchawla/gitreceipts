@@ -106,7 +106,11 @@ outputs they can keep:
 > `--no-identity`.
 
 If the user asks for one, generate it, tell them the file path, and restate
-the privacy flags if they didn't use any.
+the privacy flags if they didn't use any. **Open HTML reports directly in the
+browser** (`open <file>` on macOS, `xdg-open` on Linux) — full reports are
+large single-file pages that chat preview panes often can't render inline;
+the browser is the intended viewer. For a lighter file, offer
+`--filter red-amber` (findings only) or `--latest` (one session).
 
 ## Privacy
 
