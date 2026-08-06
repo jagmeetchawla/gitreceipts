@@ -82,5 +82,5 @@ jobs:
               '' \
               'Install alternatives: `cargo install gitreceipts` · Homebrew tap `cloudcraft-ai/tap`.' \
               '' \
-              'Verify downloads against `SHA256SUMS` — and verify provenance (which commit + which CI run built each tarball) with `gh attestation verify <file> -R cloudcraft-ai/gitreceipts`.')" \
+              'Verify downloads against `SHA256SUMS` — and verify provenance (which commit + which CI run built each tarball) with `gh attestation verify <file> -R jagmeetchawla/gitreceipts`.')" \
             git-receipts-*.tar.gz SHA256SUMS

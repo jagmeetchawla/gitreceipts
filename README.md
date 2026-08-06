@@ -7,7 +7,7 @@
   <br><br>
   <a href="#install">Install</a> ·
   <a href="#usage">Usage</a> ·
-  <a href="https://github.com/cloudcraft-ai/gitreceipts/releases">Releases</a> ·
+  <a href="https://github.com/jagmeetchawla/gitreceipts/releases">Releases</a> ·
   <a href="RECEIPTS.md">RECEIPTS.md</a> ·
   <a href="KNOWN-LIMITATIONS.md">Known limitations</a> ·
   <a href="qa/">QA harness</a>
@@ -104,10 +104,10 @@ cargo install gitreceipts
 brew install cloudcraft-ai/tap/gitreceipts
 
 # prebuilt binaries (checksums + provenance attestations attached)
-# → https://github.com/cloudcraft-ai/gitreceipts/releases
+# → https://github.com/jagmeetchawla/gitreceipts/releases
 
 # from source
-git clone https://github.com/cloudcraft-ai/gitreceipts
+git clone https://github.com/jagmeetchawla/gitreceipts
 cd gitreceipts
 cargo install --path .
 ```
@@ -437,7 +437,7 @@ attestation** cryptographically linking it to the exact commit and workflow
 run that produced it:
 
 ```bash
-gh attestation verify git-receipts-*.tar.gz -R cloudcraft-ai/gitreceipts
+gh attestation verify git-receipts-*.tar.gz -R jagmeetchawla/gitreceipts
 ```
 
 Checksums ship beside the binaries (`SHA256SUMS`). The same standard we
