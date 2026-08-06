@@ -59,8 +59,32 @@ Present the table as a code block (it is pre-aligned). `.` = green,
 `!` = amber, `X` = red. If the findings list itself runs very long (>25),
 truncate it the same way and say how many were omitted — never silently.
 
-For `--project`, same idea on the wrapper: `git-receipts export --project <dir>`
-then read `summary.verdict` and the `summary.landing[]` rows only.
+For `--project`, one wrapper parse yields the roll-up AND a spine table per
+repo that has commits (zero-commit repos stay as roll-up rows):
+
+```bash
+git-receipts export --project <dir> 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin); s=d['summary']
+print('project verdict:', s['verdict'], '·', s['repos'], 'repos')
+for r in s['landing']:
+    print(' ', r['name'].ljust(8), str(r['commits']).rjust(3), 'commits ·', str(r['landed'])+'/'+str(r['claims']), 'landed ·', r['broken'], 'broken ·', r['residue_files'], 'residue ·', r['verdict'])
+g={'green':'.','amber':'!','red':'X'}; CAP=10
+for rep in d['repos']:
+    iv=rep['receipt']['intervals']
+    if not iv: continue
+    print(); print('===', rep['name'], '===')
+    def row(i):
+        L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
+        print(' ',g.get(i['status'],'?'), i['commit']['short'], (i['commit']['subject'][:44]).ljust(44), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
+    older=iv[:-CAP] if len(iv)>CAP else []
+    fnd=[i for i in older if i['status']!='green']
+    for i in fnd[:15]: row(i)
+    if len(fnd)>15: print('  …', len(fnd)-15, 'more findings omitted')
+    if older: print('  …', len(older), 'earlier commits (findings above shown)')
+    for i in iv[-CAP:]: row(i)
+"
+```
 
 **Tier 2 — lists, when the user wants to scan.**
 `git-receipts audit --oneline --no-pager --color never` (one line per commit;
