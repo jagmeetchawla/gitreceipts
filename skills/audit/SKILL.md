@@ -32,12 +32,32 @@ behalf unless they explicitly ask**:
 full export JSON are for FILES humans open, not for context. Extract in the
 shell; only the summary enters the chat. Work in tiers:
 
-**Tier 1 — the headline (default for every audit).** The JSON schema is
-versioned and stable — parse it, don't screen-scrape the console:
+**Tier 1 — headline + spine table (default for every audit).** The JSON
+schema is versioned and stable — parse it, don't screen-scrape the console.
+One command yields the headline, every finding (any age), and the recent
+spine; only this enters the conversation:
 
 ```bash
-git-receipts export 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); s=d['summary']; b=s['balance']; print('commits', s['commits'], '(+'+str(s['keyframes_excluded'])+' by others held out) ·', b['green'], 'green /', b['amber'], 'amber /', b['red'], 'red · claims', str(s['claims_landed'])+'/'+str(s['claims_total']), '· broken promises', s['broken_promises'], '· residue files', s['residue_files']); print('exceptions:', {k:v for k,v in s['exceptions'].items() if v})"
+git-receipts export 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin); s=d['summary']; b=s['balance']
+print('commits', s['commits'], '(+'+str(s['keyframes_excluded'])+' by others held out) ·', b['green'],'green /',b['amber'],'amber /',b['red'],'red · claims', str(s['claims_landed'])+'/'+str(s['claims_total']), '· broken promises', s['broken_promises'])
+iv=d['intervals']; CAP=15
+g={'green':'.','amber':'!','red':'X'}
+def row(i):
+    L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
+    print(' ',g.get(i['status'],'?'), i['commit']['short'], (i['commit']['subject'][:46]).ljust(46), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
+older=iv[:-CAP] if len(iv)>CAP else []
+for i in older:
+    if i['status']!='green': row(i)
+if older: print('  …', len(older), 'earlier commits (findings above shown; --oneline for all)')
+for i in iv[-CAP:]: row(i)
+"
 ```
+
+Present the table as a code block (it is pre-aligned). `.` = green,
+`!` = amber, `X` = red. If the findings list itself runs very long (>25),
+truncate it the same way and say how many were omitted — never silently.
 
 For `--project`, same idea on the wrapper: `git-receipts export --project <dir>`
 then read `summary.verdict` and the `summary.landing[]` rows only.
