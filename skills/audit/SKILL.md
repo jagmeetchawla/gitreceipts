@@ -36,15 +36,7 @@ shell; only the summary enters the chat. Work in tiers:
 versioned and stable — parse it, don't screen-scrape the console:
 
 ```bash
-git-receipts export 2>/dev/null | python3 -c '
-import json,sys
-d=json.load(sys.stdin); s=d["summary"]; b=s["balance"]
-print(f"commits {s["commits"]} (+{s["keyframes_excluded"]} by others held out)"
-      f" · {b["green"]} green / {b["amber"]} amber / {b["red"]} red"
-      f" · claims {s["claims_landed"]}/{s["claims_total"]}"
-      f" · broken promises {s["broken_promises"]}"
-      f" · residue files {s["residue_files"]}")
-print("exceptions:", {k:v for k,v in s["exceptions"].items() if v})'
+git-receipts export 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); s=d['summary']; b=s['balance']; print('commits', s['commits'], '(+'+str(s['keyframes_excluded'])+' by others held out) ·', b['green'], 'green /', b['amber'], 'amber /', b['red'], 'red · claims', str(s['claims_landed'])+'/'+str(s['claims_total']), '· broken promises', s['broken_promises'], '· residue files', s['residue_files']); print('exceptions:', {k:v for k,v in s['exceptions'].items() if v})"
 ```
 
 For `--project`, same idea on the wrapper: `git-receipts export --project <dir>`
