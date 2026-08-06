@@ -93,6 +93,21 @@ the tool's own diagnosis lines — they are evidence-backed
 ("content-verified", "relocated before its first commit", "deleted before
 any commit") — and never soften a red into a pass.
 
+## After the audit — offer the durable outputs
+
+After presenting the FIRST audit in a conversation (not after every
+follow-up), end with one compact hint line so users discover the two
+outputs they can keep:
+
+> Want this as a self-contained **HTML report** (`git-receipts audit
+> --format html > audit.html`) or **machine-readable JSON**
+> (`git-receipts export > receipt.json`)? If you plan to share either,
+> add `--no-intent` (drops prompts; counts stay) and consider
+> `--no-identity`.
+
+If the user asks for one, generate it, tell them the file path, and restate
+the privacy flags if they didn't use any.
+
 ## Privacy
 
 Reports contain the user's prompts and command output — treat every report

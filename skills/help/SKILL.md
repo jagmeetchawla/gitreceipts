@@ -32,9 +32,13 @@ things like "what did the agent actually do?" or "did that work land?")
 Red = a claimed edit git never got and nothing explains — presented as a
 question, not a conviction. `broken promises: 0` is earned, not assumed.
 
+**Durable outputs.** `git-receipts audit --format html > audit.html` (a
+self-contained HTML report) · `git-receipts export > receipt.json`
+(machine-readable, same numbers — commit it, diff it, feed it to tools).
+
 **Sharing.** Reports contain prompts and command output — private by default.
-For a shareable report: `--no-intent` (drops conversation, keeps counts),
-`--no-identity`, `--redact <word>`, or `--format html > audit.html`.
+For a shareable report add `--no-intent` (drops conversation, keeps counts),
+`--no-identity`, and `--redact <word>` as needed.
 
 **Guardrails.** The plugin never disables the secret/PII scanner, never
 installs the binary unasked, and every run goes through your normal Bash
