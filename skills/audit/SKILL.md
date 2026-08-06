@@ -151,24 +151,44 @@ the tool's own diagnosis lines — they are evidence-backed
 ("content-verified", "relocated before its first commit", "deleted before
 any commit") — and never soften a red into a pass.
 
-## After the audit — offer the durable outputs
+## After the audit — the full report is one word away
 
-After presenting the FIRST audit in a conversation (not after every
-follow-up), end with one compact hint line so users discover the two
-outputs they can keep:
+The spine table is the condensed view; the full HTML report — every commit,
+its claim ledger, residue, effort, and the conversation behind each verdict —
+is the complete one. After presenting the FIRST audit in a conversation,
+end with a direct offer plus a one-line orientation, so new users learn the
+moves without reading any docs:
 
-> Want this as a self-contained **HTML report** (`git-receipts audit
-> --format html > audit.html`) or **machine-readable JSON**
-> (`git-receipts export > receipt.json`)? If you plan to share either,
-> add `--no-intent` (drops prompts; counts stay) and consider
-> `--no-identity`.
+> This is the condensed view. Say **report** and I'll open the full HTML
+> report in your browser — every commit, drill-downs, the conversation
+> behind each verdict.
+>
+> You can also ask: "what happened in commit \<hash\>" · "just the
+> problems" · "audit this session" · "export the JSON".
 
-If the user asks for one, generate it, tell them the file path, and restate
-the privacy flags if they didn't use any. **Open HTML reports directly in the
-browser** (`open <file>` on macOS, `xdg-open` on Linux) — full reports are
-large single-file pages that chat preview panes often can't render inline;
-the browser is the intended viewer. For a lighter file, offer
-`--filter red-amber` (findings only) or `--latest` (one session).
+After later audits, drop the orientation; when findings are present, one
+short reminder line is enough: "**report** opens the full view."
+
+When the user accepts — "report", "yes", "open it", any phrasing — generate
+and open in ONE step, matching the scope of the audit just run (same
+`--project` / `--latest` / session-file / `--commit` arguments):
+
+```bash
+F="${TMPDIR:-/tmp}/gitreceipts-audit.html"
+git-receipts audit <scope args> --format html > "$F" && open "$F"
+```
+
+(`xdg-open` on Linux.) Then state the path so they can keep or move the
+file. It lands OUTSIDE the repo deliberately — an audit tool must not leave
+residue its own next run would flag; if the user wants a copy in the repo
+or elsewhere, regenerate to the path they name. If there is no browser
+(SSH, headless), still write the file, give the path, and say why it
+didn't open — never silently skip.
+
+The browser is the intended viewer: full reports are large single-file
+pages that chat preview panes often can't render inline. For a lighter
+file, offer `--filter red-amber` (findings only) or `--latest` (one
+session).
 
 ## Privacy
 

@@ -32,9 +32,11 @@ things like "what did the agent actually do?" or "did that work land?")
 Red = a claimed edit git never got and nothing explains — presented as a
 question, not a conviction. `broken promises: 0` is earned, not assumed.
 
-**Durable outputs.** `git-receipts audit --format html > audit.html` (a
-self-contained HTML report) · `git-receipts export > receipt.json`
-(machine-readable, same numbers — commit it, diff it, feed it to tools).
+**Durable outputs.** After any audit, say **report** — the full HTML
+report opens in your browser (every commit, drill-downs, the conversation
+behind each verdict). Manual: `git-receipts audit --format html >
+audit.html` · `git-receipts export > receipt.json` (machine-readable,
+same numbers — commit it, diff it, feed it to tools).
 
 **Sharing.** Reports contain prompts and command output — private by default.
 For a shareable report add `--no-intent` (drops conversation, keeps counts),
