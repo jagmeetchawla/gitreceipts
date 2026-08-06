@@ -41,23 +41,25 @@ spine; only this enters the conversation:
 git-receipts export 2>/dev/null | python3 -c "
 import json,sys
 d=json.load(sys.stdin); s=d['summary']; b=s['balance']
-print('commits', s['commits'], '(+'+str(s['keyframes_excluded'])+' by others held out) ·', b['green'],'green /',b['amber'],'amber /',b['red'],'red · claims', str(s['claims_landed'])+'/'+str(s['claims_total']), '· broken promises', s['broken_promises'])
+print('commits', s['commits'], '(+'+str(s['keyframes_excluded'])+' by others held out) ·', b['green'],'🟢 /',b['amber'],'🟡 /',b['red'],'🔴 · claims', str(s['claims_landed'])+'/'+str(s['claims_total']), '· broken promises', s['broken_promises'])
 iv=d['intervals']; CAP=15
-g={'green':'.','amber':'!','red':'X'}
+g={'green':'🟢','amber':'🟡','red':'🔴'}
 def row(i):
     L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
-    print(' ',g.get(i['status'],'?'), i['commit']['short'], (i['commit']['subject'][:46]).ljust(46), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
+    print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:46]).ljust(46), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
 older=iv[:-CAP] if len(iv)>CAP else []
 for i in older:
     if i['status']!='green': row(i)
-if older: print('  …', len(older), 'earlier commits (findings above shown; --oneline for all)')
+if older: print('   …', len(older), 'earlier commits (findings above shown; --oneline for all)')
 for i in iv[-CAP:]: row(i)
 "
 ```
 
-Present the table as a code block (it is pre-aligned). `.` = green,
-`!` = amber, `X` = red. If the findings list itself runs very long (>25),
-truncate it the same way and say how many were omitted — never silently.
+Present the table as a code block (it is pre-aligned). Status dots carry
+the color: 🟢 green, 🟡 amber, 🔴 red — chat markdown strips terminal ANSI
+colors, so the dots ARE the color layer; never swap them for plain
+ASCII. If the findings list itself runs very long (>25), truncate it the
+same way and say how many were omitted — never silently.
 
 For `--project`, one wrapper parse yields the roll-up AND a spine table per
 repo that has commits (zero-commit repos stay as roll-up rows):
@@ -66,22 +68,23 @@ repo that has commits (zero-commit repos stay as roll-up rows):
 git-receipts export --project <dir> 2>/dev/null | python3 -c "
 import json,sys
 d=json.load(sys.stdin); s=d['summary']
-print('project verdict:', s['verdict'], '·', s['repos'], 'repos')
+V={'green':'🟢','amber':'🟡','red':'🔴'}
+print('project verdict:', V.get(s['verdict'],''), s['verdict'], '·', s['repos'], 'repos')
 for r in s['landing']:
-    print(' ', r['name'].ljust(8), str(r['commits']).rjust(3), 'commits ·', str(r['landed'])+'/'+str(r['claims']), 'landed ·', r['broken'], 'broken ·', r['residue_files'], 'residue ·', r['verdict'])
-g={'green':'.','amber':'!','red':'X'}; CAP=10
+    print(' ', V.get(r['verdict'],'⚪'), r['name'].ljust(8), str(r['commits']).rjust(3), 'commits ·', str(r['landed'])+'/'+str(r['claims']), 'landed ·', r['broken'], 'broken ·', r['residue_files'], 'residue')
+g={'green':'🟢','amber':'🟡','red':'🔴'}; CAP=10
 for rep in d['repos']:
     iv=rep['receipt']['intervals']
     if not iv: continue
     print(); print('===', rep['name'], '===')
     def row(i):
         L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
-        print(' ',g.get(i['status'],'?'), i['commit']['short'], (i['commit']['subject'][:44]).ljust(44), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
+        print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:44]).ljust(44), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
     older=iv[:-CAP] if len(iv)>CAP else []
     fnd=[i for i in older if i['status']!='green']
     for i in fnd[:15]: row(i)
-    if len(fnd)>15: print('  …', len(fnd)-15, 'more findings omitted')
-    if older: print('  …', len(older), 'earlier commits (findings above shown)')
+    if len(fnd)>15: print('   …', len(fnd)-15, 'more findings omitted')
+    if older: print('   …', len(older), 'earlier commits (findings above shown)')
     for i in iv[-CAP:]: row(i)
 "
 ```
