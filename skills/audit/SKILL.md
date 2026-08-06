@@ -26,23 +26,45 @@ behalf unless they explicitly ask**:
 - or `cargo install gitreceipts` (Rust 1.90+)
 - or prebuilt, attested binaries: https://github.com/jagmeetchawla/gitreceipts/releases
 
-## Running an audit
+## Running an audit — token discipline first
 
-Run from inside the repo being audited (or pass `--repo <dir>`):
+**Never load a full report into the conversation.** Full console output and
+full export JSON are for FILES humans open, not for context. Extract in the
+shell; only the summary enters the chat. Work in tiers:
+
+**Tier 1 — the headline (default for every audit).** The JSON schema is
+versioned and stable — parse it, don't screen-scrape the console:
 
 ```bash
-git-receipts audit --no-pager --color never          # all sessions — the default, complete picture
-git-receipts audit --no-pager --color never --latest # just the most recent session
-git-receipts audit --no-pager --color never --filter red-amber   # findings only
-git-receipts audit --no-pager --color never --commit <hash>      # one commit's story
-git-receipts export > receipt.json                   # machine-readable, same numbers
-git-receipts audit --project <folder> --no-pager --color never   # several repos under one folder
+git-receipts export 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); s=d["summary"]; b=s["balance"]
+print(f"commits {s["commits"]} (+{s["keyframes_excluded"]} by others held out)"
+      f" · {b["green"]} green / {b["amber"]} amber / {b["red"]} red"
+      f" · claims {s["claims_landed"]}/{s["claims_total"]}"
+      f" · broken promises {s["broken_promises"]}"
+      f" · residue files {s["residue_files"]}")
+print("exceptions:", {k:v for k,v in s["exceptions"].items() if v})'
 ```
 
-Always pass `--no-pager --color never` when capturing output for analysis.
-For large repos prefer `export` and read the JSON: `summary.balance`
-(green/amber/red), `summary.broken_promises`, `summary.exceptions`, and
-`intervals[]` (the per-commit ledger with `status`, `ledger[]`, `residue[]`).
+For `--project`, same idea on the wrapper: `git-receipts export --project <dir>`
+then read `summary.verdict` and the `summary.landing[]` rows only.
+
+**Tier 2 — lists, when the user wants to scan.**
+`git-receipts audit --oneline --no-pager --color never` (one line per commit;
+add `--filter red-amber` for findings only).
+
+**Tier 3 — one commit's full story, on demand.**
+`git-receipts audit --commit <hash> --no-pager --color never` (add `--full`
+for its conversation). For programmatic drill-down, filter the export:
+`… | python3` selecting `intervals[]` by `status` or `commit.short` — never
+print all intervals.
+
+**Tier 4 — durable artifacts for humans.**
+`--format html > audit.html` (then open it in the browser) ·
+`export > receipt.json` (state the path; don't cat it).
+
+Session-file and `--latest`/`--repo <dir>` arguments compose with all tiers.
 
 ## Choosing scope (defaults)
 
