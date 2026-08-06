@@ -112,6 +112,17 @@ cd gitreceipts
 cargo install --path .
 ```
 
+**Claude Code plugin** — audit sessions from inside Claude Code itself
+(`/gitreceipts:audit`, or just ask "what did the agent actually do?"):
+
+```
+/plugin marketplace add cloudcraft-ai/claude-plugins
+/plugin install gitreceipts@cloudcraft
+```
+
+The plugin wraps the CLI (install the binary above first);
+`/gitreceipts:help` shows everything it can do.
+
 The binary is **`git-receipts`** (note the hyphen — that's what makes git
 pick it up as a subcommand): run it as `git receipts …`, `git-receipts …`,
 or plain `gitreceipts` (the brew install aliases the package name too;
