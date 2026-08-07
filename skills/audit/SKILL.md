@@ -242,6 +242,43 @@ the tool's own diagnosis lines — they are evidence-backed
 ("content-verified", "relocated before its first commit", "deleted before
 any commit") — and never soften a red into a pass.
 
+### Characterizing failures — evidence, not reflex
+
+**Never dismiss failed commands as "noise", "sandbox artifacts", or
+"benign" without inspecting them.** "Worth a look" means YOU look. The
+export carries every failed command with its captured output — one
+extraction shows all of them (heads only, token-thin):
+
+```bash
+git-receipts export 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for i in d['intervals']:
+    for r in i.get('commands',{}).get('runs',[]):
+        if r.get('failed'):
+            o=r.get('output') or {}
+            t=(o.get('text') or '').strip().splitlines()
+            print(i['commit']['short'], '$', ' '.join((r.get('command') or '').split())[:70])
+            print('    ', ' / '.join(t[:2])[:160])
+"
+```
+
+(For `--project` exports, iterate `d['repos'][*]['receipt']['intervals']`
+the same way.) Then characterize each failure BY its evidence:
+
+- the same/similar command **succeeded later** in the interval → transient,
+  say "retried and passed"
+- an expected nonzero exit (`grep`/`rg` with no match, `diff` with
+  differences) → expected-nonzero, cite the convention
+- **aborted by the user** → the user's stop, not the agent's failure
+- anything else → a real failure: give it one sentence WITH its error text,
+  and let the user judge
+
+If you present an audit without having inspected the failures, write
+"N failed commands (uninspected)" — never "benign", never "noise". An
+unexamined failure characterized as harmless is exactly the kind of claim
+this tool exists to catch.
+
 ## After the audit — the full report is one word away
 
 The spine table is the condensed view; the full HTML report — every commit,
