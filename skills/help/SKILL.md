@@ -10,9 +10,12 @@ Present this reference to the user, concisely and formatted:
 what the agent *claimed* vs. what actually *landed*, commit by commit. Runs
 locally; nothing leaves the machine.
 
-**Setup.** Needs the `git-receipts` binary:
-`brew install cloudcraft-ai/tap/gitreceipts` · `cargo install gitreceipts` ·
-or attested binaries at https://github.com/jagmeetchawla/gitreceipts/releases
+**Setup.** Needs the `git-receipts` binary — if it's missing, the audit
+skill detects what you have and offers to install it (your approval, your
+choice of route): `brew install cloudcraft-ai/tap/gitreceipts` ·
+`cargo install gitreceipts` · or a checksum-verified prebuilt binary from
+https://github.com/jagmeetchawla/gitreceipts/releases (no brew/cargo
+needed).
 
 **Main skill: `/gitreceipts:audit`** (also fires automatically when you ask
 things like "what did the agent actually do?" or "did that work land?")
@@ -43,8 +46,8 @@ For a shareable report add `--no-intent` (drops conversation, keeps counts),
 `--no-identity`, and `--redact <word>` as needed.
 
 **Guardrails.** The plugin never disables the secret/PII scanner, never
-installs the binary unasked, and every run goes through your normal Bash
-permission prompt.
+installs the binary unasked (it offers; you approve and pick the route),
+and every run goes through your normal Bash permission prompt.
 
 **More:** README and KNOWN-LIMITATIONS.md at
 https://github.com/jagmeetchawla/gitreceipts

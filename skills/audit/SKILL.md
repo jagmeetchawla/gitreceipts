@@ -19,12 +19,53 @@ Check it exists before anything else:
 command -v git-receipts || echo MISSING
 ```
 
-If MISSING, tell the user how to install it — **never install it on their
-behalf unless they explicitly ask**:
+If MISSING, don't install silently — but don't refuse either. Detect the
+routes and **offer**; never answer MISSING with a bare "I won't install
+it" or a bare URL:
 
-- `brew install cloudcraft-ai/tap/gitreceipts`
-- or `cargo install gitreceipts` (Rust 1.90+)
-- or prebuilt, attested binaries: https://github.com/jagmeetchawla/gitreceipts/releases
+```bash
+command -v brew; command -v cargo
+```
+
+Preference order: **brew → cargo → prebuilt attested binary.**
+
+- **brew available** → offer it: "The binary isn't installed — want me to
+  run `brew install cloudcraft-ai/tap/gitreceipts`?" On yes, run it.
+- **no brew, cargo available** → offer `cargo install gitreceipts`
+  (needs Rust 1.90+; compiles from source, takes a minute).
+- **both available** → ask which they prefer: brew (prebuilt, updates via
+  `brew upgrade`) or cargo (builds from source). Run their choice.
+- **neither** → offer the prebuilt, attested binary: downloaded, checksum-
+  verified, installed to `~/.local/bin` (no sudo). On yes:
+
+  ```bash
+  cd "$(mktemp -d)"
+  TAG=$(curl -fsSL https://api.github.com/repos/jagmeetchawla/gitreceipts/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])")
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) T=aarch64-apple-darwin;;
+    Darwin-x86_64) T=x86_64-apple-darwin;;
+    Linux-x86_64) T=x86_64-unknown-linux-musl;;
+    *) T="";;
+  esac
+  A="git-receipts-$TAG-$T.tar.gz"
+  curl -fsSLO "https://github.com/jagmeetchawla/gitreceipts/releases/download/$TAG/$A"
+  curl -fsSLO "https://github.com/jagmeetchawla/gitreceipts/releases/download/$TAG/SHA256SUMS"
+  (shasum -a 256 -c --ignore-missing SHA256SUMS 2>/dev/null || sha256sum -c --ignore-missing SHA256SUMS) | grep "$A"
+  tar xzf "$A" && mkdir -p ~/.local/bin && mv "git-receipts-$TAG-$T/git-receipts" ~/.local/bin/
+  ```
+
+  **The checksum line must print `OK` — never proceed past a failed
+  checksum.** When `gh` is available, also run
+  `gh attestation verify "$A" -R jagmeetchawla/gitreceipts` (Sigstore
+  provenance; passes for v0.1.1+ — v0.1.0 predates a repo transfer and its
+  attestation lookup 404s, so for that release the checksum is the gate;
+  say so rather than skipping silently). If the platform matched no
+  prebuilt (`T` empty), say so — cargo is the remaining route. If
+  `~/.local/bin` isn't on PATH, show the export line for their shell.
+
+Every install runs only AFTER the user says yes — their choice of route,
+through the normal Bash permission prompt. The audit itself never
+installs anything as a side effect.
 
 ## Running an audit — token discipline first
 
