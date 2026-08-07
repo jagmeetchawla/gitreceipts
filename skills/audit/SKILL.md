@@ -46,7 +46,10 @@ iv=d['intervals']; CAP=15
 g={'green':'🟢','amber':'🟡','red':'🔴'}
 def row(i):
     L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
-    print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:46]).ljust(46), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
+    f=sum(1 for r in i.get('commands',{}).get('runs',[]) if r.get('failed'))
+    m=sum(1 for c in i.get('mcp',[]) if c.get('errored'))
+    x=(' · '+str(f)+' failed' if f else '')+(' · '+str(m)+' mcp-err' if m else '')
+    print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:46]).ljust(46), str(landed)+'/'+str(len(L)), 'landed ·', str(len(i.get('residue',[])))+' residue'+x)
 older=iv[:-CAP] if len(iv)>CAP else []
 for i in older:
     if i['status']!='green': row(i)
@@ -58,7 +61,8 @@ for i in iv[-CAP:]: row(i)
 Present the table as a code block (it is pre-aligned). Status dots carry
 the color: 🟢 green, 🟡 amber, 🔴 red — chat markdown strips terminal ANSI
 colors, so the dots ARE the color layer; never swap them for plain
-ASCII. If the findings list itself runs very long (>25), truncate it the
+ASCII. Every amber names its cause in its own row — residue, `N failed`
+(commands), or `N mcp-err` — so a colored row is never unexplained. If the findings list itself runs very long (>25), truncate it the
 same way and say how many were omitted — never silently.
 
 For `--project`, one wrapper parse yields the roll-up AND a spine table per
@@ -79,7 +83,10 @@ for rep in d['repos']:
     print(); print('===', rep['name'], '===')
     def row(i):
         L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
-        print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:44]).ljust(44), str(landed)+'/'+str(len(L)), 'landed ·', len(i.get('residue',[])), 'residue')
+        f=sum(1 for r in i.get('commands',{}).get('runs',[]) if r.get('failed'))
+        m=sum(1 for c in i.get('mcp',[]) if c.get('errored'))
+        x=(' · '+str(f)+' failed' if f else '')+(' · '+str(m)+' mcp-err' if m else '')
+        print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:44]).ljust(44), str(landed)+'/'+str(len(L)), 'landed ·', str(len(i.get('residue',[])))+' residue'+x)
     older=iv[:-CAP] if len(iv)>CAP else []
     fnd=[i for i in older if i['status']!='green']
     for i in fnd[:15]: row(i)
