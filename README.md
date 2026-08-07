@@ -5,6 +5,10 @@
   See what your agent <b>actually</b> did — every prompt → commands → MCP → files → commit,
   <br>reconciled against the one record the agent can't rewrite: <b>git</b>.
   <br><br>
+  A <b>Claude Code plugin</b> with a deterministic Rust CLI at its core —
+  <br>ask <i>"what did the agent actually do?"</i> and get findings <b>explained, not just flagged</b>.
+  <br><br>
+  <a href="#audit-from-inside-claude-code">Plugin</a> ·
   <a href="#install">Install</a> ·
   <a href="#usage">Usage</a> ·
   <a href="https://github.com/jagmeetchawla/gitreceipts/releases">Releases</a> ·
@@ -35,6 +39,34 @@ The account is also **yours**. Everything runs locally. It reads exactly one
 directory (your session logs) plus your repo, and sends nothing anywhere. A
 mirror for your own work, not a badge to show anyone. Details in
 [what the report contains — and what it doesn't](#what-the-report-contains--and-what-it-doesnt).
+
+## Audit from inside Claude Code
+
+The natural place to ask *"what did my agent actually do?"* is where the
+agent is:
+
+```
+/plugin marketplace add cloudcraft-ai/claude-plugins
+/plugin install gitreceipts@cloudcraft
+```
+
+Then ask exactly that — or run `/gitreceipts:audit`. Claude runs the audit
+and presents it: a color-coded spine of every commit, findings **explained
+in the context of what the session was trying to do** — not just flagged —
+and the full HTML report one word away (say "report"). A red is presented
+as a question, not a conviction: it means nothing on record explains the
+claim, and you may know something the log doesn't.
+
+The division of labor is the point. The binary is the **witness** — a
+deterministic, local Rust CLI whose facts Claude cannot sweet-talk. Claude
+is the **counsel** — it reads those facts against what you asked for and
+explains what it finds. Neither alone gives you that; an agent grading its
+own homework is exactly the problem this tool exists to solve.
+
+The plugin wraps the CLI below (it will guide you through installing the
+binary if it's missing, never install it for you). `/gitreceipts:help`
+shows everything it can do. And the CLI is a full standalone tool — every
+audit works without any AI in the loop.
 
 Here's a real multi-repo audit — `--project` on a workspace where a public
 repo lives beside private ones (two sibling names masked with `--redact`,
@@ -96,12 +128,23 @@ suspicious ones.
 
 ## Install
 
-```bash
-# crates.io (Rust 1.90+)
-cargo install gitreceipts
+**Claude Code plugin** — the fastest way in
+([what it does](#audit-from-inside-claude-code)):
 
+```
+/plugin marketplace add cloudcraft-ai/claude-plugins
+/plugin install gitreceipts@cloudcraft
+```
+
+**The CLI** — the engine the plugin wraps, and a full standalone tool (no
+AI required). The plugin needs it on your PATH and will point you here:
+
+```bash
 # Homebrew
 brew install cloudcraft-ai/tap/gitreceipts
+
+# crates.io (Rust 1.90+)
+cargo install gitreceipts
 
 # prebuilt binaries (checksums + provenance attestations attached)
 # → https://github.com/jagmeetchawla/gitreceipts/releases
@@ -111,17 +154,6 @@ git clone https://github.com/jagmeetchawla/gitreceipts
 cd gitreceipts
 cargo install --path .
 ```
-
-**Claude Code plugin** — audit sessions from inside Claude Code itself
-(`/gitreceipts:audit`, or just ask "what did the agent actually do?"):
-
-```
-/plugin marketplace add cloudcraft-ai/claude-plugins
-/plugin install gitreceipts@cloudcraft
-```
-
-The plugin wraps the CLI (install the binary above first);
-`/gitreceipts:help` shows everything it can do.
 
 The binary is **`git-receipts`** (note the hyphen — that's what makes git
 pick it up as a subcommand): run it as `git receipts …`, `git-receipts …`,
