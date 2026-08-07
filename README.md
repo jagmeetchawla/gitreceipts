@@ -57,11 +57,11 @@ and the full HTML report one word away (say "report"). A red is presented
 as a question, not a conviction: it means nothing on record explains the
 claim, and you may know something the log doesn't.
 
-The division of labor is the point. The binary is the **witness** — a
-deterministic, local Rust CLI whose facts Claude cannot sweet-talk. Claude
-is the **counsel** — it reads those facts against what you asked for and
-explains what it finds. Neither alone gives you that; an agent grading its
-own homework is exactly the problem this tool exists to solve.
+The division of labor is the point: the facts come from a deterministic,
+local Rust CLI that Claude cannot sweet-talk, and Claude reads those facts
+against what you asked for and explains what it finds. Neither alone gives
+you that — an agent grading its own homework is exactly the problem this
+tool exists to solve.
 
 The plugin wraps the CLI below (it will guide you through installing the
 binary if it's missing, never install it for you). `/gitreceipts:help`
