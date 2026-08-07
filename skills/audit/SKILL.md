@@ -1,5 +1,5 @@
 ---
-description: Audit a Claude Code session against git history with the git-receipts CLI — verify what the agent claimed vs. what actually landed, commit by commit. Use when the user asks what an agent actually did, whether a session's work really landed, to audit/verify/review an agentic session, to check for broken promises, or after a long unattended run.
+description: Audit a Claude Code session against git history with the git-receipts CLI — verify what the agent claimed vs. what actually landed, commit by commit, and read the session as a story (intent → outcome). Use when the user asks what an agent actually did, what happened while they were away, to catch up on an unattended or overnight run, to understand what happened in a commit, whether a session's work really landed, to audit/verify/review an agentic session, or to check for broken promises.
 ---
 
 # git receipts — audit the session against git
@@ -241,6 +241,32 @@ promises), then drill into ambers and reds only if present or asked. Quote
 the tool's own diagnosis lines — they are evidence-backed
 ("content-verified", "relocated before its first commit", "deleted before
 any commit") — and never soften a red into a pass.
+
+### Comprehension is half the product
+
+Verification says whether the work landed; comprehension says WHAT
+happened. Every audit should offer the reading, not just the verdict —
+end with ONE invitation matched to what the audit actually shows (never
+a menu of all of them):
+
+- **Unattended-run shape** (overnight gap, many commits in one session,
+  "while I was away" phrasing) → "To see what happened while you were
+  away: give me any commit and I'll tell its story, or say **report**
+  for the full account in your browser."
+- **A commit that draws the eye** (red, amber, or unusually large) →
+  "To understand what happened in a commit, give me its hash — I'll
+  show what you asked, what the agent did, and what landed."
+  (`--commit <hash>`; `--full` for its whole conversation.)
+- **All green** → don't stop at "nothing to look at." A clean audit is
+  still a readable account of the work — offer the intent → outcome
+  walk-through of any commit.
+- **Old work / faded memory** → the audit pairs what you ASKED with what
+  the agent DID, commit by commit — offer that reading; it's faster than
+  trawling the session log and more trustworthy than memory.
+
+The tool's thesis: agents made producing commits fast; understanding them
+is the slow part. The verdict earns trust; the story is why users return
+on every session, not just suspicious ones.
 
 ### Characterizing failures — evidence, not reflex
 

@@ -1,6 +1,6 @@
 {
   "name": "gitreceipts",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "See what your agent actually did \u2014 audit Claude Code sessions against git history, from inside Claude Code.",
   "author": {
     "name": "CloudCraft AI Labs",
