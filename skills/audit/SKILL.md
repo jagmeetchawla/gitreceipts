@@ -46,10 +46,26 @@ iv=d['intervals']; CAP=15
 g={'green':'🟢','amber':'🟡','red':'🔴'}
 def row(i):
     L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
-    f=sum(1 for r in i.get('commands',{}).get('runs',[]) if r.get('failed'))
-    m=sum(1 for c in i.get('mcp',[]) if c.get('errored'))
-    x=(' · '+str(f)+' failed' if f else '')+(' · '+str(m)+' mcp-err' if m else '')
-    print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:46]).ljust(46), str(landed)+'/'+str(len(L)), 'landed ·', str(len(i.get('residue',[])))+' residue'+x)
+    fs=[]
+    res=len(i.get('residue',[]))
+    if res: fs.append(str(res)+' residue')
+    fr=[r for r in i.get('commands',{}).get('runs',[]) if r.get('failed')]
+    if fr:
+        names=[]
+        for r in fr:
+            t=(r.get('command') or '?').split(); n=t[0] if t else '?'
+            if n not in names: names.append(n)
+        fs.append(str(len(fr))+' cmd'+('s' if len(fr)>1 else '')+' failed ('+', '.join(names[:2])+('…' if len(names)>2 else '')+')')
+    me=[c for c in i.get('mcp',[]) if c.get('errored')]
+    if me:
+        srv=[]
+        for c in me:
+            n=c.get('server','?')
+            if n not in srv: srv.append(n)
+        fs.append(str(len(me))+' mcp err ('+', '.join(srv[:2])+')')
+    print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:45]).ljust(45), (str(landed)+'/'+str(len(L))).rjust(5), '', ' · '.join(fs) if fs else '—')
+print()
+print('   commit  '+'subject'.ljust(47)+'claims  findings')
 older=iv[:-CAP] if len(iv)>CAP else []
 for i in older:
     if i['status']!='green': row(i)
@@ -58,12 +74,16 @@ for i in iv[-CAP:]: row(i)
 "
 ```
 
-Present the table as a code block (it is pre-aligned). Status dots carry
-the color: 🟢 green, 🟡 amber, 🔴 red — chat markdown strips terminal ANSI
-colors, so the dots ARE the color layer; never swap them for plain
-ASCII. Every amber names its cause in its own row — residue, `N failed`
-(commands), or `N mcp-err` — so a colored row is never unexplained. If the findings list itself runs very long (>25), truncate it the
-same way and say how many were omitted — never silently.
+Present the table as a code block, INCLUDING the header line the snippet
+prints (`commit · subject · claims · findings`) — never drop it. Status
+dots carry the color: 🟢 green, 🟡 amber, 🔴 red — chat markdown strips
+terminal ANSI colors, so the dots ARE the color layer; never swap them
+for plain ASCII. The findings column follows one consistent rule: **zero
+counts are never printed, every nonzero cause is named, a clean row shows
+`—`** — `N residue`, `N cmds failed (program, …)`, `N mcp err (server)`.
+A colored row is never unexplained. If the findings list itself runs very
+long (>25), truncate it the same way and say how many were omitted —
+never silently.
 
 For `--project`, one wrapper parse yields the roll-up AND a spine table per
 repo that has commits (zero-commit repos stay as roll-up rows):
@@ -72,21 +92,41 @@ repo that has commits (zero-commit repos stay as roll-up rows):
 git-receipts export --project <dir> 2>/dev/null | python3 -c "
 import json,sys
 d=json.load(sys.stdin); s=d['summary']
-V={'green':'🟢','amber':'🟡','red':'🔴'}
-print('project verdict:', V.get(s['verdict'],''), s['verdict'], '·', s['repos'], 'repos')
+g={'green':'🟢','amber':'🟡','red':'🔴'}
+print('project verdict:', g.get(s['verdict'],''), s['verdict'], '·', s['repos'], 'repos')
+print()
+print('   repo        commits    claims  findings')
 for r in s['landing']:
-    print(' ', V.get(r['verdict'],'⚪'), r['name'].ljust(8), str(r['commits']).rjust(3), 'commits ·', str(r['landed'])+'/'+str(r['claims']), 'landed ·', r['broken'], 'broken ·', r['residue_files'], 'residue')
-g={'green':'🟢','amber':'🟡','red':'🔴'}; CAP=10
+    fs=[]
+    if r['broken']: fs.append(str(r['broken'])+' broken')
+    if r['residue_files']: fs.append(str(r['residue_files'])+' residue')
+    print(' ', g.get(r['verdict'],'⚪'), r['name'].ljust(10), str(r['commits']).rjust(5), '', (str(r['landed'])+'/'+str(r['claims'])).rjust(8), '', ' · '.join(fs) if fs else '—')
+CAP=10
+def row(i):
+    L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
+    fs=[]
+    res=len(i.get('residue',[]))
+    if res: fs.append(str(res)+' residue')
+    fr=[r for r in i.get('commands',{}).get('runs',[]) if r.get('failed')]
+    if fr:
+        names=[]
+        for r in fr:
+            t=(r.get('command') or '?').split(); n=t[0] if t else '?'
+            if n not in names: names.append(n)
+        fs.append(str(len(fr))+' cmd'+('s' if len(fr)>1 else '')+' failed ('+', '.join(names[:2])+('…' if len(names)>2 else '')+')')
+    me=[c for c in i.get('mcp',[]) if c.get('errored')]
+    if me:
+        srv=[]
+        for c in me:
+            n=c.get('server','?')
+            if n not in srv: srv.append(n)
+        fs.append(str(len(me))+' mcp err ('+', '.join(srv[:2])+')')
+    print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:45]).ljust(45), (str(landed)+'/'+str(len(L))).rjust(5), '', ' · '.join(fs) if fs else '—')
 for rep in d['repos']:
     iv=rep['receipt']['intervals']
     if not iv: continue
     print(); print('===', rep['name'], '===')
-    def row(i):
-        L=i.get('ledger',[]); landed=sum(1 for l in L if l.get('landing')!='never')
-        f=sum(1 for r in i.get('commands',{}).get('runs',[]) if r.get('failed'))
-        m=sum(1 for c in i.get('mcp',[]) if c.get('errored'))
-        x=(' · '+str(f)+' failed' if f else '')+(' · '+str(m)+' mcp-err' if m else '')
-        print(' ',g.get(i['status'],'⚪'), i['commit']['short'], (i['commit']['subject'][:44]).ljust(44), str(landed)+'/'+str(len(L)), 'landed ·', str(len(i.get('residue',[])))+' residue'+x)
+    print('   commit  '+'subject'.ljust(47)+'claims  findings')
     older=iv[:-CAP] if len(iv)>CAP else []
     fnd=[i for i in older if i['status']!='green']
     for i in fnd[:15]: row(i)
