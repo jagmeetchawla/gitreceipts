@@ -4,6 +4,7 @@
 //! false-green; see VERDICT §4.3/§5.2).
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::extract::{Action, Session};
 use crate::gitio::FileChange;
@@ -11,29 +12,59 @@ use crate::gitio::FileChange;
 /// Match a claimed absolute path against the audited repo.
 ///
 /// The repo root itself always qualifies. A session cwd qualifies as a
-/// *historical alias* (the repo was renamed or moved mid-session) only if
-/// the majority of distinct paths claimed under it appear somewhere in the
-/// repo's history — a scratch directory or a sibling repo fails that test.
+/// *historical alias* (the repo was renamed or moved mid-session, or is
+/// another checkout of the same repo) only if it survives two gates:
+///
+/// 1. **Ownership.** A cwd owned by a DIFFERENT live git repo can alias
+///    only when that repo shares a root commit with this one (a clone or
+///    second checkout). A sibling checked out beside this repo shares no
+///    history and can never alias — shared scaffold basenames must not
+///    drag its claims into this ledger as false broken promises.
+/// 2. **Content-verified majority.** Where claims carry usable probes,
+///    the majority of claimed CONTENT under the candidate must appear in
+///    this repo's history — filenames are shared across scaffolds
+///    (CLAUDE.md, package.json); bytes are not. Only probe-less claim
+///    sets fall back to the filename-majority test.
 pub(crate) struct Roots {
     valid: Vec<String>,
 }
 
 impl Roots {
-    pub(crate) fn build(repo_canon: &str, session: &Session, history: &HashSet<String>) -> Roots {
+    pub(crate) fn build(
+        repo: &Path,
+        repo_canon: &str,
+        session: &Session,
+        history: &HashSet<String>,
+    ) -> Roots {
         let mut candidates: Vec<String> = vec![repo_canon.to_string()];
         for cwd in &session.cwds {
-            if !candidates.contains(cwd) {
-                candidates.push(cwd.clone());
+            if candidates.contains(cwd) {
+                continue;
+            }
+            match owning_git_root(cwd) {
+                Some(owner) if owner != repo_canon => {
+                    if shares_root_commit(repo, Path::new(&owner)) {
+                        candidates.push(cwd.clone());
+                    }
+                }
+                _ => candidates.push(cwd.clone()),
             }
         }
 
-        // group distinct claimed paths by their longest-prefix candidate
+        // group distinct claimed paths (and their last usable probe) by
+        // their longest-prefix candidate
         let mut claimed_under: HashMap<&str, HashSet<String>> = HashMap::new();
+        let mut probes_under: HashMap<&str, HashMap<String, String>> = HashMap::new();
         for claim in &session.claims {
-            if let Action::FileMutation { path, .. } = &claim.action
+            if let Action::FileMutation { path, probe } = &claim.action
                 && let Some((root, rel)) = longest_prefix(path, &candidates)
             {
-                claimed_under.entry(root).or_default().insert(rel);
+                claimed_under.entry(root).or_default().insert(rel.clone());
+                if let Some(p) = probe
+                    && usable_probe(p)
+                {
+                    probes_under.entry(root).or_default().insert(rel, p.clone());
+                }
             }
         }
 
@@ -43,13 +74,26 @@ impl Roots {
                 if root.as_str() == repo_canon {
                     return true;
                 }
-                match claimed_under.get(root.as_str()) {
-                    Some(rels) if !rels.is_empty() => {
-                        let hits = rels.iter().filter(|r| history.contains(*r)).count();
-                        hits * 2 >= rels.len()
-                    }
-                    _ => false,
+                let Some(rels) = claimed_under.get(root.as_str()) else {
+                    return false;
+                };
+                if rels.is_empty() {
+                    return false;
                 }
+                if let Some(probes) = probes_under.get(root.as_str()) {
+                    let mut sample: Vec<(&String, &String)> = probes.iter().collect();
+                    sample.sort();
+                    sample.truncate(20);
+                    if !sample.is_empty() {
+                        let hits = sample
+                            .iter()
+                            .filter(|(rel, probe)| content_in_history(repo, rel, probe))
+                            .count();
+                        return hits * 2 >= sample.len();
+                    }
+                }
+                let hits = rels.iter().filter(|r| history.contains(*r)).count();
+                hits * 2 >= rels.len()
             })
             .cloned()
             .collect();
@@ -59,6 +103,46 @@ impl Roots {
     pub(crate) fn relativize(&self, path: &str) -> Option<String> {
         longest_prefix(path, &self.valid).map(|(_, rel)| rel)
     }
+}
+
+/// The canonical root of the git repo that owns `path`, if any — the
+/// nearest ancestor (or `path` itself) containing a `.git` entry.
+fn owning_git_root(path: &str) -> Option<String> {
+    let mut p = std::path::Path::new(path);
+    loop {
+        if p.join(".git").exists() {
+            return p.canonicalize().ok().map(|c| c.display().to_string());
+        }
+        p = p.parent()?;
+    }
+}
+
+/// Two working directories belong to the same repo family iff they share a
+/// root commit — true for a clone or second checkout, never for a sibling
+/// project that merely shares scaffold filenames.
+fn shares_root_commit(repo: &Path, other: &Path) -> bool {
+    let roots_of = |p: &Path| {
+        crate::gitio::git(p, &["rev-list", "--max-parents=0", "HEAD"])
+            .map(|raw| raw.lines().map(str::to_string).collect::<HashSet<String>>())
+            .unwrap_or_default()
+    };
+    let a = roots_of(repo);
+    !a.is_empty() && !a.is_disjoint(&roots_of(other))
+}
+
+/// Did this claimed content ever land at `rel` in the repo's history? The
+/// last commit that touched `rel` (any ref) must carry the probe — the
+/// content-level standard the landing checks already use, applied to
+/// alias qualification.
+fn content_in_history(repo: &Path, rel: &str, probe: &str) -> bool {
+    let Ok(raw) = crate::gitio::git(repo, &["log", "-1", "--all", "--format=%H", "--", rel]) else {
+        return false;
+    };
+    let hash = raw.lines().next().unwrap_or("").trim();
+    if hash.is_empty() {
+        return false;
+    }
+    crate::gitio::file_at_commit(repo, hash, rel).is_some_and(|c| c.contains(probe))
 }
 
 pub fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, String)> {

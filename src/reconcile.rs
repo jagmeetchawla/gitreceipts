@@ -107,7 +107,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         .unwrap_or_else(|_| repo.display().to_string());
     let history = gitio::history_paths(repo)?;
     let pushed_set = gitio::pushed_commits(repo);
-    let roots = Roots::build(&repo_canon, session, &history);
+    let roots = Roots::build(repo, &repo_canon, session, &history);
 
     // Interval index for a timestamp: first spine commit at-or-after it.
     // Git truncates committer dates to whole seconds, so the event that

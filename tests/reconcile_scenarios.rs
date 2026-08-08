@@ -1344,3 +1344,216 @@ fn mcp_calls_are_counted_as_first_class_actions() {
     assert_eq!(runs[0].tool, "query");
     assert!(!runs[0].errored, "a success result is not errored");
 }
+
+#[test]
+fn a_sibling_repos_claims_never_become_this_repos_broken_promises() {
+    // The Sites-audit shape (2026-08-07): one session drives two sibling
+    // repos that share common basenames (CLAUDE.md, package.json). The shared
+    // files let the sibling's cwd pass the historical-alias majority test,
+    // dragging ALL its claims into this repo's ledger — and the sibling-only
+    // file (an appcast.xml this repo never had) becomes a false broken
+    // promise. A cwd that is itself another git repo must never qualify as a
+    // historical alias of this one.
+    let repo = TempRepo::new("site-a");
+    let root = repo.root.display().to_string();
+
+    repo.write("CLAUDE.md", "guide");
+    repo.write("package.json", "{}");
+    repo.write("index.html", "<html>");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "scaffold"],
+        Some("2026-01-01T09:00:00Z"),
+    );
+
+    // A REAL sibling git repo beside the audited one.
+    let sib = repo
+        .root
+        .parent()
+        .unwrap()
+        .join(format!("gitreceipts-site-b-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&sib);
+    std::fs::create_dir_all(&sib).unwrap();
+    let ok = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&sib)
+        .args(["init", "-q"])
+        .status()
+        .unwrap();
+    assert!(ok.success());
+    let sib_root = sib.canonicalize().unwrap().display().to_string();
+
+    let body = SessionBuilder::default_body("index.html");
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "update the site and its sibling")
+        .write_claim("2026-01-01T10:00:01Z", "2026-01-01T10:00:02Z", "index.html")
+        // Same turn, sibling repo: two shared basenames (both present in THIS
+        // repo's history — the alias-test bait) and one sibling-only file.
+        .set_cwd(&sib_root)
+        .write_claim("2026-01-01T10:00:03Z", "2026-01-01T10:00:04Z", "CLAUDE.md")
+        .write_claim(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:06Z",
+            "package.json",
+        )
+        .write_claim(
+            "2026-01-01T10:00:07Z",
+            "2026-01-01T10:00:08Z",
+            "public/appcast.xml",
+        )
+        .set_cwd(&root)
+        .bash_claim(
+            "2026-01-01T10:00:09Z",
+            "2026-01-01T10:00:10Z",
+            "git add index.html && git commit -m site",
+        );
+
+    repo.write("index.html", &body);
+    repo.git(&["add", "index.html"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "site"],
+        Some("2026-01-01T10:00:11Z"),
+    );
+
+    let audit = run(&repo, &s);
+    let _ = std::fs::remove_dir_all(&sib);
+
+    assert_eq!(
+        audit.counts().broken,
+        0,
+        "a sibling repo's claims must never be this repo's broken promises"
+    );
+    assert_eq!(
+        audit.out_of_repo.len(),
+        3,
+        "all three sibling writes belong in the out-of-repo bucket"
+    );
+}
+
+#[test]
+fn a_renamed_siblings_dead_path_does_not_alias_into_this_repo() {
+    // The second Sites-audit shape: a sibling repo was RENAMED on disk
+    // (clipbop-app -> clipbob-app), so session claims target a path that no
+    // longer exists. Nothing owns the dead path, and both repos share common
+    // scaffold basenames (CLAUDE.md, package.json) — a filename-majority
+    // alias test admits the dead root into EVERY sibling. Content must
+    // decide: this repo's history has a CLAUDE.md, but not the sibling's
+    // CLAUDE.md bytes.
+    let repo = TempRepo::new("content-a");
+    let root = repo.root.display().to_string();
+
+    repo.write("CLAUDE.md", "this repo's own guide, committed");
+    repo.write("package.json", "{\"name\":\"content-a\"}");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "scaffold"],
+        Some("2026-01-01T09:00:00Z"),
+    );
+
+    // A dead path: never exists on disk during the audit.
+    let dead = repo
+        .root
+        .parent()
+        .unwrap()
+        .join(format!("gitreceipts-renamed-away-{}", std::process::id()))
+        .display()
+        .to_string();
+
+    let body = SessionBuilder::default_body("index.html");
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "work across the sites")
+        .write_claim("2026-01-01T10:00:01Z", "2026-01-01T10:00:02Z", "index.html")
+        .set_cwd(&dead)
+        // Shared basenames, but content that is NOT in this repo's history.
+        .write_claim_content(
+            "2026-01-01T10:00:03Z",
+            "2026-01-01T10:00:04Z",
+            "CLAUDE.md",
+            "the SIBLING's guide — different bytes entirely, never here",
+        )
+        .write_claim_content(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:06Z",
+            "package.json",
+            "{\"name\":\"the-sibling\",\"private\":true}",
+        )
+        .write_claim_content(
+            "2026-01-01T10:00:07Z",
+            "2026-01-01T10:00:08Z",
+            "public/appcast.xml",
+            "<rss version=\"2.0\"><channel>sibling releases</channel></rss>",
+        )
+        .set_cwd(&root)
+        .bash_claim(
+            "2026-01-01T10:00:09Z",
+            "2026-01-01T10:00:10Z",
+            "git add index.html && git commit -m site",
+        );
+
+    repo.write("index.html", &body);
+    repo.git(&["add", "index.html"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "site"],
+        Some("2026-01-01T10:00:11Z"),
+    );
+
+    let audit = run(&repo, &s);
+    assert_eq!(
+        audit.counts().broken,
+        0,
+        "a renamed-away sibling's claims must not become this repo's broken promises"
+    );
+    assert_eq!(
+        audit.out_of_repo.len(),
+        3,
+        "the dead root's claims stay out of this repo"
+    );
+}
+
+#[test]
+fn this_repos_own_dead_path_still_aliases_by_content() {
+    // The genuine rename: THIS repo lived at another path earlier in the
+    // session (clipbop-app -> clipbob-app), and claims recorded under the
+    // old path really landed here. Content-verified aliasing must keep
+    // resolving them — killing the sibling false-reds must not break the
+    // true rename case.
+    let repo = TempRepo::new("content-b");
+
+    let old = repo
+        .root
+        .parent()
+        .unwrap()
+        .join(format!("gitreceipts-old-home-{}", std::process::id()))
+        .display()
+        .to_string();
+
+    let body_a = SessionBuilder::default_body("a.txt");
+    let body_b = SessionBuilder::default_body("b.txt");
+    let mut s = SessionBuilder::with_id(&old, "old");
+    s.user_text("2026-01-01T10:00:00Z", "build it")
+        .write_claim("2026-01-01T10:00:01Z", "2026-01-01T10:00:02Z", "a.txt")
+        .write_claim("2026-01-01T10:00:03Z", "2026-01-01T10:00:04Z", "b.txt")
+        .bash_claim(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:07Z",
+            "git add -A && git commit -m one",
+        );
+
+    // The work landed in THIS repo (post-rename home) with the claimed bytes.
+    repo.write("a.txt", &body_a);
+    repo.write("b.txt", &body_b);
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:06Z"));
+
+    let audit = run(&repo, &s);
+    assert_eq!(
+        audit.counts().broken,
+        0,
+        "true-rename claims are not broken"
+    );
+    assert!(
+        audit.out_of_repo.is_empty(),
+        "the old home's claims belong in THIS ledger"
+    );
+    assert!(audit.intervals[0].balanced(), "the interval balances");
+}
