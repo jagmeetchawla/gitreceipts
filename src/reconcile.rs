@@ -351,6 +351,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 landed_at: None,
                 resolution: None,
                 diagnosis: None,
+                scratch: false,
             });
         }
         interval.residue = interval
@@ -363,11 +364,15 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
 
     // Forward sweep: a claim can land in ANY later commit, not just the next
     // one — partial staging, batched commits, a file parked for a day. For each
-    // unlanded claim, walk subsequent commits and take the first whose statement
-    // touches the path: that is a late landing, and the matching residue there is
-    // explained away. This is the SAME path-level bar the on-time check uses
-    // (a file in the commit = landed) — landing is landing, on time or late, and
-    // no blob read is needed.
+    // unlanded claim, walk subsequent commits whose statement touches the path
+    // and take the first whose BLOB carries the claimed probe. A late landing
+    // is ONLY ever content-verified (VERDICT §5.1): a coincidental later change
+    // to the same path is not evidence this edit landed — that was a
+    // false-green once already, and a perf pass quietly reintroduced it as a
+    // path-only check. Blob reads here are cheap: only still-unlanded claims
+    // reach this loop, and only commits touching their path are read. A claim
+    // with no usable probe cannot be verified and stays Never for the
+    // resolution passes.
     let n = audit.intervals.len();
     let mut sweeps: Vec<(usize, usize, String, usize)> = Vec::new(); // (i, line_idx, path, j)
     for i in 0..n {
@@ -375,8 +380,14 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             if line.landing != Landing::Never {
                 continue;
             }
+            let Some(probe) = line.probe.as_deref().filter(|p| usable_probe(p)) else {
+                continue;
+            };
             for (j, later) in audit.intervals.iter().enumerate().skip(i + 1) {
-                if later.statement.iter().any(|c| c.path == line.path) {
+                if later.statement.iter().any(|c| c.path == line.path)
+                    && gitio::file_at_commit(repo, &later.commit.hash, &line.path)
+                        .is_some_and(|content| content.contains(probe))
+                {
                     sweeps.push((i, line_idx, line.path.clone(), j));
                     break;
                 }
@@ -633,7 +644,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                     && std::fs::read_to_string(repo.join(&line.path))
                         .is_ok_and(|now| now.contains(probe))
             });
-            line.diagnosis = Some(if gitio::is_ignored(repo, &line.path) {
+            let diagnosis = if gitio::is_ignored(repo, &line.path) {
                 "gitignored — the write was real but git never saw it"
             } else if on_disk_with_content {
                 "the content is on disk right now, still uncommitted — it never reached a commit"
@@ -642,8 +653,24 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             } else if repo.join(&line.path).exists() {
                 "on disk, never committed — and today's file no longer carries this edit"
             } else {
+                // Scratch churn: the path never entered ANY commit (the
+                // forward sweep checked every one) and is gone from disk.
+                // Nothing that was ever in history got lost — a starter
+                // file generated, used, and discarded before the work took
+                // its committed shape. Resolved (not a broken promise),
+                // but it AMBERS the interval: worth a look, never a lie.
+                // Real loss stays red via the tracked-file and
+                // no-longer-carries diagnoses above.
+                line.scratch = true;
+                line.resolution = Some(
+                    "written and discarded before it ever reached a commit — scratch churn \
+                     (the path never entered history; nothing committed was lost). Ambers the \
+                     interval, never red"
+                        .to_string(),
+                );
                 "deleted before any commit — written, used, thrown away"
-            });
+            };
+            line.diagnosis = Some(diagnosis);
         }
     }
 

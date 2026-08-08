@@ -28,6 +28,17 @@ fn green_and_broken(name: &str) -> (TempRepo, SessionBuilder) {
     let repo = TempRepo::new(name);
     let root = repo.root.display().to_string();
 
+    // b.txt is committed BEFORE the session window — so the lost edit
+    // below is the TRACKED-FILE loss class, which stays red under the
+    // 0.1.1 contract (a never-committed vanished file would be
+    // scratch-amber instead), and it stays out of interval 1's statement.
+    repo.write("b.txt", "original committed b content");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "base b"],
+        Some("2026-02-01T09:00:00Z"),
+    );
+
     // Interval 1: a.txt is claimed and actually committed → green.
     repo.write("a.txt", &SessionBuilder::default_body("a.txt"));
     repo.git(&["add", "-A"]);
@@ -36,7 +47,7 @@ fn green_and_broken(name: &str) -> (TempRepo, SessionBuilder) {
         Some("2026-02-01T10:05:00Z"),
     );
 
-    // Interval 2: c.txt lands, b.txt is claimed but never committed → red.
+    // Interval 2: c.txt lands; the claimed edit to b.txt never lands → red.
     repo.write("c.txt", &SessionBuilder::default_body("c.txt"));
     repo.git(&["add", "-A"]);
     repo.git_at(

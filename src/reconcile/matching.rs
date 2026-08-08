@@ -81,9 +81,12 @@ impl Roots {
                     return false;
                 }
                 if let Some(probes) = probes_under.get(root.as_str()) {
+                    // Every probed rel votes — a truncated sample would bias
+                    // the vote (alphabetical caps like CLAUDE.md/MEMORY.md
+                    // sort first and are the least likely to have landed,
+                    // under-crediting a true rename).
                     let mut sample: Vec<(&String, &String)> = probes.iter().collect();
                     sample.sort();
-                    sample.truncate(20);
                     if !sample.is_empty() {
                         let hits = sample
                             .iter()
@@ -130,19 +133,23 @@ fn shares_root_commit(repo: &Path, other: &Path) -> bool {
     !a.is_empty() && !a.is_disjoint(&roots_of(other))
 }
 
-/// Did this claimed content ever land at `rel` in the repo's history? The
-/// last commit that touched `rel` (any ref) must carry the probe — the
-/// content-level standard the landing checks already use, applied to
-/// alias qualification.
+/// Did this claimed content ever land at `rel` in the repo's history?
+/// Every commit that touched `rel` is a candidate — a claim lands in its
+/// own era and later edits overwrite it (a product-wide rename rewriting
+/// the very bytes must not un-verify the claims that built the file).
+/// Same content-level standard the landing checks use, applied to alias
+/// qualification. Walk capped: an alias vote needs a hit, not a census.
 fn content_in_history(repo: &Path, rel: &str, probe: &str) -> bool {
-    let Ok(raw) = crate::gitio::git(repo, &["log", "-1", "--all", "--format=%H", "--", rel]) else {
+    let Ok(raw) = crate::gitio::git(repo, &["log", "--all", "--format=%H", "--", rel]) else {
         return false;
     };
-    let hash = raw.lines().next().unwrap_or("").trim();
-    if hash.is_empty() {
-        return false;
-    }
-    crate::gitio::file_at_commit(repo, hash, rel).is_some_and(|c| c.contains(probe))
+    raw.lines()
+        .take(30)
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
+        .any(|hash| {
+            crate::gitio::file_at_commit(repo, hash, rel).is_some_and(|c| c.contains(probe))
+        })
 }
 
 pub fn longest_prefix<'r>(path: &str, roots: &'r [String]) -> Option<(&'r str, String)> {

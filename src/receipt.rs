@@ -228,6 +228,7 @@ pub struct Summary {
 pub struct ExceptionCounts {
     pub landed_late: usize,
     pub resolved_superseded: usize,
+    pub resolved_scratch: usize,
     pub resolved_deliberate: usize,
     pub resolved_persisted: usize,
     /// Landed at a different path (moved before its first commit; content-verified).
@@ -251,6 +252,7 @@ impl From<crate::reconcile::Exceptions> for ExceptionCounts {
         ExceptionCounts {
             landed_late: e.landed_late,
             resolved_superseded: e.resolved_superseded,
+            resolved_scratch: e.resolved_scratch,
             resolved_deliberate: e.resolved_deliberate,
             resolved_persisted: e.resolved_persisted,
             resolved_relocated: e.resolved_relocated,
@@ -467,6 +469,9 @@ pub struct LedgerReceipt {
     /// Why git never saw it, when we can tell.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnosis: Option<String>,
+    /// Scratch churn: discarded before any commit — resolved, ambers.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub scratch: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -970,6 +975,7 @@ fn interval_receipt(
                 }),
                 resolution: l.resolution.clone(),
                 diagnosis: l.diagnosis.map(str::to_string),
+                scratch: l.scratch,
             })
             .collect(),
         residue: i.residue.iter().map(file_change).collect(),

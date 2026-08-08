@@ -478,6 +478,7 @@ fn render_summary(
     let persisted = ex.resolved_persisted;
     let deliberate = ex.resolved_deliberate;
     let relocated = ex.resolved_relocated;
+    let scratch = ex.resolved_scratch;
     let attributed = ex.unclaimed_by_command;
     let dismissed = ex.dismissed;
     let residue = ex.residue;
@@ -531,11 +532,11 @@ fn render_summary(
             "<div class=\"line dim\">· claims that landed late: {late}, content-verified against the commit they landed in</div>"
         );
     }
-    if superseded + persisted + deliberate + relocated > 0 {
+    if superseded + persisted + deliberate + relocated + scratch > 0 {
         let _ = write!(
             b,
-            "<div class=\"line dim\">· never landed, resolved: {} — superseded by later landed edits: {superseded} · removed deliberately: {deliberate} · persisted on disk outside git: {persisted} · relocated before first commit, landed at a different path (content-verified): {relocated}</div>",
-            superseded + persisted + deliberate + relocated
+            "<div class=\"line dim\">· never landed, resolved: {} — superseded by later landed edits: {superseded} · removed deliberately: {deliberate} · persisted on disk outside git: {persisted} · relocated before first commit, landed at a different path (content-verified): {relocated} · written and discarded before any commit (scratch churn; ambers): {scratch}</div>",
+            superseded + persisted + deliberate + relocated + scratch
         );
     }
     let _ = write!(

@@ -495,7 +495,8 @@ pub fn print(
     let persisted = ex.resolved_persisted;
     let deliberate = ex.resolved_deliberate;
     let relocated = ex.resolved_relocated;
-    let resolved_total = superseded + persisted + deliberate + relocated;
+    let scratch = ex.resolved_scratch;
+    let resolved_total = superseded + persisted + deliberate + relocated + scratch;
     // Equation-scoped, same as the balance/tiles — a keyframe's claims are not
     // this agent's broken promises.
     let broken = c.broken;
@@ -523,6 +524,11 @@ pub fn print(
         if relocated > 0 {
             parts.push(format!(
                 "relocated before first commit, landed at a different path (content-verified): {relocated}"
+            ));
+        }
+        if scratch > 0 {
+            parts.push(format!(
+                "written and discarded before any commit (scratch churn; ambers): {scratch}"
             ));
         }
         println!(

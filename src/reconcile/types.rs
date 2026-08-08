@@ -49,6 +49,10 @@ pub struct LedgerLine {
     pub resolution: Option<String>,
     /// For never-landed claims: why git never saw it, when we can tell.
     pub diagnosis: Option<&'static str>,
+    /// Scratch churn: written and discarded before it ever reached a commit
+    /// (never in history, gone from disk). Resolved — never a broken
+    /// promise — but it AMBERS the interval: worth a look, not a lie.
+    pub scratch: bool,
 }
 
 /// A draft commit replaced by an amend moments later — collapsed out of the
@@ -182,6 +186,7 @@ impl Interval {
         {
             Status::Red
         } else if !self.residue.is_empty()
+            || self.ledger.iter().any(|l| l.scratch)
             || self.commands_run.iter().any(|c| c.failed)
             || self.mcp_runs.iter().any(|m| m.errored)
         {
@@ -230,6 +235,8 @@ pub struct Exceptions {
     pub resolved_persisted: usize,
     /// Landed at a DIFFERENT path (moved before its first commit; content-verified).
     pub resolved_relocated: usize,
+    /// Written and discarded before any commit — scratch churn (ambers).
+    pub resolved_scratch: usize,
     /// Genuine residue (unclaimed changes git recorded), before the who-split.
     pub residue: usize,
     /// Unclaimed total = residue + command-attributed + dismissed.
@@ -351,6 +358,7 @@ impl Audit {
             resolved_deliberate: resolved("deliberately"),
             resolved_persisted: resolved("persisted outside git"),
             resolved_relocated: resolved("relocated before its first commit"),
+            resolved_scratch: resolved("scratch churn"),
             residue,
             unclaimed_total: residue + by_command + dismissed,
             unclaimed_by_command: by_command,

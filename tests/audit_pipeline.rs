@@ -71,8 +71,8 @@ fn full_pipeline_balances_the_interval_equation() {
     assert!(interval.agent_committed, "the Bash claim covers the commit");
     assert_eq!(
         interval.status(),
-        Status::Red,
-        "a lost claim makes the interval red, not merely residue-yellow"
+        Status::Amber,
+        "a never-committed discarded file is scratch churn — ambers, never red (0.1.1 contract)"
     );
 
     let landed: Vec<&str> = interval
@@ -83,16 +83,22 @@ fn full_pipeline_balances_the_interval_equation() {
         .collect();
     assert_eq!(landed, vec!["src.txt"]);
 
-    let never: Vec<&gitreceipts::reconcile::LedgerLine> = interval.never_landed().collect();
-    assert_eq!(never.len(), 1);
-    assert_eq!(never[0].path, "scratch.txt");
+    assert_eq!(
+        interval.never_landed().count(),
+        0,
+        "scratch churn is resolved, not a broken promise"
+    );
+    let scratch: Vec<&gitreceipts::reconcile::LedgerLine> =
+        interval.ledger.iter().filter(|l| l.scratch).collect();
+    assert_eq!(scratch.len(), 1);
+    assert_eq!(scratch[0].path, "scratch.txt");
     assert!(
-        never[0]
+        scratch[0]
             .diagnosis
             .unwrap()
             .starts_with("deleted before any commit"),
         "diagnosis was: {:?}",
-        never[0].diagnosis
+        scratch[0].diagnosis
     );
 
     let residue: Vec<&str> = interval.residue.iter().map(|c| c.path.as_str()).collect();

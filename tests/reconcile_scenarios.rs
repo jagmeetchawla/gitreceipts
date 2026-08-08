@@ -590,12 +590,23 @@ fn later_same_path_change_counts_as_a_late_landing() {
         .expect("the mid-session a.txt claim maps to interval two");
     assert_eq!(
         line.landing,
-        Landing::Late,
-        "a later commit touching a.txt is a late landing (path-level)"
+        Landing::Never,
+        "a coincidental later rewrite of the same path is NOT a landing —          late landings are content-verified only (VERDICT §5.1)"
+    );
+    assert!(line.resolution.is_none() && !line.scratch);
+    assert!(
+        line.diagnosis.is_some_and(|d| d.contains("tracked file")),
+        "diagnosis: {:?}",
+        line.diagnosis
+    );
+    assert_eq!(
+        second.status(),
+        Status::Red,
+        "a lost edit is a broken promise"
     );
     assert!(
-        !audit.intervals[2].residue.iter().any(|c| c.path == "a.txt"),
-        "the late landing strikes commit three's a.txt residue"
+        audit.intervals[2].residue.iter().any(|c| c.path == "a.txt"),
+        "commit three's unrelated a.txt rewrite stays residue there — nothing struck it"
     );
 }
 
@@ -851,13 +862,20 @@ fn intermediate_edit_that_lands_in_a_later_commit_is_not_red() {
     let line = first.ledger.iter().find(|l| l.path == "app.swift").unwrap();
     assert_eq!(
         line.landing,
-        Landing::Late,
-        "the intermediate claim's path lands in the later commit (path-level)"
+        Landing::Never,
+        "the draft's content never landed — content-verified sweep says Never"
+    );
+    assert!(
+        line.resolution
+            .as_deref()
+            .is_some_and(|r| r.contains("superseded")),
+        "the later landed edit to the same path supersedes the draft: {:?}",
+        line.resolution
     );
     assert_eq!(
         first.status(),
         Status::Green,
-        "an edit that lands later is not a broken promise"
+        "a superseded draft is not a broken promise"
     );
 }
 
@@ -943,9 +961,13 @@ fn gitignored_claim_whose_content_persists_on_disk_is_resolved() {
 }
 
 #[test]
-fn a_silently_vanished_file_stays_red() {
-    // No later landed edit, no command names it, nothing on disk — the
-    // one story that must remain a broken promise.
+fn a_never_committed_vanished_file_is_scratch_amber_not_red() {
+    // 0.1.1 contract: a file that never entered ANY commit and is gone from
+    // disk is scratch churn — written, used, thrown away before the work
+    // took its committed shape. Nothing that was ever in history got lost,
+    // so it cannot be a broken promise. It is NOT green either: it ambers
+    // the interval with an evidence-cited resolution. Real loss stays red
+    // via the tracked-file diagnosis (next test).
     let repo = TempRepo::new("vanish");
     let root = repo.root.display().to_string();
 
@@ -967,8 +989,152 @@ fn a_silently_vanished_file_stays_red() {
     let first = &audit.intervals[0];
     let line = first.ledger.iter().find(|l| l.path == "ghost.txt").unwrap();
     assert_eq!(line.landing, Landing::Never);
-    assert!(line.resolution.is_none(), "nothing explains this one");
+    assert!(line.scratch, "never-in-history + gone = scratch churn");
+    assert!(
+        line.resolution
+            .as_deref()
+            .is_some_and(|r| r.contains("scratch churn")),
+        "the resolution cites its evidence"
+    );
+    assert_eq!(audit.counts().broken, 0, "scratch is not a broken promise");
+    assert_eq!(
+        first.status(),
+        Status::Amber,
+        "scratch ambers — worth a look, never green, never red"
+    );
+    assert_eq!(audit.exceptions().resolved_scratch, 1);
+}
+
+#[test]
+fn a_tracked_files_lost_edit_stays_red() {
+    // The genuine loss: the file IS in history, the claimed edit's content
+    // never reached any commit — overwritten or reverted before landing.
+    // No scratch escape hatch applies; this is what red is for.
+    let repo = TempRepo::new("lostedit");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "original committed content");
+    repo.write("b.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "base"],
+        Some("2026-01-01T09:00:00Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "improve a.txt")
+        .write_claim_content(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:06Z",
+            "a.txt",
+            "the improved content that will be lost before landing",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:08Z",
+            "2026-01-01T10:00:10Z",
+            "git add b.txt && git commit -m touch-b",
+        );
+
+    // The session's commit does not carry a.txt; a later commit touches
+    // a.txt WITHOUT the claimed content (reverted/overwritten).
+    repo.write("b.txt", "y");
+    repo.git(&["add", "b.txt"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "touch-b"],
+        Some("2026-01-01T10:00:09Z"),
+    );
+    repo.write("a.txt", "unrelated replacement content");
+    repo.git(&["add", "a.txt"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "later"],
+        Some("2026-01-01T10:00:30Z"),
+    );
+
+    let audit = run(&repo, &s);
+    let first = &audit.intervals[0];
+    let line = first.ledger.iter().find(|l| l.path == "a.txt").unwrap();
+    assert_eq!(line.landing, Landing::Never);
+    assert!(!line.scratch, "a tracked file is never scratch");
+    assert!(line.resolution.is_none(), "nothing explains this loss");
+    assert!(
+        line.diagnosis.is_some_and(|d| d.contains("tracked file")),
+        "diagnosis names the loss class: {:?}",
+        line.diagnosis
+    );
+    assert_eq!(
+        audit.counts().broken,
+        1,
+        "a real loss stays a broken promise"
+    );
     assert_eq!(first.status(), Status::Red);
+}
+
+#[test]
+fn a_discarded_starter_scaffold_ambers_as_scratch_not_red() {
+    // The ClipBob shape: a generator writes a starter tree, the agent works
+    // in it, the approach changes, the tree is discarded before the first
+    // commit ever includes it. Five files, one interval, zero broken.
+    let repo = TempRepo::new("scaffold");
+    let root = repo.root.display().to_string();
+
+    let body = SessionBuilder::default_body("public/index.html");
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "scaffold the site")
+        .write_claim(
+            "2026-01-01T10:00:01Z",
+            "2026-01-01T10:00:02Z",
+            "src/pages/index.astro",
+        )
+        .write_claim(
+            "2026-01-01T10:00:03Z",
+            "2026-01-01T10:00:04Z",
+            "src/layouts/Layout.astro",
+        )
+        .write_claim(
+            "2026-01-01T10:00:05Z",
+            "2026-01-01T10:00:06Z",
+            "src/components/Icon.astro",
+        )
+        .write_claim(
+            "2026-01-01T10:00:07Z",
+            "2026-01-01T10:00:08Z",
+            "src/styles/global.css",
+        )
+        .user_text("2026-01-01T10:00:09Z", "actually make it a single file")
+        .write_claim(
+            "2026-01-01T10:00:10Z",
+            "2026-01-01T10:00:11Z",
+            "public/index.html",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:12Z",
+            "2026-01-01T10:00:14Z",
+            "git add public && git commit -m site",
+        );
+
+    repo.write("public/index.html", &body);
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "site"],
+        Some("2026-01-01T10:00:13Z"),
+    );
+
+    let audit = run(&repo, &s);
+    assert_eq!(
+        audit.counts().broken,
+        0,
+        "a discarded scaffold is not a lie"
+    );
+    assert_eq!(
+        audit.exceptions().resolved_scratch,
+        4,
+        "all four starter files resolve as scratch"
+    );
+    assert_eq!(
+        audit.intervals[0].status(),
+        Status::Amber,
+        "and the interval ambers"
+    );
 }
 
 #[test]
@@ -1118,12 +1284,20 @@ fn a_broken_promise_is_not_resolved_by_a_substring_mention() {
     let first = &audit.intervals[0];
     let line = first.ledger.iter().find(|l| l.path == "config.rs").unwrap();
     assert_eq!(line.landing, Landing::Never);
+    // The guard under test: the `echo done > config.rs.log` mention must NOT
+    // produce a deliberate-removal resolution. (Under the 0.1.1 contract the
+    // line resolves as scratch churn — never-committed, gone — which ambers;
+    // the laundering path stays closed.)
     assert!(
-        line.resolution.is_none(),
-        "a substring mention must not resolve a broken promise: {:?}",
+        !line
+            .resolution
+            .as_deref()
+            .is_some_and(|r| r.contains("deliberately")),
+        "a substring mention must never read as deliberate removal: {:?}",
         line.resolution
     );
-    assert_eq!(first.status(), Status::Red);
+    assert!(line.scratch, "resolves only as scratch churn");
+    assert_eq!(first.status(), Status::Amber, "worth a look — never green");
 }
 
 #[test]
