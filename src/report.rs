@@ -367,6 +367,15 @@ pub fn print(
         return;
     }
 
+    // Recap owns its report end to end, composed from the same per-interval
+    // pieces the audit uses. Gating a monolithic renderer flag by flag is
+    // how --verbose kept coming out audit-shaped in everything but the
+    // header.
+    if opts.narrative {
+        print_recap_report(&st, session, audit, opts, multi_model);
+        return;
+    }
+
     if let (Some(a), Some(b)) = (session.first_ts, session.last_ts) {
         let dur = b - a;
         println!(
@@ -1853,6 +1862,144 @@ fn print_recap(
         st.dim(&format!(
             "one commit's story:  git receipts recap --commit {example}\n\
              keep or share it:    git receipts recap --format html > recap.html\n\
+             the data:            git receipts export > receipt.json"
+        ))
+    );
+}
+
+/// Which intervals a condensed view shows, and what it must announce.
+///
+/// Findings of any age, then the recent tail — one policy, used by every
+/// condensed renderer (recap's default, `--summary`, and their project
+/// forms) so they cannot cap differently or omit silently in different
+/// ways. Returns (earlier findings to show, how many findings were cut,
+/// how many earlier commits exist).
+fn condensed_slice<'a>(eq: &[&'a Interval], cap: usize) -> (Vec<&'a Interval>, usize, usize) {
+    let older = eq.len().saturating_sub(cap);
+    let findings: Vec<&Interval> = eq[..older]
+        .iter()
+        .copied()
+        .filter(|iv| iv.status() != Status::Green)
+        .collect();
+    let omitted = findings.len().saturating_sub(cap);
+    (findings.into_iter().take(cap).collect(), omitted, older)
+}
+
+/// The two honesty lines a condensed view owes the reader when it hides
+/// anything — never a silent truncation.
+fn condensed_notes(st: &Style, omitted: usize, older: usize, tail_note: &str) {
+    if omitted > 0 {
+        println!(
+            "    {}",
+            st.dim(&format!("… {omitted} more findings omitted"))
+        );
+    }
+    if older > 0 {
+        println!(
+            "    {}",
+            st.dim(&format!("… {older} earlier commits ({tail_note})"))
+        );
+    }
+}
+
+/// Recap's whole report: the headline, what happened commit by commit, and
+/// what to run next. Composed from the same interval renderers the audit
+/// uses — the difference is which vocabulary frames them and what gets
+/// left out, not a second implementation of the same facts.
+fn print_recap_report(
+    st: &Style,
+    session: &Session,
+    audit: &Audit,
+    opts: &Options,
+    multi_model: bool,
+) {
+    let c = audit.counts();
+    const CAP: usize = 15;
+    println!();
+    let commits = if c.total == 1 { "commit" } else { "commits" };
+    println!(
+        "{} {commits} · {} prompts · {}/{} claimed files landed",
+        c.total, audit.prompts, c.claims_landed, c.claims_total,
+    );
+
+    let eq: Vec<&Interval> = audit.equation().collect();
+    let flagged: Vec<&&Interval> = eq
+        .iter()
+        .filter(|iv| matches!(iv.status(), Status::Amber | Status::Red))
+        .collect();
+    if !flagged.is_empty() {
+        let names: Vec<String> = flagged
+            .iter()
+            .take(6)
+            .map(|iv| iv.commit.short.clone())
+            .collect();
+        println!(
+            "{}",
+            st.dim(&format!(
+                "worth a look: {}{} — `git receipts audit` for the verdict",
+                names.join(", "),
+                if flagged.len() > 6 {
+                    format!(" and {} more", flagged.len() - 6)
+                } else {
+                    String::new()
+                }
+            ))
+        );
+    }
+    println!();
+
+    // --verbose walks every commit in full; the default shows findings of
+    // any age plus the recent tail, so a long session stays readable.
+    let enriched = audit.intervals.iter().any(|i| !i.commit.from_history);
+    let deep = opts.verbose || opts.with_output || opts.full;
+    let index_of = |target: &Interval| {
+        audit
+            .intervals
+            .iter()
+            .position(|i| i.commit.hash == target.commit.hash)
+            .unwrap_or(0)
+    };
+    let show = |iv: &Interval| {
+        if deep {
+            let i = index_of(iv);
+            let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
+            let prov = commit_provenance(session, after, iv.commit.ts, multi_model);
+            let cost = session.cost_in(after, Some(iv.commit.ts));
+            println!();
+            render_interval(st, iv, opts, enriched, prov, cost);
+            if opts.full && (opts.show.prompt || opts.show.summary) {
+                render_conversation(st, session, after, Some(iv.commit.ts), opts.show);
+            }
+        } else {
+            recap_entry(st, iv, opts.show.prompt);
+        }
+    };
+
+    if deep {
+        for iv in &eq {
+            show(iv);
+        }
+    } else {
+        let (earlier, omitted, older) = condensed_slice(&eq, CAP);
+        for iv in earlier {
+            show(iv);
+        }
+        condensed_notes(st, omitted, older, "anything notable is above");
+        for iv in &eq[older..] {
+            show(iv);
+        }
+    }
+
+    println!();
+    let example = eq
+        .last()
+        .map(|iv| iv.commit.short.as_str())
+        .unwrap_or("<hash>");
+    println!(
+        "{}",
+        st.dim(&format!(
+            "one commit's story:  git receipts recap --commit {example}\n\
+             keep or share it:    git receipts recap --format html --compact > recap.html\n\
              the data:            git receipts export > receipt.json"
         ))
     );
