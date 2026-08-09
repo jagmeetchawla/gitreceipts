@@ -209,7 +209,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     // pool captured output: a command's stdout listing a filename (git
     // status, ls, a commit summary) is not evidence the command changed
     // that file — only the command text naming a path is causal.
-    let mut cmd_corpus: Vec<Vec<String>> = vec![Vec::new(); audit.intervals.len()];
+    // (command text, did it exit non-zero) — a command that failed PARTWAY
+    // still made the writes it got to, so it can still explain residue; the
+    // attribution just says so.
+    let mut cmd_corpus: Vec<Vec<(String, bool)>> = vec![Vec::new(); audit.intervals.len()];
 
     for claim in &session.claims {
         match &claim.action {
@@ -304,9 +307,11 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 let idx = interval_of(claim.ts);
                 if let Some(idx) = idx {
                     audit.intervals[idx].commands += 1;
-                    if radius.is_some() && !failed {
-                        audit.intervals[idx].effectful_commands += 1;
-                        cmd_corpus[idx].push(command.clone());
+                    if radius.is_some() {
+                        if !failed {
+                            audit.intervals[idx].effectful_commands += 1;
+                        }
+                        cmd_corpus[idx].push((command.clone(), failed));
                     }
                     audit.intervals[idx].commands_run.push(CommandRun {
                         command: command.clone(),
@@ -464,17 +469,34 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     // against command TEXT only — a command's stdout listing a filename is
     // not proof the command touched it.
     for (idx, interval) in audit.intervals.iter_mut().enumerate() {
-        let named = |c: &FileChange| {
-            change_paths(c)
-                .iter()
-                .any(|p| cmd_corpus[idx].iter().any(|cmd| command_names_path(cmd, p)))
+        // Some(failed) when a command names it; None when nothing does.
+        let named = |c: &FileChange| -> Option<bool> {
+            let paths = change_paths(c);
+            let mut hit: Option<bool> = None;
+            for (cmd, failed) in &cmd_corpus[idx] {
+                if paths.iter().any(|p| command_names_path(cmd, p)) {
+                    // A succeeding command is the better explanation; keep
+                    // looking past a failed one in case a clean one names it.
+                    if !failed {
+                        return Some(false);
+                    }
+                    hit = Some(true);
+                }
+            }
+            hit
         };
         let (kept, attributed): (Vec<FileChange>, Vec<FileChange>) =
-            interval.residue.drain(..).partition(|c| !named(c));
+            interval.residue.drain(..).partition(|c| named(c).is_none());
         interval.residue = kept;
         interval.attributed_residue = attributed
             .into_iter()
-            .map(|c| (c, "named in this interval's commands"))
+            .map(|c| {
+                let reason = match named(&c) {
+                    Some(true) => "named in a command that exited non-zero (it may have written before failing)",
+                    _ => "named in this interval's commands",
+                };
+                (c, reason)
+            })
             .collect();
     }
 
@@ -563,7 +585,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
             let removed = (i..n_intervals).any(|j| {
                 cmd_corpus[j]
                     .iter()
-                    .any(|cmd| command_removes_path(cmd, &line.path))
+                    .any(|(cmd, _)| command_removes_path(cmd, &line.path))
             });
             if removed {
                 resolutions.push(line_idx);

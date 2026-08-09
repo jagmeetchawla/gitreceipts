@@ -720,6 +720,47 @@ pub fn command_radius(command: &str) -> Option<Radius> {
             bump(Radius::LocalFs);
         }
     }
+    // Interpreters invoked with an inline script or a heredoc: the script
+    // text IS the command text, so scanning it for a write idiom is the
+    // same kind of textual evidence as spotting `sed -i`. Agents lean on
+    // this heavily (`python3 - <<'PY' … open(p,'w') … PY`), and without it
+    // every such edit lands as unattributed residue.
+    let interpreter = [
+        "python3", "python", "node", "perl", "ruby", "php", "deno", "bun",
+    ]
+    .iter()
+    .any(|i| {
+        command.split_whitespace().next() == Some(*i)
+            || command.contains(&format!("| {i} "))
+            || command.contains(&format!("\n{i} "))
+            || command.contains(&format!("&& {i} "))
+    });
+    if interpreter {
+        const WRITE_IDIOMS: [&str; 12] = [
+            ".write(",
+            ".write_text(",
+            ".writelines(",
+            "writeFileSync",
+            "appendFileSync",
+            "fs.write",
+            "os.remove",
+            "os.rename",
+            "os.replace",
+            "shutil.",
+            ".unlink(",
+            ".mkdir(",
+        ];
+        // open(p,'w') / open(p, "a") — a write mode, however it is spaced.
+        let opens_for_write = command.contains("open(")
+            && [
+                "'w'", "\"w\"", "'a'", "\"a\"", "'x'", "\"x\"", "'wb'", "\"wb\"",
+            ]
+            .iter()
+            .any(|m| command.contains(m));
+        if opens_for_write || WRITE_IDIOMS.iter().any(|w| command.contains(w)) {
+            bump(Radius::LocalFs);
+        }
+    }
     for fs in [
         "sed -i",
         " > ",
