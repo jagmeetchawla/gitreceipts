@@ -41,6 +41,80 @@ fn esc(s: &str) -> String {
 }
 
 const STYLE: &str = include_str!("html/report.css");
+
+/// Minify the stylesheet for the emitted page. On a scoped report — one
+/// commit, the thing people actually share — the CSS is over half the
+/// bytes, so this is the difference between a 23KB page and a 20KB one.
+///
+/// String-aware by necessity: `content: "\25a0  "` carries meaningful
+/// spaces inside its quotes, and a naive whitespace collapse would eat
+/// them and shift every marker in the page.
+fn minify_css(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let b: Vec<char> = css.chars().collect();
+    let mut i = 0;
+    let mut quote: Option<char> = None;
+    while i < b.len() {
+        let c = b[i];
+        if let Some(q) = quote {
+            out.push(c);
+            if c == '\\' && i + 1 < b.len() {
+                out.push(b[i + 1]);
+                i += 2;
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            '"' | '\'' => {
+                quote = Some(c);
+                out.push(c);
+                i += 1;
+            }
+            '/' if i + 1 < b.len() && b[i + 1] == '*' => {
+                i += 2;
+                while i + 1 < b.len() && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i += 2;
+            }
+            c if c.is_whitespace() => {
+                while i < b.len() && b[i].is_whitespace() && quote.is_none() {
+                    i += 1;
+                }
+                // One space only where it could separate two tokens.
+                let prev = out.chars().last();
+                let next = b.get(i).copied();
+                let tight = |ch: Option<char>| {
+                    matches!(
+                        ch,
+                        Some('{')
+                            | Some('}')
+                            | Some(':')
+                            | Some(';')
+                            | Some(',')
+                            | Some('>')
+                            | Some('(')
+                            | Some(')')
+                            | None
+                    )
+                };
+                if !tight(prev) && !tight(next) {
+                    out.push(' ');
+                }
+            }
+            _ => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    out.replace(";}", "}")
+}
 const SCRIPT: &str = include_str!("html/report.js");
 
 /// One repo's report body: the sub-header through the balance line — everything
@@ -316,9 +390,10 @@ fn doc_head(b: &mut String, title: &str) {
         b,
         "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-         <title>git receipts — {title}</title>\n<style>{STYLE}</style>\n</head><body>\n\
+         <title>git receipts — {title}</title>\n<style>{}</style>\n</head><body>\n\
          <div class=\"wrap\">\n\
          <h1><span class=\"cmd\">git receipts</span> — what your agent actually did</h1>\n",
+        minify_css(STYLE)
     );
 }
 
