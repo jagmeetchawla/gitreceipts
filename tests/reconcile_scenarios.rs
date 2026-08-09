@@ -1815,3 +1815,114 @@ fn failure_triage_never_flips_a_verdict() {
         "a failed command is never a broken promise"
     );
 }
+
+#[test]
+fn a_formatter_rewrapping_the_text_does_not_break_the_landing() {
+    // Found in our own history (022b240, 2026-08-09): the agent wrote a
+    // test file, `cargo fmt` wrapped one call across three lines AND added
+    // a trailing comma, and the file was committed in the next commit. The
+    // claim's bytes no longer appeared verbatim, so a kept promise read as
+    // a broken one. Verification now tolerates formatting — and says so.
+    let repo = TempRepo::new("fmtchurn");
+    let root = repo.root.display().to_string();
+
+    let claimed = "fn t() { assert!(check(\"a-long-specific-token-here\"), \"msg: {x}\"); }";
+    let landed = "fn t() {\n    assert!(\n        check(\"a-long-specific-token-here\"),\n        \"msg: {x}\",\n    );\n}\n";
+
+    repo.write("seed.txt", "x");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "seed"],
+        Some("2026-01-01T09:00:00Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "write the test")
+        .write_claim_content(
+            "2026-01-01T10:00:01Z",
+            "2026-01-01T10:00:02Z",
+            "tests/t.rs",
+            claimed,
+        )
+        .bash_claim(
+            "2026-01-01T10:00:03Z",
+            "2026-01-01T10:00:05Z",
+            "cargo fmt && git add -A && git commit -m one",
+        );
+
+    // Commit one does NOT carry the file; the next one does, reformatted.
+    repo.write("other.txt", "y");
+    repo.git(&["add", "other.txt"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:04Z"));
+    repo.write("tests/t.rs", landed);
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:20Z"));
+
+    let audit = run(&repo, &s);
+    let line = audit.intervals[0]
+        .ledger
+        .iter()
+        .find(|l| l.path == "tests/t.rs")
+        .expect("the claim is in the first interval");
+    assert_eq!(
+        line.landing,
+        Landing::Late,
+        "a reformatted landing IS a landing"
+    );
+    assert!(line.reformatted, "and it is marked as reformatted");
+    assert_eq!(audit.counts().broken, 0);
+}
+
+#[test]
+fn reformatting_tolerance_does_not_launder_a_different_file() {
+    // The guard: tolerance is for FORMATTING, not for content. A later
+    // commit that touches the same path with genuinely different text must
+    // still leave the claim unverified.
+    let repo = TempRepo::new("nolaunder");
+    let root = repo.root.display().to_string();
+
+    repo.write("a.txt", "the original committed content of this file");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "seed"],
+        Some("2026-01-01T09:00:00Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "rewrite it")
+        .write_claim_content(
+            "2026-01-01T10:00:01Z",
+            "2026-01-01T10:00:02Z",
+            "a.txt",
+            "the specific improved content the agent promised to leave here",
+        )
+        .bash_claim(
+            "2026-01-01T10:00:03Z",
+            "2026-01-01T10:00:05Z",
+            "git add -A && git commit -m one",
+        );
+
+    repo.write("b.txt", "z");
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:04Z"));
+    // a.txt changes later, but to something else entirely.
+    repo.write(
+        "a.txt",
+        "an unrelated rewrite by someone else entirely, different",
+    );
+    repo.git(&["add", "-A"]);
+    repo.git_at(&["commit", "-q", "-m", "two"], Some("2026-01-01T10:00:20Z"));
+
+    let audit = run(&repo, &s);
+    let line = audit.intervals[0]
+        .ledger
+        .iter()
+        .find(|l| l.path == "a.txt")
+        .unwrap();
+    assert_eq!(
+        line.landing,
+        Landing::Never,
+        "different content is not a landing"
+    );
+    assert_eq!(audit.counts().broken, 1, "it stays a broken promise");
+}

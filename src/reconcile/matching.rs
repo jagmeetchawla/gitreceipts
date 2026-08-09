@@ -305,3 +305,55 @@ pub(crate) fn triage_failure(
         evidence: "unclassified failure — its captured output is attached".into(),
     }
 }
+
+/// How a claimed probe was found in a committed blob.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbeMatch {
+    /// Byte-for-byte.
+    Exact,
+    /// Identical once whitespace is collapsed — a formatter (`cargo fmt`,
+    /// prettier, gofmt) rewrapped the agent's text between the write and
+    /// the commit.
+    Reformatted,
+}
+
+/// Does this blob carry the claimed content?
+///
+/// Exact first. Failing that, compare with **all whitespace removed**: a
+/// formatter changes spacing, not meaning, and refusing to see through it
+/// turned a kept promise into a broken one (our own `scan_wiring.rs`,
+/// 2026-08-09 — `cargo fmt` wrapped one call across three lines between
+/// the write and the commit).
+///
+/// Whitespace must be *removed*, not collapsed: a formatter inserts space
+/// where the author had none (`f(` + newline + `"x"`), which collapsing
+/// cannot undo. Every non-whitespace byte must still match in order, and
+/// probes already clear a specificity floor (§usable_probe), so nothing
+/// else is loosened.
+pub(crate) fn probe_in(content: &str, probe: &str) -> Option<ProbeMatch> {
+    if content.contains(probe) {
+        return Some(ProbeMatch::Exact);
+    }
+    let squeeze = |s: &str| -> String { s.chars().filter(|c| !c.is_whitespace()).collect() };
+    let (p, c) = (squeeze(probe), squeeze(content));
+    if c.contains(&p) {
+        return Some(ProbeMatch::Reformatted);
+    }
+    // Formatters do more than respace: rustfmt adds a trailing comma when
+    // it wraps a call, so even whitespace-free text differs by a byte or
+    // two. Allow ONE small local difference, measured as the matching head
+    // plus the matching tail: identical except in one place. Scattered
+    // edits fail this and stay unverified, which is the honest default.
+    let head = p.bytes().zip(c.bytes()).take_while(|(a, b)| a == b).count();
+    let tail = p
+        .bytes()
+        .rev()
+        .zip(c.bytes().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let matched = (head + tail).min(p.len());
+    if !p.is_empty() && matched * 100 >= p.len() * 98 {
+        return Some(ProbeMatch::Reformatted);
+    }
+    None
+}

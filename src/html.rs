@@ -821,10 +821,15 @@ fn render_interval(
             .unwrap_or(("?", 1));
         let _ = write!(
             b,
-            "<div class=\"line ok\">\u{2713} landed late: {} <span class=\"dim\">(content verified in {}, {} commit(s) later)</span></div>",
+            "<div class=\"line ok\">\u{2713} landed late: {} <span class=\"dim\">(content verified in {}, {} commit(s) later{})</span></div>",
             esc(&l.path),
             esc(at),
-            dist
+            dist,
+            if l.reformatted {
+                " — reformatted before landing"
+            } else {
+                ""
+            }
         );
     }
     for l in &resolved {

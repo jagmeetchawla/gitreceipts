@@ -352,6 +352,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 landed_at: None,
                 resolution: None,
                 diagnosis: None,
+                reformatted: false,
                 scratch: false,
             });
         }
@@ -375,7 +376,8 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
     // with no usable probe cannot be verified and stays Never for the
     // resolution passes.
     let n = audit.intervals.len();
-    let mut sweeps: Vec<(usize, usize, String, usize)> = Vec::new(); // (i, line_idx, path, j)
+    // (i, line_idx, path, j, how the probe matched)
+    let mut sweeps: Vec<(usize, usize, String, usize, matching::ProbeMatch)> = Vec::new();
     for i in 0..n {
         for (line_idx, line) in audit.intervals[i].ledger.iter().enumerate() {
             if line.landing != Landing::Never {
@@ -385,20 +387,23 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 continue;
             };
             for (j, later) in audit.intervals.iter().enumerate().skip(i + 1) {
-                if later.statement.iter().any(|c| c.path == line.path)
-                    && gitio::file_at_commit(repo, &later.commit.hash, &line.path)
-                        .is_some_and(|content| content.contains(probe))
-                {
-                    sweeps.push((i, line_idx, line.path.clone(), j));
+                if !later.statement.iter().any(|c| c.path == line.path) {
+                    continue;
+                }
+                let m = gitio::file_at_commit(repo, &later.commit.hash, &line.path)
+                    .and_then(|content| matching::probe_in(&content, probe));
+                if let Some(kind) = m {
+                    sweeps.push((i, line_idx, line.path.clone(), j, kind));
                     break;
                 }
             }
         }
     }
-    for (i, line_idx, path, j) in sweeps {
+    for (i, line_idx, path, j, kind) in sweeps {
         let short = audit.intervals[j].commit.short.clone();
         let line = &mut audit.intervals[i].ledger[line_idx];
         line.landing = Landing::Late;
+        line.reformatted = kind == matching::ProbeMatch::Reformatted;
         line.landed_at = Some((short, j - i));
         if let Some(pos) = audit.intervals[j]
             .residue
@@ -601,7 +606,8 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                         continue;
                     }
                     let verified = gitio::file_at_commit(repo, &later.commit.hash, &change.path)
-                        .is_some_and(|content| content.contains(probe));
+                        .and_then(|content| matching::probe_in(&content, probe))
+                        .is_some();
                     if verified {
                         relocations.push((
                             i,

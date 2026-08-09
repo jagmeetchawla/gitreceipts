@@ -538,7 +538,7 @@ pub fn print(
     println!("  what happened to every exception:");
     if late_verified > 0 {
         println!(
-            "    · claims that landed late: {late_verified}, content-verified against the commit they landed in"
+            "    · claims that landed late: {late_verified}, content-verified against the commit they landed in (a formatter may have rewrapped the text first — those say so)"
         );
     }
     if resolved_total > 0 {
@@ -1254,7 +1254,12 @@ fn render_interval(
             st.green("✓ landed late:"),
             redact_home(&line.path),
             st.dim(&format!(
-                "(content verified in {at}, {dist} {commits} later)"
+                "(content verified in {at}, {dist} {commits} later{})",
+                if line.reformatted {
+                    " — reformatted before landing"
+                } else {
+                    ""
+                }
             ))
         );
     }

@@ -49,6 +49,10 @@ pub struct LedgerLine {
     pub resolution: Option<String>,
     /// For never-landed claims: why git never saw it, when we can tell.
     pub diagnosis: Option<&'static str>,
+    /// The landing matched only after collapsing whitespace — a formatter
+    /// rewrapped the text between the write and the commit. Reported, so a
+    /// content-verified claim always says HOW it was verified.
+    pub reformatted: bool,
     /// Scratch churn: written and discarded before it ever reached a commit
     /// (never in history, gone from disk). Resolved — never a broken
     /// promise — but it AMBERS the interval: worth a look, not a lie.

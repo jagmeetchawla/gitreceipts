@@ -487,6 +487,10 @@ pub struct LedgerReceipt {
     /// Scratch churn: discarded before any commit — resolved, ambers.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub scratch: bool,
+    /// The landing was verified only after ignoring formatting — a
+    /// formatter rewrapped the text between the write and the commit.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reformatted: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -994,6 +998,7 @@ fn interval_receipt(
                 resolution: l.resolution.clone(),
                 diagnosis: l.diagnosis.map(str::to_string),
                 scratch: l.scratch,
+                reformatted: l.reformatted,
             })
             .collect(),
         residue: i.residue.iter().map(file_change).collect(),
