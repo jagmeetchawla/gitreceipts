@@ -197,14 +197,18 @@ fn render_body(
     }
 
     // ---- meta line -----------------------------------------------------
-    let dup = if stats.duplicates > 0 {
-        format!(", {} fork-duplicates removed", stats.duplicates)
-    } else {
-        String::new()
-    };
-    let _ = write!(
-        b,
-        "<div class=\"meta\">\
+    // The meta line is the audit's inventory of the session: event counts,
+    // claim counts, per-oracle execution facts, blast radius. Recap says
+    // what happened instead.
+    if !narrative {
+        let dup = if stats.duplicates > 0 {
+            format!(", {} fork-duplicates removed", stats.duplicates)
+        } else {
+            String::new()
+        };
+        let _ = write!(
+            b,
+            "<div class=\"meta\">\
          <div>{} events kept / {} lines ({} bookkeeping, {} unparseable{})</div>\
          <div>{} file mutations · {} commands · {} MCP calls · {} observations</div>\
          <div>OS/FS: {} commands · {} failed · {} aborted by you \u{00b7} \
@@ -212,27 +216,28 @@ fn render_body(
          <span class=\"dim\">(amber signals — a look, never red)</span></div>\
          <div>blast radius: {} local-fs · {} local-git · {} remote-git · {} network · {} read-only</div>\
          </div>\n",
-        stats.kept - stats.duplicates,
-        stats.lines,
-        stats.skipped_types,
-        stats.unparseable,
-        dup,
-        audit.file_claims,
-        audit.commands,
-        audit.mcp_calls,
-        audit.observations,
-        audit.commands,
-        audit.cmd_failed,
-        audit.cmd_aborted,
-        audit.mcp_calls,
-        audit.mcp_errored,
-        audit.mcp_aborted,
-        audit.radii.local_fs,
-        audit.radii.local_git,
-        audit.radii.remote_git,
-        audit.radii.network,
-        audit.radii.read_only,
-    );
+            stats.kept - stats.duplicates,
+            stats.lines,
+            stats.skipped_types,
+            stats.unparseable,
+            dup,
+            audit.file_claims,
+            audit.commands,
+            audit.mcp_calls,
+            audit.observations,
+            audit.commands,
+            audit.cmd_failed,
+            audit.cmd_aborted,
+            audit.mcp_calls,
+            audit.mcp_errored,
+            audit.mcp_aborted,
+            audit.radii.local_fs,
+            audit.radii.local_git,
+            audit.radii.remote_git,
+            audit.radii.network,
+            audit.radii.read_only,
+        );
+    }
 
     // ---- stat tiles ----------------------------------------------------
     // Recap leads with the shape of the work — commits, prompts, what
@@ -282,17 +287,51 @@ fn render_body(
     }
 
     // ---- intent → outcome + exceptions --------------------------------
-    render_summary(
-        &mut b,
-        session,
-        audit,
-        green,
-        total,
-        claims_landed,
-        claims_total,
-        broken,
-        show_identity,
-    );
+    // The summary block is the audit's account of itself — intent →
+    // outcome, the exception waterfall, provenance, blast radius. Recap
+    // answers a different question, so it gets a sentence, not an
+    // inventory. (The console learned this first; the page had kept
+    // rendering the audit's block under recap's tiles.)
+    if narrative {
+        let flagged = c.amber + c.red;
+        let _ = write!(
+            &mut b,
+            "<div class=\"outcome\"><h3>what happened</h3>\
+             <div class=\"line\">{} prompts drove {total} commits; {claims_landed}/{claims_total} claimed files landed</div>",
+            audit.prompts
+        );
+        if flagged > 0 {
+            let names: Vec<String> = audit
+                .equation()
+                .filter(|iv| matches!(iv.status(), Status::Amber | Status::Red))
+                .take(6)
+                .map(|iv| esc(&iv.commit.short))
+                .collect();
+            let _ = write!(
+                &mut b,
+                "<div class=\"line dim\">worth a look: {}{} \u{2014} run <code>git receipts audit</code> for the verdict</div>",
+                names.join(", "),
+                if flagged > 6 {
+                    format!(" and {} more", flagged - 6)
+                } else {
+                    String::new()
+                }
+            );
+        }
+        b.push_str("</div>");
+    } else {
+        render_summary(
+            &mut b,
+            session,
+            audit,
+            green,
+            total,
+            claims_landed,
+            claims_total,
+            broken,
+            show_identity,
+        );
+    }
 
     // ---- controls ------------------------------------------------------
     let spine_h = if full_history {
