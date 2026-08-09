@@ -118,6 +118,12 @@ one.")]
         /// HTML only: which commits start expanded — auto, all, none.
         #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
         expand: report::Expand,
+        /// HTML only: a small page. Caps the long tails — a failed
+        /// command's full text and captured output, and the per-commit
+        /// file and command lists — so the report opens anywhere. Every
+        /// cap says how much it hid.
+        #[arg(long)]
+        compact: bool,
     },
     /// Audit one or more Claude Code sessions against a git repo.
     #[command(
@@ -230,6 +236,11 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// (findings open, balanced collapsed), all, or none.
         #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
         expand: report::Expand,
+        /// HTML only: a small page. Keeps the full file/command lists for
+        /// amber and red commits and caps the long prose; everything else
+        /// collapses to its headline. Every cap says how much it hid.
+        #[arg(long)]
+        compact: bool,
         /// Terse spine: the session summary, then one line per commit —
         /// short hash, status, subject, landed/claimed — instead of the full
         /// per-commit drill-down. Like `git log --oneline`. Console only.
@@ -509,6 +520,7 @@ fn main() -> Result<()> {
         color: report::ColorMode::Auto,
         format: report::Format::Text,
         expand: report::Expand::Auto,
+        compact: false,
     });
     match command {
         Cmd::Recap {
@@ -532,6 +544,7 @@ fn main() -> Result<()> {
             color,
             format,
             expand,
+            compact,
         } => audit::run(
             sessions,
             latest,
@@ -558,6 +571,7 @@ fn main() -> Result<()> {
                 summary: commit.is_none(),
                 // Muted by design: emoji dots are the audit's language.
                 emoji: false,
+                compact,
                 narrative: true,
                 full: commit.is_some(),
                 project_section: false,
@@ -598,6 +612,7 @@ fn main() -> Result<()> {
             filter,
             format,
             expand,
+            compact,
             oneline,
             summary,
             emoji,
@@ -638,6 +653,7 @@ fn main() -> Result<()> {
                 summary,
                 emoji,
                 narrative: false,
+                compact,
                 full,
                 project_section: false,
                 siblings: Vec::new(),

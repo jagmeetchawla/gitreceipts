@@ -139,6 +139,11 @@ pub struct Options {
     /// Status dots as emoji (🟢⚪🟡🔴) instead of ANSI-colored marks — for
     /// chat surfaces where terminal color is stripped.
     pub emoji: bool,
+    /// HTML: keep the page small enough to open anywhere — cap the full
+    /// text and captured output of failed commands, and the per-commit
+    /// file/command lists. Nothing is dropped silently; every cap says how
+    /// much it hid.
+    pub compact: bool,
     /// Recap framing: lead with what was ASKED and what happened, mute the
     /// verdict marks, and close with what to run next. The numbers are the
     /// same receipt the audit renders — only the emphasis differs.
@@ -1478,6 +1483,65 @@ pub fn findings_cell(iv: &Interval) -> String {
     }
 }
 
+/// A recap entry: what you asked, then what it became. The ask is the
+/// story's subject — the commit message is the agent's summary of it, and
+/// leading with that was how recap ended up saying LESS than the audit.
+fn recap_entry(st: &Style, iv: &Interval, show_intent: bool) {
+    let landed = iv
+        .ledger
+        .iter()
+        .filter(|l| l.landing != crate::reconcile::Landing::Never)
+        .count();
+    let found = findings_cell(iv);
+    let mark = status_dot_muted(st, iv.status());
+
+    let ask = iv.intents.first().filter(|_| show_intent).map(|t| {
+        let one: String = t.split_whitespace().collect::<Vec<_>>().join(" ");
+        let clipped: String = one.chars().take(96).collect();
+        if one.chars().count() > 96 {
+            format!("{clipped}…")
+        } else {
+            clipped
+        }
+    });
+    match ask {
+        Some(ask) => {
+            println!("  {} {} {}", mark, st.cyan(&iv.commit.short), ask);
+            println!(
+                "           {} {}",
+                st.dim("↳"),
+                st.dim(&format!(
+                    "{} · {}/{} landed{}",
+                    redact_home(&iv.commit.subject.chars().take(58).collect::<String>()),
+                    landed,
+                    iv.ledger.len(),
+                    if found == "—" {
+                        String::new()
+                    } else {
+                        format!(" · {found}")
+                    }
+                ))
+            );
+        }
+        None => println!(
+            "  {} {} {} {}",
+            mark,
+            st.cyan(&iv.commit.short),
+            redact_home(&iv.commit.subject.chars().take(58).collect::<String>()),
+            st.dim(&format!(
+                "· {}/{} landed{}",
+                landed,
+                iv.ledger.len(),
+                if found == "—" {
+                    String::new()
+                } else {
+                    format!(" · {found}")
+                }
+            ))
+        ),
+    }
+}
+
 fn summary_row(st: &Style, iv: &Interval, emoji: bool, narrative: bool) {
     let landed = iv
         .ledger
@@ -1656,25 +1720,33 @@ fn print_recap(
         "{} {commits} · {} prompts · {}/{} claimed files landed",
         c.total, audit.prompts, c.claims_landed, c.claims_total,
     );
-    let findings = c.amber + c.red;
-    if findings > 0 {
+    let eq: Vec<&Interval> = audit.equation().collect();
+    // Name them. "5 of them are worth a look" without saying WHICH five
+    // makes the reader hunt for something the tool already knows.
+    let flagged: Vec<&&Interval> = eq
+        .iter()
+        .filter(|iv| matches!(iv.status(), Status::Amber | Status::Red))
+        .collect();
+    if !flagged.is_empty() {
+        let names: Vec<String> = flagged
+            .iter()
+            .take(6)
+            .map(|iv| iv.commit.short.clone())
+            .collect();
         println!(
             "{}",
             st.dim(&format!(
-                "{findings} of them have something worth a look — `git receipts audit` for the verdict"
+                "worth a look: {}{} — `git receipts audit` for the verdict",
+                names.join(", "),
+                if flagged.len() > 6 {
+                    format!(" and {} more", flagged.len() - 6)
+                } else {
+                    String::new()
+                }
             ))
         );
     }
     println!();
-    println!(
-        "{}",
-        st.dim(&format!(
-            "    commit  {:<45} claims  what happened",
-            "subject"
-        ))
-    );
-
-    let eq: Vec<&Interval> = audit.equation().collect();
     let older = eq.len().saturating_sub(cap);
     let earlier_findings: Vec<&&Interval> = eq[..older]
         .iter()
@@ -1682,7 +1754,7 @@ fn print_recap(
         .collect();
     let omitted = earlier_findings.len().saturating_sub(cap);
     for iv in earlier_findings.iter().take(cap) {
-        summary_row(st, iv, false, true);
+        recap_entry(st, iv, true);
     }
     if omitted > 0 {
         println!("    {}", st.dim(&format!("… {omitted} more omitted")));
@@ -1696,7 +1768,7 @@ fn print_recap(
         );
     }
     for iv in &eq[older..] {
-        summary_row(st, iv, false, true);
+        recap_entry(st, iv, true);
     }
 
     // What to run next — the invitation that turns a table into a thread

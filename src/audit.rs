@@ -188,6 +188,7 @@ pub fn run(
                 opts.commit.as_deref(),
                 opts.full,
                 opts.narrative,
+                opts.compact,
             )
         ),
     }
@@ -326,6 +327,7 @@ fn run_project(
                     opts.commit.as_deref(),
                     opts.full,
                     opts.narrative,
+                    opts.compact,
                 )
             );
             return Ok(());
@@ -354,6 +356,7 @@ fn run_project(
                 opts.with_output,
                 opts.full,
                 opts.narrative,
+                opts.compact,
             )
         );
         return Ok(());

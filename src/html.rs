@@ -64,6 +64,7 @@ fn render_body(
     show_notice: bool,
     filter_controls: bool,
     narrative: bool,
+    compact: bool,
 ) -> String {
     // Headline counts over the EQUATION set (agent's own commits by default,
     // everything under --full-history) — same source as console/JSON, so a
@@ -274,6 +275,7 @@ fn render_body(
             &convo,
             prov,
             cost,
+            compact,
         );
     }
     b.push_str("</section>\n");
@@ -342,6 +344,21 @@ fn doc_tail(b: &mut String) {
 
 /// A single-repo HTML report: the document shell wrapped around one report body.
 #[allow(clippy::too_many_arguments)]
+/// Truncate for the compact page, saying how much was hidden — a silent
+/// cut would make a shortened report look complete.
+fn clip(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return esc(text);
+    }
+    let head: String = text.chars().take(max).collect();
+    format!(
+        "{}<span class=\"dim\"> … {} more characters (full text in the JSON receipt)</span>",
+        esc(&head),
+        text.chars().count() - max
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn render(
     session_name: &str,
     repo: &str,
@@ -355,6 +372,7 @@ pub fn render(
     commit: Option<&str>,
     full: bool,
     narrative: bool,
+    compact: bool,
 ) -> String {
     let mut b = String::with_capacity(64 * 1024);
     doc_head(&mut b, &esc(session_name));
@@ -373,6 +391,7 @@ pub fn render(
         true,
         true,
         narrative,
+        compact,
     ));
     doc_tail(&mut b);
     b
@@ -404,6 +423,7 @@ pub fn render_project(
     with_output: bool,
     full: bool,
     narrative: bool,
+    compact: bool,
 ) -> String {
     let mut b = String::with_capacity(128 * 1024);
     // tilde the path first: it must never ship the home dir in the <title>.
@@ -474,6 +494,7 @@ pub fn render_project(
             false,
             false,
             narrative,
+            compact,
         ));
         b.push_str("</section>\n");
     }
@@ -679,6 +700,7 @@ fn render_interval(
     convo: &[crate::extract::Turn],
     prov: Option<String>,
     cost: (usize, u64),
+    compact: bool,
 ) {
     let (cls, mark) = match iv.status() {
         Status::Green => ("green", "\u{2714}"),
@@ -808,7 +830,11 @@ fn render_interval(
         let _ = write!(
             b,
             "<div class=\"line intent\">\u{00bb} intent: {}{}</div>",
-            esc(first),
+            if compact {
+                clip(first, 220)
+            } else {
+                esc(first)
+            },
             esc(&more)
         );
     }
@@ -832,9 +858,26 @@ fn render_interval(
     // commit, so the problem is visible without a click. `--expand all` forces
     // everything open, honoring its "expand everything" contract.
     let open_sections = iv.status() != Status::Green || expand == Expand::All;
-    render_statement(b, iv, open_sections);
-    render_commands(b, iv, with_output, open_sections);
-    render_mcp(b, iv, with_output, open_sections);
+    // Compact: the file/command/MCP inventories are most of a long report
+    // and the least likely to be read where nothing is unresolved. Green
+    // balanced; grey has findings that already carry their explanation.
+    // Only amber (unexplained residue) and red (a broken promise) keep the
+    // full lists — those are what you opened the page for.
+    let inventories =
+        !compact || matches!(iv.status(), Status::Amber | Status::Red) || expand == Expand::All;
+    if inventories {
+        render_statement(b, iv, open_sections);
+        render_commands(b, iv, with_output, open_sections, compact);
+        render_mcp(b, iv, with_output, open_sections);
+    } else {
+        let _ = write!(
+            b,
+            "<div class=\"line dim\">{} files · {} commands — details omitted (--compact); \
+             the full lists are in the JSON receipt</div>",
+            iv.statement.len(),
+            iv.commands
+        );
+    }
 
     // ---- reconciliation findings ---------------------------------------
     for l in &late {
@@ -919,7 +962,11 @@ fn render_interval(
             b,
             "<div class=\"section\"><div class=\"section-h\">agent summary — the agent's own words, not verified</div>\
              <div class=\"agent-summary\">{}</div></div>",
-            esc(summary)
+            if compact {
+                clip(summary, 320)
+            } else {
+                esc(summary)
+            }
         );
     }
     // --full: the whole conversation that produced this commit.
@@ -983,7 +1030,13 @@ fn render_statement(b: &mut String, iv: &crate::reconcile::Interval, open: bool)
 /// The effectful commands the agent ran in this interval. With `with_output`,
 /// each command is shown in full with its captured output — the same depth
 /// the JSON receipt carries under `--with-output`.
-fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output: bool, open: bool) {
+fn render_commands(
+    b: &mut String,
+    iv: &crate::reconcile::Interval,
+    with_output: bool,
+    open: bool,
+    compact: bool,
+) {
     if iv.commands_run.is_empty() {
         return;
     }
@@ -994,7 +1047,24 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output:
         iv.commands_run.len(),
         iv.commands
     );
-    for c in &iv.commands_run {
+    // Compact: show the failures and a handful of the rest. Command rows
+    // are the single biggest thing in a long report.
+    const COMPACT_CMDS: usize = 8;
+    let shown: Vec<&crate::reconcile::CommandRun> = if compact {
+        let mut v: Vec<&crate::reconcile::CommandRun> =
+            iv.commands_run.iter().filter(|c| c.failed).collect();
+        for c in iv.commands_run.iter().filter(|c| !c.failed) {
+            if v.len() >= COMPACT_CMDS {
+                break;
+            }
+            v.push(c);
+        }
+        v
+    } else {
+        iv.commands_run.iter().collect()
+    };
+    let hidden = iv.commands_run.len().saturating_sub(shown.len());
+    for c in shown {
         // A failed command keeps full ink (see .crow.fail); a succeeded one dulls.
         b.push_str(if c.failed {
             "<div class=\"crow fail\">"
@@ -1020,14 +1090,27 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output:
         // or when it failed — the failure's output is always worth showing.
         if with_output || c.failed {
             // Full command, then its captured output in a scrollable block.
-            let _ = write!(b, "<code class=\"cmdfull\">{}</code>", esc(&c.command));
+            // The compact page caps the two long tails — a failed
+            // command's full text and its captured output — which are
+            // most of a big report's bytes.
+            let cmd_txt = if compact {
+                clip(&c.command, 400)
+            } else {
+                esc(&c.command)
+            };
+            let _ = write!(b, "<code class=\"cmdfull\">{cmd_txt}</code>");
             if let Some(receipt) = &c.output {
                 let cls = if receipt.is_error {
                     "cmdout err"
                 } else {
                     "cmdout"
                 };
-                let _ = write!(b, "<pre class=\"{cls}\">{}</pre>", esc(&receipt.text));
+                let out = if compact {
+                    clip(&receipt.text, 900)
+                } else {
+                    esc(&receipt.text)
+                };
+                let _ = write!(b, "<pre class=\"{cls}\">{out}</pre>");
             }
             b.push_str("</div>");
         } else {
@@ -1037,6 +1120,12 @@ fn render_commands(b: &mut String, iv: &crate::reconcile::Interval, with_output:
                 esc(&command_summary(&c.command))
             );
         }
+    }
+    if hidden > 0 {
+        let _ = write!(
+            b,
+            "<div class=\"crow dim\">… {hidden} more commands (the full list is in the JSON receipt)</div>"
+        );
     }
     b.push_str("</details>");
 }

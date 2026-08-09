@@ -217,8 +217,9 @@ git receipts
 # one commit's whole story: the ask, the conversation, what was tried
 git receipts recap --commit 6d6cdc4
 
-# a page to keep or share
+# a page to keep or share (--compact for a small one that opens anywhere)
 git receipts recap --format html > recap.html
+git receipts recap --format html --compact > recap.html
 
 # --- verification: the same work, with the checking brought forward ---
 
