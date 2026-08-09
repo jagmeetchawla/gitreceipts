@@ -410,9 +410,11 @@ pub fn resolve_repo(folder: &Path) -> Result<PathBuf> {
             folder.display()
         ),
         n => {
-            // Repos below, but none HERE. Never pick — not even when there
-            // is only one candidate: choosing is the user's call, and a
-            // one-repo folder today may hold two tomorrow.
+            // No .git HERE, but repos below: by definition this folder is a
+            // container, not a repo — a folder holds at most one .git, so
+            // multiplicity only ever appears as separate subfolders. That
+            // shape is what --project is for, whether it holds one repo or
+            // ten. Name what was found; never choose.
             let names: Vec<String> = children
                 .iter()
                 .take(6)

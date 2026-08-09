@@ -8,18 +8,42 @@ One rule decides what `git receipts` reports on:
 If the tool can't name the target with certainty, it stops and tells you
 what to pass. It will not pick a repo for you.
 
+## Two definitions
+
+Everything follows from these:
+
+- **Repo** — a folder containing `.git`. A folder holds at most one, so a
+  repo is always exactly one folder.
+- **Project** — a folder that holds **one or more repos** as subfolders,
+  each with its own `.git`. That is the only way several repos can sit
+  together, and it is what `--project` audits. A project folder has no
+  `.git` of its own and is never audited itself.
+
+**Sessions are keyed by the folder they ran in.** The store holds one
+directory per working directory, named after its full path. Looking up a
+repo's sessions encodes that folder **and each of its ancestors**, keeping
+every store directory that exists:
+
+```
+~/work/acme/api      → …-work-acme-api    ✅  sessions run inside the repo
+~/work/acme          → …-work-acme        ✅  sessions run from the project
+~/work               → …-work             ✗   no such directory
+```
+
+Both sets are merged, which is why work you drove from the project folder
+still reconciles against the repo it touched. Matching is exact per
+ancestor — not a string prefix. (A loose suffix match exists only as a
+cross-machine fallback, when no exact ancestor matched at all; see
+[KNOWN-LIMITATIONS.md](../KNOWN-LIMITATIONS.md) §8.)
+
 ## Assumptions
 
-Stated plainly, because everything below follows from them:
-
-1. **A repo is a directory containing `.git`.** That is the unit of an
-   audit — one repo, one reconciliation against one git history.
+1. **A repo is the unit of an audit** — one repo, one reconciliation
+   against one git history.
 2. **You work in one repo at a time.** That is the default and the common
    case, so a bare `git receipts audit` means "this repo".
-3. **`--project` is only for a multi-repo container** — a folder that is
-   not itself a repo, holding several. If you don't have that layout, you
-   never need the switch. The container itself is never audited; it has no
-   history.
+3. **`--project` is for a project folder** as defined above. If your work
+   lives in a single repo, you never need the switch.
 4. **We do not model how you organize your code.** Beyond those two
    shapes, you name the target explicitly and the tool audits exactly
    that. It never infers a scheme.
