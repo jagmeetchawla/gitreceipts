@@ -228,11 +228,16 @@ pub fn project_header(project_display: &str, repo_count: usize, color: ColorMode
 /// broken, residue — so you see where the work landed before reading the
 /// per-repo sections. Numbers come from [`Audit::landing_summary`], the same
 /// source the JSON wrapper uses.
-pub fn landing_table(rows: &[(String, crate::reconcile::LandingSummary)], color: ColorMode) {
+pub fn landing_table(
+    rows: &[(String, crate::reconcile::LandingSummary)],
+    no_sessions: &[String],
+    color: ColorMode,
+) {
     let st = Style::new(color);
     let name_w = rows
         .iter()
         .map(|(n, _)| n.chars().count())
+        .chain(no_sessions.iter().map(|n| n.chars().count()))
         .max()
         .unwrap_or(4)
         .max(4);
@@ -277,6 +282,16 @@ pub fn landing_table(rows: &[(String, crate::reconcile::LandingSummary)], color:
             residue,
             dot,
             word,
+        );
+    }
+    // Repos that are part of the project but have no sessions in the store.
+    // Listing them keeps the table's row count equal to what is on disk —
+    // a roll-up that quietly omits repos looks complete and isn't.
+    for name in no_sessions {
+        println!(
+            "  {:<name_w$}  {}",
+            name,
+            st.dim("—        —        —        —  no sessions in the store")
         );
     }
 }

@@ -6,13 +6,11 @@
 //! session store for the repo's whole ancestor chain, and when no repo was
 //! named, infers it from where the session's claims actually point.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
 use crate::causal;
-use crate::extract::{Action, Session};
 use crate::ingest::{self, IngestStats};
 use crate::schema::Record;
 
@@ -125,6 +123,20 @@ pub fn project_repos(project: &Path, store: &Path) -> Vec<PathBuf> {
     walk(&start, 5, &mut repos);
     repos.retain(|r| !session_dirs_for(store, r).is_empty());
     repos
+}
+
+/// Repos under a project folder that have NO sessions in the store — the
+/// ones `project_repos` filters out. They are still part of the project,
+/// so the roll-up names them rather than dropping them: a table whose row
+/// count differs from what is on disk looks complete and isn't.
+pub fn project_repos_without_sessions(project: &Path, store: &Path) -> Vec<PathBuf> {
+    let start = project
+        .canonicalize()
+        .unwrap_or_else(|_| project.to_path_buf());
+    let mut all = Vec::new();
+    walk_repos(&start, 5, &mut all);
+    all.retain(|r| session_dirs_for(store, r).is_empty());
+    all
 }
 
 /// Why a `--project` folder yielded nothing — so the error can say which
@@ -315,80 +327,6 @@ pub fn merge_sessions(paths: &[PathBuf]) -> Result<(Vec<Record>, IngestStats)> {
     Ok((merged, merged_stats))
 }
 
-/// No `--repo` given: infer it from the session itself.
-///
-/// Candidates are every git repo the session could mean: each recorded cwd
-/// that is a repo, plus each immediate child of a recorded cwd that is a
-/// repo (the container-directory layout). The winner is the candidate the
-/// most file claims resolve under. A tie or an empty field is an error
-/// that names the candidates — guessing wrong would audit the wrong repo.
-pub fn infer_repo(session: &Session) -> Result<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    let mut push = |p: PathBuf| {
-        if p.join(".git").exists()
-            && let Ok(canon) = p.canonicalize()
-            && !candidates.contains(&canon)
-        {
-            candidates.push(canon);
-        }
-    };
-    for cwd in &session.cwds {
-        let cwd = PathBuf::from(cwd);
-        push(cwd.clone());
-        if let Ok(children) = std::fs::read_dir(&cwd) {
-            for child in children.flatten() {
-                let path = child.path();
-                if path.is_dir() {
-                    push(path);
-                }
-            }
-        }
-    }
-    if candidates.is_empty() {
-        bail!("the session's recorded directories contain no git repo; pass --repo");
-    }
-    if candidates.len() == 1 {
-        return Ok(candidates.remove(0));
-    }
-
-    let mut scores: HashMap<&Path, usize> = HashMap::new();
-    for claim in &session.claims {
-        if let Action::FileMutation { path, .. } = &claim.action {
-            // longest matching candidate wins the claim
-            let best = candidates
-                .iter()
-                .filter(|c| Path::new(path).starts_with(c))
-                .max_by_key(|c| c.as_os_str().len());
-            if let Some(best) = best {
-                *scores.entry(best.as_path()).or_default() += 1;
-            }
-        }
-    }
-    let mut ranked: Vec<(&Path, usize)> = candidates
-        .iter()
-        .map(|c| (c.as_path(), scores.get(c.as_path()).copied().unwrap_or(0)))
-        .collect();
-    ranked.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-
-    match ranked.as_slice() {
-        [(top, n), (_, m), ..] if *n > *m => {
-            eprintln!(
-                "note: repo inferred from the session's claims: {} ({n} file claims resolve here; pass --repo to override)",
-                top.display()
-            );
-            Ok(top.to_path_buf())
-        }
-        _ => bail!(
-            "the session touches several git repos and the claims don't single one out — pass --repo. candidates:\n{}",
-            ranked
-                .iter()
-                .map(|(p, n)| format!("  {} ({n} file claims)", p.display()))
-                .collect::<Vec<_>>()
-                .join("\n")
-        ),
-    }
-}
-
 /// Find the ONE session file that contains `marker` — identity-based
 /// targeting for `--this-session`. The caller has just emitted the marker
 /// into its own live conversation, so exactly one file should carry it.
@@ -427,4 +365,73 @@ pub fn session_containing(store: &Path, marker: &str) -> anyhow::Result<PathBuf>
         }
     }
     unreachable!()
+}
+
+/// Resolve a folder to THE repo it names — the one rule used both for
+/// `--repo <dir>` and for the bare invocation's cwd.
+///
+/// Look at the folder itself, then one level down. **Never upward**, and
+/// never pick between candidates: pointing one folder too high is a typo
+/// worth forgiving, but choosing among several repos is a decision only
+/// the user can make. `--project` is the switch for "all of them".
+pub fn resolve_repo(folder: &Path) -> Result<PathBuf> {
+    if !folder.exists() {
+        bail!("no such directory: {}", folder.display());
+    }
+    if !folder.is_dir() {
+        bail!("{} is a file, not a directory", folder.display());
+    }
+    if folder.join(".git").exists() {
+        return Ok(folder.to_path_buf());
+    }
+
+    let mut children: Vec<PathBuf> = std::fs::read_dir(folder)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir() && p.join(".git").exists())
+                .collect()
+        })
+        .unwrap_or_default();
+    children.sort();
+
+    match children.len() {
+        1 => {
+            let child = children.remove(0);
+            eprintln!(
+                "note: {} is not a git repo — using {}",
+                folder.display(),
+                child.display()
+            );
+            Ok(child)
+        }
+        0 => bail!(
+            "{} is not a git repo.\n       \
+             Run this from a git repo, or name one with --repo <dir>.\n       \
+             To audit every repo under a folder: --project <dir>",
+            folder.display()
+        ),
+        n => {
+            let names: Vec<String> = children
+                .iter()
+                .take(6)
+                .map(|p| {
+                    p.file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("?")
+                        .to_string()
+                })
+                .collect();
+            bail!(
+                "{} holds {} repos ({}{}) — name one with --repo, or audit them all \
+                 with --project {}",
+                folder.display(),
+                n,
+                names.join(", "),
+                if n > 6 { ", …" } else { "" },
+                folder.display()
+            )
+        }
+    }
 }

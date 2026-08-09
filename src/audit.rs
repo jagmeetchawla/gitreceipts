@@ -78,13 +78,6 @@ pub fn resolve_commit(audit: &Audit, needle: &str) -> Result<String> {
     }
 }
 
-/// Walk up from `dir` to the nearest directory containing `.git`.
-fn find_enclosing_repo(dir: &Path) -> Option<PathBuf> {
-    dir.ancestors()
-        .find(|a| a.join(".git").exists())
-        .map(|a| a.to_path_buf())
-}
-
 #[allow(clippy::too_many_arguments)]
 /// `--exit-code`: encode the verdict in the process exit status.
 /// 0 = green or grey (the equation balances) · 1 = amber · 2 = red.
@@ -425,7 +418,11 @@ fn run_project(
             (name, l.audit.landing_summary())
         })
         .collect();
-    report::landing_table(&rows, opts.color);
+    let no_sessions: Vec<String> = discover::project_repos_without_sessions(&project, &store)
+        .iter()
+        .filter_map(|r| r.file_name().and_then(|n| n.to_str()).map(String::from))
+        .collect();
+    report::landing_table(&rows, &no_sessions, opts.color);
 
     opts.project_section = true;
     for (i, ((name, _), l)) in rows.iter().zip(&loaded).enumerate() {
@@ -497,11 +494,16 @@ pub fn load(
     full_history: bool,
 ) -> Result<Loaded> {
     let store = resolve_store(store)?;
-    let anchor = || {
-        repo.clone()
-            .or_else(|| std::env::current_dir().ok())
-            .context("cannot determine a directory to search for sessions")
+    // Resolve the target repo BEFORE looking for sessions, so the sessions
+    // we merge are the ones belonging to the repo we will reconcile. One
+    // rule, one direction: the named folder (or cwd), then one level down,
+    // never upward, never a guess between candidates.
+    let start = match repo {
+        Some(r) => r,
+        None => std::env::current_dir().context("cannot determine the current directory")?,
     };
+    let repo_path = discover::resolve_repo(&start)?;
+    let anchor = || -> Result<PathBuf> { Ok(repo_path.clone()) };
     // Session selection. The DEFAULT (no session, no flags) is ALL of the repo's
     // sessions — the complete picture, and it avoids the single-session trap
     // where your OTHER sessions' commits look like another contributor's
@@ -532,24 +534,6 @@ pub fn load(
     // username is masked wherever it appears, even auditing another machine's
     // sessions) plus any words the user asked to mask. Must precede any render.
     gitreceipts::fmt::set_redaction(&session_data.cwds, redact, scan);
-
-    let repo_path = match repo {
-        Some(r) => {
-            if !r.join(".git").exists() {
-                bail!("{} is not a git repo", r.display());
-            }
-            r
-        }
-        // No --repo: prefer the repo we're standing in; otherwise infer
-        // from where the session's claims point.
-        None => match std::env::current_dir()
-            .ok()
-            .and_then(|d| find_enclosing_repo(&d))
-        {
-            Some(here) => here,
-            None => discover::infer_repo(&session_data)?,
-        },
-    };
 
     let mut audit = reconcile::reconcile(&repo_path, &session_data)?;
     // reconcile always leaves full_history false; the caller sets it from --full-history.

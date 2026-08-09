@@ -5,7 +5,7 @@ mod common;
 
 use common::{SessionBuilder, TempRepo};
 use gitreceipts::reconcile;
-use gitreceipts::{causal, discover, extract, ingest};
+use gitreceipts::{discover, extract};
 
 /// A container directory holding two child repos; the session was
 /// launched in the container.
@@ -29,73 +29,73 @@ fn container_with_two_repos(name: &str) -> (TempRepo, String, String) {
     (container, a.display().to_string(), b.display().to_string())
 }
 
-fn session_from(builder: &SessionBuilder, dir: &std::path::Path) -> gitreceipts::extract::Session {
-    let path = dir.join("session.jsonl");
-    builder.save(&path);
-    let (records, _) = ingest::ingest(&path).unwrap();
-    extract::extract(&causal::order(records))
-}
-
 #[test]
-fn claims_pick_the_repo_out_of_a_container() {
-    let (container, app, _notes) = container_with_two_repos("container");
-    let root = container.root.display().to_string();
+fn a_folder_holding_repos_refuses_to_pick_one() {
+    // The 0.1.1 rule: the tool never decides which repo you meant. A
+    // container of repos is an error naming both ways forward — it used to
+    // silently audit whichever repo had the most file claims, which reads
+    // as a complete report about a quarter of the project.
+    let (container, _app, _notes) = container_with_two_repos("container");
 
-    let mut s = SessionBuilder::new(&root);
-    s.user_text("2026-01-01T10:00:00Z", "go")
-        .write_claim_abs(
-            "2026-01-01T10:00:05Z",
-            "2026-01-01T10:00:06Z",
-            &format!("{app}/src/main.rs"),
-        )
-        .write_claim_abs(
-            "2026-01-01T10:00:07Z",
-            "2026-01-01T10:00:08Z",
-            &format!("{app}/Cargo.toml"),
-        );
-    let session = session_from(&s, &container.root);
-
-    let inferred = discover::infer_repo(&session).unwrap();
-    assert_eq!(
-        inferred,
-        std::path::PathBuf::from(&app).canonicalize().unwrap()
+    let err = discover::resolve_repo(&container.root)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("holds 2 repos"), "error was: {err}");
+    assert!(
+        err.contains("--repo"),
+        "names the single-repo switch: {err}"
+    );
+    assert!(
+        err.contains("--project"),
+        "names the all-repos switch: {err}"
     );
 }
 
 #[test]
-fn ambiguous_containers_refuse_to_guess() {
-    let (container, app, notes) = container_with_two_repos("ambiguous");
-    let root = container.root.display().to_string();
+fn a_folder_with_one_repo_below_resolves_to_it() {
+    // Pointing one folder too high is a typo worth forgiving — there is
+    // exactly one candidate, so nothing is being chosen.
+    let container = TempRepo::new("one-below");
+    std::fs::remove_dir_all(container.root.join(".git")).unwrap();
+    let inner = container.root.join("app");
+    std::fs::create_dir_all(&inner).unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&inner)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
 
-    let mut s = SessionBuilder::new(&root);
-    s.user_text("2026-01-01T10:00:00Z", "go")
-        .write_claim_abs(
-            "2026-01-01T10:00:05Z",
-            "2026-01-01T10:00:06Z",
-            &format!("{app}/a.txt"),
-        )
-        .write_claim_abs(
-            "2026-01-01T10:00:07Z",
-            "2026-01-01T10:00:08Z",
-            &format!("{notes}/b.txt"),
-        );
-    let session = session_from(&s, &container.root);
-
-    let err = discover::infer_repo(&session).unwrap_err().to_string();
-    assert!(err.contains("pass --repo"), "error was: {err}");
-    assert!(err.contains("candidates"), "error names them: {err}");
+    let got = discover::resolve_repo(&container.root).unwrap();
+    assert_eq!(got, inner);
 }
 
 #[test]
-fn a_single_candidate_needs_no_claims() {
-    let repo = TempRepo::new("solo");
-    let root = repo.root.display().to_string();
-    let mut s = SessionBuilder::new(&root);
-    s.user_text("2026-01-01T10:00:00Z", "hello");
-    let session = session_from(&s, &repo.root);
+fn a_repo_resolves_to_itself_and_never_upward() {
+    // No ancestor walk: a subdirectory of a repo is not the repo. The rule
+    // is "this folder, or one below" — one direction only.
+    let repo = TempRepo::new("selfres");
+    assert_eq!(discover::resolve_repo(&repo.root).unwrap(), repo.root);
 
-    let inferred = discover::infer_repo(&session).unwrap();
-    assert_eq!(inferred, repo.root);
+    let sub = repo.root.join("src/deep");
+    std::fs::create_dir_all(&sub).unwrap();
+    let err = discover::resolve_repo(&sub).unwrap_err().to_string();
+    assert!(err.contains("is not a git repo"), "error was: {err}");
+    assert!(
+        err.contains("Run this from a git repo"),
+        "says the rule: {err}"
+    );
+}
+
+#[test]
+fn a_missing_directory_says_so() {
+    let err = discover::resolve_repo(std::path::Path::new("/tmp/gitreceipts-does-not-exist-xyz"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("no such directory"), "error was: {err}");
 }
 
 #[test]

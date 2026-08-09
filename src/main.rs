@@ -93,7 +93,7 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// private ops/config repos, driven in one session). Discovers every git
         /// repo under it that has sessions and reports each — a project header
         /// plus one section per repo. Mutually exclusive with --repo.
-        #[arg(long)]
+        #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
         project: Option<PathBuf>,
         /// The Claude Code projects directory — where session logs live, and
         /// the ONLY directory gitreceipts reads (never your settings, prompt
@@ -263,7 +263,7 @@ EXAMPLES:
         /// A PROJECT folder holding several git repos: export a
         /// { project, repos: [receipt, …] } wrapper, one receipt per repo — the
         /// JSON twin of `audit --project`. Mutually exclusive with --repo.
-        #[arg(long)]
+        #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
         project: Option<PathBuf>,
         /// The Claude Code projects directory — where session logs live, and
         /// the ONLY directory gitreceipts reads. Default: ~/.claude/projects.
