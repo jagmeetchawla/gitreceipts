@@ -8,9 +8,11 @@
   A <b>Claude Code plugin</b> with a deterministic Rust CLI at its core —
   <br>ask <i>"what happened here?"</i> and read the session as a story you can trust.
   <br><br>
-  <a href="#audit-from-inside-claude-code">Plugin</a> ·
   <a href="#install">Install</a> ·
-  <a href="#usage">Usage</a> ·
+  <a href="#1-in-claude-code--the-plugin">Plugin</a> ·
+  <a href="#2-read-it--git-receipts">Recap</a> ·
+  <a href="#3-check-it--git-receipts-audit">Audit</a> ·
+  <a href="#4-keep-it--pages-and-data">Export</a> ·
   <a href="https://github.com/jagmeetchawla/gitreceipts/releases">Releases</a> ·
   <a href="RECEIPTS.md">RECEIPTS.md</a> ·
   <a href="KNOWN-LIMITATIONS.md">Known limitations</a> ·
@@ -47,111 +49,10 @@ directory (your session logs) plus your repo, and sends nothing anywhere. A
 mirror for your own work, not a badge to show anyone. Details in
 [what the report contains — and what it doesn't](#what-the-report-contains--and-what-it-doesnt).
 
-## Audit from inside Claude Code
-
-The natural place to ask *"what did my agent actually do?"* is where the
-agent is:
-
-```
-/plugin marketplace add cloudcraft-ai/claude-plugins
-/plugin install gitreceipts@cloudcraft
-```
-
-Then ask exactly that. Claude reads the session back to you: a spine of
-every commit, what each prompt drove, findings **explained in the context
-of what the session was trying to do** — not just flagged — and the full
-HTML report one word away (say "report"). When something didn't land, it's
-presented as a question, not a conviction: it means nothing on record
-explains the claim, and you may know something the log doesn't.
-
-The division of labor is the point: the facts come from a deterministic,
-local Rust CLI that Claude cannot sweet-talk, and Claude reads those facts
-against what you asked for and explains what it finds. Neither alone gives
-you that — an agent grading its own homework is exactly the problem this
-tool exists to solve.
-
-The plugin wraps the CLI below (it will guide you through installing the
-binary if it's missing, never install it for you). `/gitreceipts:help`
-shows everything it can do. And the CLI is a full standalone tool — every
-audit works without any AI in the loop.
-
-Here's a real multi-repo audit — `--project` on a workspace where a public
-repo lives beside private ones (two sibling names masked with `--redact`,
-prompts dropped with `--no-intent`; the numbers are untouched):
-
-![git receipts --project roll-up: a where-it-landed table over four repos, two redacted, with green/amber verdicts, and a per-repo section with stat tiles](docs/images/project-rollup.png)
-
-And here's what a single session looks like after the audit:
-
-```
-claims: 219 file mutations · 412 commands · 63 MCP calls · 187 observations
-  OS/FS: 412 commands · 3 failed · 1 aborted by you
-  MCP:    63 calls · 2 errored · 0 aborted by you
-
-intent → outcome
-  173 prompts drove 52 commits; 214/219 claimed files landed (98%), 49 intervals fully balanced
-  agent effort: 412 commands · ~5.0M output tokens across 3,413 requests (est., not billing)
-  model(s): opus-4-8 (2,605 req), fable-5 (808 req)
-  reasoning effort: high, max (partial coverage in the log)
-  what happened to every exception:
-    · claims that landed late: 3, content-verified against the commit they landed in
-    · claims that never landed, resolved: 4 — superseded by later landed edits: 2 ·
-      removed deliberately by the session's own commands: 2
-    · unclaimed changes (git recorded it, no matching edit claim): 31 —
-      this agent via a command: 24 · not this session's commit: 6 · unexplained: 1
-    · broken promises (claimed, never landed, nothing explains it): 0
-  who touched this repo (git identity — not how they authored):
-    · committed by: Ada Lovelace <ada@example.com>
-    · co-authored-by (declared in commits): Claude <noreply@anthropic.com>
-```
-
-That `broken promises: 0` is the headline number: a claim that never landed
-and nothing explains. Zero is not assumed — it is earned, claim by claim,
-against the repo's own receipts.
-
-And when the number isn't zero, a red line is a **question, not a
-conviction**. It means nothing on record explains the claim. You may know
-something the log doesn't — each explainable red is a candidate for a new
-resolution category. The current honest gaps are cataloged in
-[KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
-
-**The verdict is what git can witness; everything else is a finding.**
-Four marks, mutually exclusive — the worst one that applies wins:
-
-| | | |
-|---|---|---|
-| 🟢 | **green** | nothing to report: every claim landed, no residue, no failures |
-| ⚪ | **grey** | explained findings — a file written and discarded before any commit, a command that failed, an MCP call that errored. Each is shown *with* its explanation. The equation still balances. |
-| 🟡 | **amber** | **un**explained residue: git recorded a change no claim and no command accounts for. A loose end with no answer on record. |
-| 🔴 | **red** | a broken promise: a claimed edit git never got, and nothing explains it. |
-
-The difference between ⚪ and 🟡 is the whole point: grey means *we know
-why*, amber means *nobody does yet*. A failed command never colors the
-verdict — git can't witness what a command did, so it is reported, never
-judged.
-
-**When you'd reach for it** — two moments especially, both where you can't
-just reconstruct what happened by hand:
-
-- **Unattended runs.** Overnight autonomy, long agentic sessions, background
-  or scheduled agents. You weren't watching, and you can't replay what you
-  didn't see. You come back to a stack of commits and need a trustworthy
-  account of what actually happened.
-- **Looking back.** Work from a while ago, where your own memory has faded
-  and the raw session — tens of megabytes, if it even survived — is
-  impractical to trawl. git still holds the truth; gitreceipts distills what
-  you *asked* and what the agent *did* into a receipt you can actually read.
-
-The value isn't only in catching problems. A 100%-green session still comes
-out as something you can *read* — intent → outcome, ask → what landed —
-instead of a log to trawl. Verification is what makes the account
-trustworthy; comprehension is why you run it on every session, not just the
-suspicious ones.
-
 ## Install
 
 **Claude Code plugin** — the fastest way in
-([what it does](#audit-from-inside-claude-code)):
+([what it does](#1-in-claude-code--the-plugin)):
 
 ```
 /plugin marketplace add cloudcraft-ai/claude-plugins
@@ -193,104 +94,168 @@ via `cargo install`? Cargo has no man-install step — run
 binary passes the full test suite as x86_64 code (under Rosetta 2 translation
 in CI), but hasn't been hand-verified on Intel silicon — reports welcome.
 
-## Usage
+## 1. In Claude Code — the plugin
 
-**Two commands.** `git receipts` tells you *what happened*; `git receipts
-audit` tells you *whether every claimed edit really landed*. Same receipt
-underneath — the second is the first with the verification brought
-forward.
+The natural place to ask *"what did my agent actually do?"* is where the
+agent is:
 
-```bash
-git receipts                       # what happened here — the default
-git receipts audit                 # …and did it all land?
+```
+/plugin marketplace add cloudcraft-ai/claude-plugins
+/plugin install gitreceipts@cloudcraft
 ```
 
-**What gets read: this folder, or one level below — never upward, and
-never a guess.** Run it from a git repo; use `--project` for a folder that
-holds several. Full rules: [docs/WHAT-GETS-AUDITED.md](docs/WHAT-GETS-AUDITED.md).
+Then just ask. **`/gitreceipts:recap`** reads the session back to you —
+what you asked, what the agent did, what landed — and fires on its own
+when you say things like *"catch me up"* or *"what happened in that
+commit?"*. **`/gitreceipts:audit`** is there when the question is
+*"did it all land?"*. Findings arrive **explained in the context of what
+the session was trying to do**, not just flagged, and the full HTML report
+is one word away (say "report").
+
+<!-- SCREENSHOT: the ambient trigger firing — asking "what happened here?" and the recap answering -->
+
+The division of labor is the point: the facts come from a deterministic,
+local Rust CLI that Claude cannot sweet-talk, and Claude reads those facts
+against what you asked for and explains what it finds. Neither alone gives
+you that — an agent grading its own homework is exactly the problem this
+tool exists to solve.
+
+The plugin wraps the CLI below and will guide you through installing the
+binary if it's missing (it never installs anything for you).
+`/gitreceipts:help` shows everything it can do. And the CLI is a full
+standalone tool — all of it works with no AI in the loop.
+
+## 2. Read it — `git receipts`
+
+The default command answers *what happened here*. One command, one screen:
 
 ```bash
-# the story of this repo's sessions — every prompt, what it drove, what landed
-# (run from the repo root; a subdirectory is not the repo)
 git receipts
-
-# one commit's whole story: the ask, the conversation, what was tried
-git receipts recap --commit 6d6cdc4
-
-# a page to keep or share (--compact for a small one that opens anywhere)
-git receipts recap --format html > recap.html
-git receipts recap --format html --compact > recap.html
-
-# --- verification: the same work, with the checking brought forward ---
-
-# audit ALL of this repo's sessions — the complete picture
-git receipts audit
-
-# just my last run (one session). CAVEAT: a single-session audit still
-# reconciles against the WHOLE repo, so commits from your other sessions
-# match nothing and show up as residue / unclaimed keyframes. Prefer the
-# default (all sessions) unless you specifically want one run.
-git receipts audit --latest
-
-# the commit spine, one line per commit (git log --oneline style)
-git receipts audit --oneline
-
-# scope to a single commit (short hash from --oneline) — lspci -s style
-git receipts audit --commit 6d6cdc4
-
-# read a commit's whole conversation (every prompt + assistant message)
-git receipts audit --commit 6d6cdc4 --full
-
-# audit a specific session file (exactly that one)
-git receipts audit ~/.claude/projects/<project>/<session>.jsonl
-
-# audit a specific session log against a specific repo
-git receipts audit <session>.jsonl --repo ~/code/myapp
-
-# just the broken promises
-git receipts audit --filter red
-
-# filter the spine purely by color. red-amber = the UNANSWERED findings
-# (broken promises + unexplained residue); grey = the explained ones
-git receipts audit --filter red-amber
-git receipts audit --filter grey
-
-# drop conversational content before sharing — counts always stay
-git receipts audit --no-prompt     # your prompts
-git receipts audit --no-summary    # the agent's prose
-git receipts audit --no-intent     # both
-
-# show every command in full with its captured output
-git receipts audit --with-output
-
-# a self-contained HTML report (theme-aware, no external assets).
-# clean commits collapse to a line; commits with findings open with their
-# files and commands, and succeeded detail is dulled so failures stand out
-git receipts audit --format html > audit.html
-
-# export the reconciled audit as a versioned JSON receipt
-git receipts export > receipt.json
-
-# audit a whole PROJECT folder holding several git repos — a "where it
-# landed" roll-up (verdict · commits · landed · broken · residue per repo),
-# then a section per repo. Works for all three formats. The value is
-# optional: bare --project means "this folder".
-git receipts audit --project
-git receipts audit --project ~/Developer/Projects/myproject
-git receipts export --project ~/Developer/Projects/myproject > project.json
-git receipts audit --project ~/Developer/Projects/myproject --format html > project.html
-
-# include commits the agent DIDN'T make in the verdict (see below)
-git receipts audit --full-history
 ```
 
-On a terminal the report auto-pages through `$PAGER` (like git), colors
-intact. `--no-pager` opts out; `--color always` forces colors through your
-own pipe.
+```
+168 commits · 479 prompts · 344/344 claimed files landed
+worth a look: a3f6e63, 89dcd50, 376521c — `git receipts audit` for the verdict
 
-Auditing sessions recorded on a **different machine** (a mounted drive, a
-copied store) is **not supported in v0.1** — first-class support is on the
-roadmap. See [KNOWN-LIMITATIONS.md §8](KNOWN-LIMITATIONS.md).
+  · 24ccff5 yeah commit and push
+           ↳ Report intent per interval and an intent -> outcome summary · 3/3 landed
+  · 566b051 let's do them as well. if we can't derive a meaning -- we say it so
+           ↳ Close two honesty gaps: forged dates and laundered late landings · 1/1 landed
+  ! a3f6e63 harden it against a hostile session file
+           ↳ Harden against hostile session files · 3/3 landed · 1 residue
+```
+
+**Your ask on top, what it became underneath.** That inversion is the
+whole idea: the commit message is the agent's summary of your request, so
+leading with it buries the thing you actually remember. A long session
+shows its findings of any age plus the recent tail; nothing is ever
+truncated silently.
+
+<!-- SCREENSHOT: `git receipts` on a real session — the narrative spine -->
+
+Go deeper without changing tools:
+
+```bash
+git receipts recap --commit 6d6cdc4   # one commit's whole story
+git receipts recap --verbose          # every commit, in full
+git receipts recap --project          # a folder of repos
+git receipts recap --this-session "$MARKER"   # exactly this live session
+```
+
+<!-- SCREENSHOT: `recap --commit <hash>` — the ask, the conversation, what landed -->
+
+Iteration is the story here, not noise. Drafts superseded, a file
+relocated before its first commit, an approach written and thrown away, a
+commit amended twelve seconds later — the audit keeps those quiet because
+they're resolved. A recap is exactly where they belong.
+
+## 3. Check it — `git receipts audit`
+
+Same receipt, verification brought forward. The question is no longer
+*what happened* but *did every claimed edit actually land*:
+
+```bash
+git receipts audit --summary --emoji
+```
+
+```
+commits 168 (+1 by others held out) · 132 🟢 / 31 ⚪ / 5 🟡 / 0 🔴 · claims 344/344 · broken promises 0
+
+    commit  subject                                       claims  findings
+  ⚪ 24ccff5 Report intent per interval and an intent -> o   3/3  1 cmd failed (grep)
+  🟡 a3f6e63 Harden against hostile session files            3/3  1 residue
+```
+
+**The verdict is what git can witness; everything else is a finding.**
+
+| | | |
+|---|---|---|
+| 🟢 | **green** | nothing to report |
+| ⚪ | **grey** | explained findings — a file written and discarded before any commit, a failed command, an errored MCP call. Each is shown *with* its explanation. |
+| 🟡 | **amber** | **un**explained residue: git recorded a change no claim and no command accounts for. A loose end with no answer on record. |
+| 🔴 | **red** | a broken promise: a claimed edit git never got, and nothing explains it. |
+
+The difference between ⚪ and 🟡 is the point: grey means *we know why*,
+amber means *nobody does yet*. `broken promises: 0` is earned, claim by
+claim — and a red is a **question, not a conviction**. It means nothing on
+record explains the claim; you may know something the log doesn't.
+
+<!-- SCREENSHOT: an audit with a real red, and its diagnosis line -->
+
+```bash
+git receipts audit --filter red-amber   # just the unanswered ones
+git receipts audit --exit-code          # 0 green/grey · 1 amber · 2 red — for CI
+```
+
+## 4. Keep it — pages and data
+
+Every view renders three ways, from one receipt: the console, a
+self-contained HTML page, and JSON. **The numbers are identical across all
+three** — a QA harness checks that to the digit on every release, and
+nothing ships while one disagrees.
+
+**A page to keep or share.** Theme-aware, no external assets, works
+offline:
+
+```bash
+git receipts recap --format html --compact > recap.html   # the story
+git receipts audit --format html --compact > audit.html   # the verdict
+```
+
+`--compact` is the one to reach for: commits with unexplained findings keep
+their full file and command lists, everything else collapses to its
+headline, and long output is clipped — a few hundred KB becomes small
+enough to open in a chat preview pane. Every cap says how much it hid and
+points at the JSON, which stays complete. Without it you get the full
+document; `--expand all|none` controls what starts open.
+
+<!-- SCREENSHOT: the compact HTML report open in a browser -->
+
+**The data.** `git receipts export` runs the same pipeline and emits the
+reconciled result as JSON — the interchange artifact you can commit beside
+the code, diff between runs, feed to another program, or hand to a model:
+
+```bash
+git receipts export > receipt.json
+git receipts export --project > project.json
+git receipts export --compact          # single line, for piping
+```
+
+- Same facts as the report: per-commit statement, ledger, residue,
+  commands, MCP calls, intents, token estimate, provenance, exceptions,
+  blast radii, identity roll-up.
+- Versioned schema (`schema_version`), **additive-only within 0.x** — new
+  fields may appear, existing ones never change meaning. The full promise
+  is in [docs/COMPAT.md](docs/COMPAT.md).
+- Same scoping and privacy switches as the reading commands.
+- `--full` is the maximal export: the whole transcript plus every
+  command's output (failed commands' output is included by default).
+
+**Before you share any of it:** these are built from your prompts and
+command output. `--no-intent` drops the conversation and keeps every
+count, `--no-identity` drops names and emails, `--redact <word>` masks
+anything else. Home paths are masked automatically and a secret/PII
+scanner runs by default.
 
 ## What it checks
 
@@ -417,29 +382,7 @@ receipt in the JSON wrapper) is safe to hand out without exposing another
 repo's file tree. Truly-external writes (scratch dirs, memory files) still
 show their paths. `--project` and `--repo` are mutually exclusive.
 
-## Receipts (JSON export)
-
-`git receipts export` runs the same pipeline as `audit` and emits the result
-as machine-readable JSON — the interchange artifact you can commit beside
-the code, feed to another program, or hand to a model to interpret. Far
-smaller than the raw session log it distills.
-
-- Same facts as the verbose report: per-commit statement, ledger, residue,
-  commands, MCP calls, intents, token estimate, provenance, exceptions,
-  blast radii, identity roll-up. **Every number matches the console and
-  HTML** — three renderings of one receipt.
-- Versioned schema (`schema_version`); pretty by default, `--compact` for a
-  single line. Within 0.x the schema is **additive-only** — new fields may
-  appear, existing ones never change meaning. The full promise (schema,
-  verdict semantics, exit codes, plugin/binary floors) is in
-  [docs/COMPAT.md](docs/COMPAT.md).
-- Same scoping switches as `audit`: `--filter`, `--commit`, `--no-prompt` /
-  `--no-summary` / `--no-intent` / `--no-identity` for a receipt you can
-  share — counts always stay.
-- `--full` is the maximal export: the whole chat transcript plus every
-  command's output. Output is included for **failed** commands by default
-  (a failure's output is the one you always want); `--with-output` includes
-  all of it, capped at 64 KB each.
+## Where sessions come from
 
 v0.1 reads Claude Code session logs (the JSONL under `~/.claude/projects/`).
 Sessions are found for the repo *and its parent directories* — launching the
