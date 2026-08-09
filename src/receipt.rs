@@ -20,11 +20,17 @@ use crate::ingest::IngestStats;
 use crate::reconcile::{Audit, Interval, Landing, LandingSummary, Status};
 use crate::report::{Filter, Show};
 
-/// Receipt schema version, independent of the tool version. Pre-1.0 and
-/// expected to evolve: the shape is not yet stable, so consumers should not
-/// assume compatibility across minor bumps. A future "1.0" is the stability
-/// commitment; a breaking change before then bumps the minor.
-pub const SCHEMA_VERSION: &str = "0.7";
+/// Receipt schema version, independent of the tool version.
+///
+/// The minor bumps whenever the shape changes at all — including purely
+/// ADDITIVE changes — so a consumer can feature-detect ("does this receipt
+/// carry failure triage?") instead of probing for fields. Within 0.x the
+/// changes are additive: existing fields keep their names, types, and
+/// meaning (docs/COMPAT.md). A future "1.0" is the stability commitment.
+///
+/// 0.8 — added `balance.grey`, ledger `scratch`, and per-command
+/// `failure_class`/`failure_evidence` (the 0.1.1 verdict contract).
+pub const SCHEMA_VERSION: &str = "0.8";
 
 /// The privacy caution stamped on every receipt (single-repo and project).
 const NOTICE: &str = "Private audit report — built from chat/agent logs, git contents, \

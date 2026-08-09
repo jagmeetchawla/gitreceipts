@@ -12,8 +12,12 @@ layout, HTML, wording — is presentation and may change in any release.
 
 **Within 0.x, schema changes are additive.** New fields may appear; existing
 fields keep their names, types, and meaning. A field is never repurposed to
-mean something new. Removals and renames wait for a major version and arrive
-with a `schema_version` bump and a note in the release.
+mean something new. Removals and renames wait for a major version.
+
+**Every shape change bumps `schema_version`'s minor — including additive
+ones** — so you can feature-detect instead of probing for fields. Schema
+`0.8` (shipped with 0.1.1) added `balance.grey`, the ledger's `scratch`
+flag, and per-command `failure_class` / `failure_evidence`.
 
 Every receipt carries `schema_version`. Consumers should:
 
@@ -81,7 +85,7 @@ predates a feature it would prefer to use, rather than failing.
 
 | plugin | binary floor | notes |
 |---|---|---|
-| 0.1.x | 0.1.0 | extracts the condensed view from `export` JSON |
+| 0.1.x | 0.1.0 | extracts the condensed view from `export` JSON (schema 0.7) |
 | 0.2.0+ | 0.1.1 | uses native `--summary`, `--emoji`, `--this-session`; falls back to the 0.1.x path on older binaries |
 
 ## What is explicitly *not* promised
