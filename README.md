@@ -14,6 +14,7 @@
   <a href="https://github.com/jagmeetchawla/gitreceipts/releases">Releases</a> ·
   <a href="RECEIPTS.md">RECEIPTS.md</a> ·
   <a href="KNOWN-LIMITATIONS.md">Known limitations</a> ·
+  <a href="docs/WHAT-GETS-AUDITED.md">What gets audited</a> ·
   <a href="docs/COMPAT.md">Compatibility</a> ·
   <a href="qa/">QA harness</a>
   <br><br>
@@ -189,8 +190,13 @@ in CI), but hasn't been hand-verified on Intel silicon — reports welcome.
 
 ## Usage
 
+**What gets audited: this folder, or one level below — never upward, and
+never a guess.** Run it from a git repo; use `--project` for a folder that
+holds several. Full rules: [docs/WHAT-GETS-AUDITED.md](docs/WHAT-GETS-AUDITED.md).
+
 ```bash
 # audit ALL of this repo's sessions — the default, the complete picture
+# (run from the repo root; a subdirectory is not the repo)
 git receipts audit
 
 # just my last run (one session). CAVEAT: a single-session audit still
@@ -240,7 +246,9 @@ git receipts export > receipt.json
 
 # audit a whole PROJECT folder holding several git repos — a "where it
 # landed" roll-up (verdict · commits · landed · broken · residue per repo),
-# then a section per repo. Works for all three formats.
+# then a section per repo. Works for all three formats. The value is
+# optional: bare --project means "this folder".
+git receipts audit --project
 git receipts audit --project ~/Developer/Projects/myproject
 git receipts export --project ~/Developer/Projects/myproject > project.json
 git receipts audit --project ~/Developer/Projects/myproject --format html > project.html
