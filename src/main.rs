@@ -40,6 +40,107 @@ struct Cli {
     command: Option<Cmd>,
 }
 
+/// WHAT to read. Identical for every command — sharing the struct is what
+/// keeps them identical, rather than three hand-maintained copies that
+/// drift (recap shipped without --verbose/--oneline exactly that way).
+#[derive(clap::Args)]
+struct Scope {
+    /// Session file(s) to read. Default: every session for the target.
+    sessions: Vec<PathBuf>,
+    /// Just the most recent session.
+    #[arg(long)]
+    latest: bool,
+    /// Every session (the default; an explicit synonym).
+    #[arg(long)]
+    all: bool,
+    /// A single git repo. The value is optional — bare --repo means
+    /// "this folder".
+    #[arg(long, value_name = "DIR", conflicts_with = "project", num_args = 0..=1, default_missing_value = ".")]
+    repo: Option<PathBuf>,
+    /// A folder holding several repos. The value is optional — bare
+    /// --project means "this folder".
+    #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
+    project: Option<PathBuf>,
+    /// Claude Code projects directory (default: ~/.claude/projects).
+    #[arg(long, value_name = "DIR")]
+    store: Option<PathBuf>,
+    /// Which agent produced the sessions (recorded in the receipt).
+    #[arg(long, value_enum, default_value_t = report::Agent::Claude)]
+    agent: report::Agent,
+    /// Scope to a single commit (short or full hash).
+    #[arg(long, value_name = "REF")]
+    commit: Option<String>,
+    /// THIS live session, found by a unique marker you just echoed.
+    #[arg(long, value_name = "MARKER", conflicts_with_all = ["latest", "all"])]
+    this_session: Option<String>,
+    /// Include commits this agent didn't make (teammates, pulls, merges).
+    #[arg(long)]
+    full_history: bool,
+}
+
+/// WHAT TO HIDE. Identical for every command — privacy that varied by
+/// command would be a trap.
+#[derive(clap::Args)]
+struct Privacy {
+    /// Drop your prompts (counts stay).
+    #[arg(long)]
+    no_prompt: bool,
+    /// Drop the agent's prose.
+    #[arg(long)]
+    no_summary: bool,
+    /// Drop both prompts and agent prose.
+    #[arg(long)]
+    no_intent: bool,
+    /// Drop names and emails.
+    #[arg(long)]
+    no_identity: bool,
+    /// Extra literal word to mask as ****. Repeatable.
+    #[arg(long, value_name = "WORD")]
+    redact: Vec<String>,
+    /// Turn OFF the built-in secret/PII scanner (on by default).
+    #[arg(long)]
+    no_scan: bool,
+}
+
+/// HOW to show it. Shared by the two reading commands, so a view that
+/// exists for one exists for both.
+#[derive(clap::Args)]
+struct View {
+    /// Colors: auto (default), always, never.
+    #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
+    color: report::ColorMode,
+    /// text (default) or html — a self-contained page to keep or share.
+    #[arg(long, value_enum, default_value_t = report::Format::Text)]
+    format: report::Format,
+    /// HTML only: which commits start expanded — auto, all, none.
+    #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
+    expand: report::Expand,
+    /// HTML only: a small page. Amber and red commits keep their full
+    /// file/command lists; everything else collapses to its headline, and
+    /// long prose is clipped. Every cap says how much it hid.
+    #[arg(long)]
+    compact: bool,
+    /// The condensed table: one line per commit, findings named.
+    #[arg(long)]
+    summary: bool,
+    /// One line per commit, every commit, no caps (like git log --oneline).
+    #[arg(long)]
+    oneline: bool,
+    /// Full per-commit anatomy: files added/modified/deleted and the
+    /// commands that ran.
+    #[arg(short, long)]
+    verbose: bool,
+    /// Every command in full with its captured output (implies --verbose).
+    #[arg(long)]
+    with_output: bool,
+    /// Print each commit's whole conversation, not just intent + summary.
+    #[arg(long)]
+    full: bool,
+    /// Don't page through $PAGER.
+    #[arg(long)]
+    no_pager: bool,
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Read a session as a story: what you asked, what the agent did, what
@@ -56,74 +157,12 @@ Scopes exactly like audit: this repo by default, --project for a folder of
 repos, --commit for one commit's full story, --this-session for the live
 one.")]
     Recap {
-        /// Session file(s) to read. Default: every session for the target.
-        sessions: Vec<PathBuf>,
-        /// Just the most recent session.
-        #[arg(long)]
-        latest: bool,
-        /// Every session (the default; kept as an explicit synonym).
-        #[arg(long)]
-        all: bool,
-        /// A single git repo. The value is optional — bare --repo means
-        /// "this folder".
-        #[arg(long, value_name = "DIR", conflicts_with = "project", num_args = 0..=1, default_missing_value = ".")]
-        repo: Option<PathBuf>,
-        /// A folder holding several repos. The value is optional — bare
-        /// --project means "this folder".
-        #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
-        project: Option<PathBuf>,
-        /// Claude Code projects directory (default: ~/.claude/projects).
-        #[arg(long, value_name = "DIR")]
-        store: Option<PathBuf>,
-        /// Which agent produced the sessions (recorded in the receipt).
-        #[arg(long, value_enum, default_value_t = report::Agent::Claude)]
-        agent: report::Agent,
-        /// One commit's whole story, in full.
-        #[arg(long, value_name = "REF")]
-        commit: Option<String>,
-        /// THIS live session, found by a unique marker you just echoed.
-        #[arg(long, value_name = "MARKER", conflicts_with_all = ["latest", "all"])]
-        this_session: Option<String>,
-        /// Drop your prompts from the output (counts stay).
-        #[arg(long)]
-        no_prompt: bool,
-        /// Drop the agent's prose from the output.
-        #[arg(long)]
-        no_summary: bool,
-        /// Drop both prompts and agent prose.
-        #[arg(long)]
-        no_intent: bool,
-        /// Drop names and emails.
-        #[arg(long)]
-        no_identity: bool,
-        /// Extra literal word to mask as ****. Repeatable.
-        #[arg(long, value_name = "WORD")]
-        redact: Vec<String>,
-        /// Turn OFF the built-in secret/PII scanner (on by default).
-        #[arg(long)]
-        no_scan: bool,
-        /// Don't page through $PAGER.
-        #[arg(long)]
-        no_pager: bool,
-        /// Include commits this agent didn't make.
-        #[arg(long)]
-        full_history: bool,
-        /// Colors: auto (default), always, never.
-        #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
-        color: report::ColorMode,
-        /// text (default) or html — a self-contained page you can keep or
-        /// share. Same report the audit renders, framed as the story.
-        #[arg(long, value_enum, default_value_t = report::Format::Text)]
-        format: report::Format,
-        /// HTML only: which commits start expanded — auto, all, none.
-        #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
-        expand: report::Expand,
-        /// HTML only: a small page. Caps the long tails — a failed
-        /// command's full text and captured output, and the per-commit
-        /// file and command lists — so the report opens anywhere. Every
-        /// cap says how much it hid.
-        #[arg(long)]
-        compact: bool,
+        #[command(flatten)]
+        scope: Scope,
+        #[command(flatten)]
+        privacy: Privacy,
+        #[command(flatten)]
+        view: View,
     },
     /// Audit one or more Claude Code sessions against a git repo.
     #[command(
@@ -161,161 +200,25 @@ On a terminal the report auto-pages through $PAGER with color (like git);
 a pipe or redirect never pages. Use --no-pager to opt out."
     )]
     Audit {
-        /// Paths to session .jsonl files. With none given, audits ALL of the
-        /// repo's sessions (the default) — pass a file to audit just that one.
-        sessions: Vec<PathBuf>,
-        /// Audit ONLY the most recent session, not all of them. Deliberate
-        /// shortcut for "what my last run did". Caveat: a single-session audit
-        /// reconciles against the whole repo, so commits from your OTHER
-        /// sessions match nothing and show up as residue / unclaimed keyframes.
-        /// Audit all sessions (the default) for a clean picture.
-        #[arg(long)]
-        latest: bool,
-        /// Audit every session for this repo, merged into one ledger. This is
-        /// now the DEFAULT (kept as an explicit synonym). There is no local
-        /// archive: sessions older than the store's retention are gone, and
-        /// commits from that era show as unclaimed keyframes.
-        #[arg(long)]
-        all: bool,
-        /// A single git repo to reconcile against. The value is optional —
-        /// bare --repo means "this folder", the same as passing nothing.
-        /// Mutually exclusive with --project.
-        #[arg(long, value_name = "DIR", conflicts_with = "project", num_args = 0..=1, default_missing_value = ".")]
-        repo: Option<PathBuf>,
-        /// A PROJECT folder holding several git repos (e.g. a public repo beside
-        /// private ops/config repos, driven in one session). Discovers every git
-        /// repo under it that has sessions and reports each — a project header
-        /// plus one section per repo. Mutually exclusive with --repo.
-        #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
-        project: Option<PathBuf>,
-        /// The Claude Code projects directory — where session logs live, and
-        /// the ONLY directory gitreceipts reads (never your settings, prompt
-        /// history, or MCP auth). Default: ~/.claude/projects. To audit
-        /// another machine's sessions, point at a mounted copy:
-        /// --store /Volumes/studio/Users/me/.claude/projects
-        #[arg(long)]
-        store: Option<PathBuf>,
-        /// Which coding agent produced the session. Only `claude` (the
-        /// default) is supported today; the switch reserves the contract so
-        /// other agents (e.g. codex) become an additive change, not a
-        /// breaking one. Recorded in the receipt's source.agent.
-        #[arg(long, value_enum, default_value_t = report::Agent::Claude)]
-        agent: report::Agent,
-        /// When to emit ANSI colors. `always` keeps them through pipes,
-        /// for `| bat`, `| less -R`, or saving a colored transcript.
-        #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
-        color: report::ColorMode,
-        /// Suppress your prompt text (intent lines, and your turns in --full).
-        /// Counts stay. Use before sharing a report you'd rather not attach
-        /// your own words to.
-        #[arg(long)]
-        no_prompt: bool,
-        /// Suppress the agent's prose — its post-commit summaries (and its
-        /// turns in --full). The verified ledger and counts stay.
-        #[arg(long)]
-        no_summary: bool,
-        /// Suppress BOTH your prompts and the agent's prose (= --no-prompt
-        /// --no-summary). Counts stay. The blunt "share safely" switch.
-        #[arg(long)]
-        no_intent: bool,
-        /// Suppress git-identity names and emails — the "who touched this
-        /// repo" roll-up and per-commit committer/co-author lines (counts and
-        /// keyframe attribution stay). Use before sharing a report from a
-        /// repo with contributors you'd rather not name.
-        #[arg(long)]
-        no_identity: bool,
-        /// Filter the spine purely by color: all, red (broken promises), amber
-        /// (residue, failed command, or errored MCP), green, or red-amber.
+        #[command(flatten)]
+        scope: Scope,
+        #[command(flatten)]
+        privacy: Privacy,
+        #[command(flatten)]
+        view: View,
+        /// Show only some intervals: all (default), red, amber, grey,
+        /// green, or red-amber (the unanswered ones).
         #[arg(long, value_enum, default_value_t = report::Filter::All)]
         filter: report::Filter,
-        /// Output format: text (console ledger) or html (a self-contained
-        /// page — redirect it: `... --format html > audit.html`).
-        #[arg(long, value_enum, default_value_t = report::Format::Text)]
-        format: report::Format,
-        /// HTML only: which commit drill-downs start expanded — auto
-        /// (findings open, balanced collapsed), all, or none.
-        #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
-        expand: report::Expand,
-        /// HTML only: a small page. Keeps the full file/command lists for
-        /// amber and red commits and caps the long prose; everything else
-        /// collapses to its headline. Every cap says how much it hid.
-        #[arg(long)]
-        compact: bool,
-        /// Terse spine: the session summary, then one line per commit —
-        /// short hash, status, subject, landed/claimed — instead of the full
-        /// per-commit drill-down. Like `git log --oneline`. Console only.
-        #[arg(long)]
-        oneline: bool,
-        /// The condensed view: the headline, then ONE table — commit ·
-        /// subject · claims · findings. Findings of any age plus the recent
-        /// tail; zeros never printed; every cause named; `—` means clean.
-        /// The agent-native default view. (alias: --brief)
-        #[arg(long, alias = "brief")]
-        summary: bool,
-        /// With --summary or --oneline: status dots as emoji (🟢⚪🟡🔴)
-        /// instead of ANSI color — for chat surfaces that strip terminal
-        /// colors.
+        /// Status dots as emoji (🟢⚪🟡🔴) instead of ANSI marks — for chat
+        /// surfaces that strip terminal color.
         #[arg(long)]
         emoji: bool,
-        /// Print each commit's full conversation (every prompt and assistant
-        /// message), not just intent + summary. Most useful scoped with
-        /// --commit — the whole session gets long. Implies --verbose.
-        #[arg(long)]
-        full: bool,
-        /// Console: print each commit's full anatomy — files added/
-        /// modified/deleted/renamed and the commands that ran.
-        #[arg(short, long)]
-        verbose: bool,
-        /// Show every command in full with its captured output, console and
-        /// HTML alike. By default only FAILED commands expand this way (their
-        /// output is the one you always want); this shows it for all. Implies
-        /// --verbose for the console.
-        #[arg(long)]
-        with_output: bool,
-        /// Scope the drill-down to a single commit (short or full hash),
-        /// `lspci -s` style — see `audit --oneline` for the hashes. The
-        /// header, summary, and balance still cover the whole session.
-        /// Implies --verbose for the console.
-        #[arg(long, value_name = "REF")]
-        commit: Option<String>,
-        /// Extra literal word to mask as **** everywhere in the report — on
-        /// top of the automatic home-directory/username redaction. Repeatable.
-        /// For names, hostnames, or client ids the tool can't infer:
-        /// --redact acme-corp --redact staging.internal
-        #[arg(long, value_name = "WORD")]
-        redact: Vec<String>,
-        /// Turn OFF the built-in secret/PII scanner (on by default). The
-        /// scanner masks API keys, tokens, private keys, and validated PII
-        /// (SSN/card/IBAN) it finds in commands, output, and MCP results.
-        /// Only pass this when you trust the audience with raw values.
-        #[arg(long)]
-        no_scan: bool,
-        /// Don't page the console report through $PAGER, even on a
-        /// terminal. (By default, like git, a terminal gets a colored
-        /// pager; a pipe or redirect never does.)
-        #[arg(long)]
-        no_pager: bool,
-        /// Include the WHOLE in-window spine, not just your own commits. By
-        /// default the verdict/balance/spine cover only the commits THIS agent
-        /// made — so adopting agentic development on an existing codebase
-        /// doesn't drown you in residue for the team's pre-existing history.
-        /// Pass this to audit every in-window commit (teammate commits, pulls,
-        /// merges) as before.
-        #[arg(long)]
-        full_history: bool,
-        /// Exit with the verdict: 0 = green or grey (the equation balances),
-        /// 1 = amber (unexplained residue), 2 = red (a broken promise). For
-        /// CI gates; a red-only gate tests exit >= 2. Grey never raises the
-        /// exit code — explained findings are not failures. Default exit
-        /// semantics are unchanged without this flag.
+        /// Exit with the verdict: 0 green/grey, 1 amber, 2 red. For CI
+        /// gates; a red-only gate tests >= 2. Default exit semantics are
+        /// unchanged without this flag.
         #[arg(long)]
         exit_code: bool,
-        /// Audit exactly THIS live session, found by identity: pass a unique
-        /// marker you have just echoed into the conversation, and the store
-        /// is searched for the session file that contains it. Beats --latest,
-        /// which guesses by file time and can race a parallel session.
-        #[arg(long, value_name = "MARKER", conflicts_with_all = ["latest", "all"])]
-        this_session: Option<String>,
     },
     /// Export the reconciled audit as a versioned JSON receipt.
     #[command(
@@ -487,6 +390,43 @@ fn man_install_dir() -> Result<PathBuf> {
     Ok(fallback)
 }
 
+/// One place that turns the shared groups into report options, so the two
+/// reading commands cannot drift in how they interpret the same flag.
+fn options_from(
+    privacy: &Privacy,
+    view: &View,
+    narrative: bool,
+    filter: report::Filter,
+    emoji: bool,
+    commit_scoped: bool,
+) -> report::Options {
+    report::Options {
+        color: view.color,
+        show: report::Show {
+            prompt: !privacy.no_prompt && !privacy.no_intent,
+            summary: !privacy.no_summary && !privacy.no_intent,
+        },
+        show_identity: !privacy.no_identity,
+        filter,
+        format: view.format,
+        expand: view.expand,
+        // --with-output, --commit and --full all need the per-commit
+        // anatomy, so any of them implies verbose for the console.
+        verbose: view.verbose || view.with_output || view.full || commit_scoped,
+        with_output: view.with_output,
+        commit: None,
+        oneline: view.oneline,
+        // Recap's default view IS the condensed one; audit asks for it.
+        summary: view.summary || (narrative && !view.oneline && !view.verbose && !commit_scoped),
+        emoji,
+        compact: view.compact,
+        narrative,
+        full: view.full || commit_scoped,
+        project_section: false,
+        siblings: Vec::new(),
+    }
+}
+
 fn main() -> Result<()> {
     // A report exists to be piped (`| head`, `| less` quit early). Restore
     // default SIGPIPE so a closed pipe ends the process quietly instead of
@@ -499,92 +439,49 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     // No subcommand → recap this repo. Bare `git receipts` only printed
     // help before, so giving it a default takes nothing away.
-    let command = cli.command.unwrap_or(Cmd::Recap {
-        sessions: Vec::new(),
-        latest: false,
-        all: false,
-        repo: None,
-        project: None,
-        store: None,
-        agent: report::Agent::Claude,
-        commit: None,
-        this_session: None,
-        no_prompt: false,
-        no_summary: false,
-        no_intent: false,
-        no_identity: false,
-        redact: Vec::new(),
-        no_scan: false,
-        no_pager: false,
-        full_history: false,
-        color: report::ColorMode::Auto,
-        format: report::Format::Text,
-        expand: report::Expand::Auto,
-        compact: false,
+    // No subcommand → recap this repo, with every default. Bare
+    // `git receipts` only printed help before, so this takes nothing away.
+    let command = cli.command.unwrap_or_else(|| {
+        use clap::Parser;
+        // Parse an empty recap invocation rather than hand-listing every
+        // default — a hand-written copy is exactly what drifts.
+        match Cli::parse_from(["git-receipts", "recap"]).command {
+            Some(c) => c,
+            None => unreachable!("an explicit subcommand was given"),
+        }
     });
     match command {
         Cmd::Recap {
-            sessions,
-            latest,
-            all,
-            repo,
-            project,
-            store,
-            agent,
-            commit,
-            this_session,
-            no_prompt,
-            no_summary,
-            no_intent,
-            no_identity,
-            redact,
-            no_scan,
-            no_pager,
-            full_history,
-            color,
-            format,
-            expand,
-            compact,
-        } => audit::run(
-            sessions,
-            latest,
-            all,
-            repo,
-            project,
-            store,
-            no_pager,
-            report::Options {
-                color,
-                show: report::Show {
-                    prompt: !no_prompt && !no_intent,
-                    summary: !no_summary && !no_intent,
-                },
-                show_identity: !no_identity,
-                filter: report::Filter::All,
-                format,
-                expand,
-                // A named commit gets its whole story; otherwise the spine.
-                verbose: commit.is_some(),
-                with_output: false,
-                commit: None,
-                oneline: false,
-                summary: commit.is_none(),
-                // Muted by design: emoji dots are the audit's language.
-                emoji: false,
-                compact,
-                narrative: true,
-                full: commit.is_some(),
-                project_section: false,
-                siblings: Vec::new(),
-            },
-            commit,
-            redact,
-            !no_scan,
-            agent,
-            full_history,
-            false,
-            this_session,
-        ),
+            scope,
+            privacy,
+            view,
+        } => {
+            let opts = options_from(
+                &privacy,
+                &view,
+                true,
+                report::Filter::All,
+                false,
+                scope.commit.is_some(),
+            );
+            audit::run(
+                scope.sessions,
+                scope.latest,
+                scope.all,
+                scope.repo,
+                scope.project,
+                scope.store,
+                view.no_pager,
+                opts,
+                scope.commit,
+                privacy.redact,
+                !privacy.no_scan,
+                scope.agent,
+                scope.full_history,
+                false,
+                scope.this_session,
+            )
+        }
         Cmd::Man { out, install } => {
             use clap::CommandFactory;
             let dir = if install { man_install_dir()? } else { out };
@@ -597,75 +494,39 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Audit {
-            sessions,
-            latest,
-            all,
-            repo,
-            project,
-            store,
-            agent,
-            color,
-            no_prompt,
-            no_summary,
-            no_intent,
-            no_identity,
+            scope,
+            privacy,
+            view,
             filter,
-            format,
-            expand,
-            compact,
-            oneline,
-            summary,
             emoji,
-            full,
-            verbose,
-            with_output,
-            commit,
-            redact,
-            no_scan,
-            no_pager,
-            full_history,
             exit_code,
-            this_session,
-        } => audit::run(
-            sessions,
-            latest,
-            all,
-            repo,
-            project,
-            store,
-            no_pager,
-            report::Options {
-                color,
-                show: report::Show {
-                    prompt: !no_prompt && !no_intent,
-                    summary: !no_summary && !no_intent,
-                },
-                show_identity: !no_identity,
+        } => {
+            let opts = options_from(
+                &privacy,
+                &view,
+                false,
                 filter,
-                format,
-                expand,
-                // --with-output, --commit, and --full all need the per-commit
-                // anatomy, so any of them implies verbose for the console.
-                verbose: verbose || with_output || full || commit.is_some(),
-                with_output,
-                commit: None,
-                oneline,
-                summary,
                 emoji,
-                narrative: false,
-                compact,
-                full,
-                project_section: false,
-                siblings: Vec::new(),
-            },
-            commit,
-            redact,
-            !no_scan,
-            agent,
-            full_history,
-            exit_code,
-            this_session,
-        ),
+                scope.commit.is_some(),
+            );
+            audit::run(
+                scope.sessions,
+                scope.latest,
+                scope.all,
+                scope.repo,
+                scope.project,
+                scope.store,
+                view.no_pager,
+                opts,
+                scope.commit,
+                privacy.redact,
+                !privacy.no_scan,
+                scope.agent,
+                scope.full_history,
+                exit_code,
+                scope.this_session,
+            )
+        }
         Cmd::Export {
             sessions,
             latest,
