@@ -28,11 +28,81 @@ runs you weren't watching, or work from a while ago you no longer remember."
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Cmd,
+    command: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Read a session as a story: what you asked, what the agent did, what
+    /// landed. The default command.
+    #[command(long_about = "\
+Read a session as a story — the default command.
+
+Recap answers \"what happened here\": the prompts you typed, the work each
+one drove, and the commit it became. Findings are named where they occur
+but never lead — for the verdict (broken promises, residue, the colored
+balance) run `git receipts audit`.
+
+Scopes exactly like audit: this repo by default, --project for a folder of
+repos, --commit for one commit's full story, --this-session for the live
+one.")]
+    Recap {
+        /// Session file(s) to read. Default: every session for the target.
+        sessions: Vec<PathBuf>,
+        /// Just the most recent session.
+        #[arg(long)]
+        latest: bool,
+        /// Every session (the default; kept as an explicit synonym).
+        #[arg(long)]
+        all: bool,
+        /// A single git repo. The value is optional — bare --repo means
+        /// "this folder".
+        #[arg(long, value_name = "DIR", conflicts_with = "project", num_args = 0..=1, default_missing_value = ".")]
+        repo: Option<PathBuf>,
+        /// A folder holding several repos. The value is optional — bare
+        /// --project means "this folder".
+        #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
+        project: Option<PathBuf>,
+        /// Claude Code projects directory (default: ~/.claude/projects).
+        #[arg(long, value_name = "DIR")]
+        store: Option<PathBuf>,
+        /// Which agent produced the sessions (recorded in the receipt).
+        #[arg(long, value_enum, default_value_t = report::Agent::Claude)]
+        agent: report::Agent,
+        /// One commit's whole story, in full.
+        #[arg(long, value_name = "REF")]
+        commit: Option<String>,
+        /// THIS live session, found by a unique marker you just echoed.
+        #[arg(long, value_name = "MARKER", conflicts_with_all = ["latest", "all"])]
+        this_session: Option<String>,
+        /// Drop your prompts from the output (counts stay).
+        #[arg(long)]
+        no_prompt: bool,
+        /// Drop the agent's prose from the output.
+        #[arg(long)]
+        no_summary: bool,
+        /// Drop both prompts and agent prose.
+        #[arg(long)]
+        no_intent: bool,
+        /// Drop names and emails.
+        #[arg(long)]
+        no_identity: bool,
+        /// Extra literal word to mask as ****. Repeatable.
+        #[arg(long, value_name = "WORD")]
+        redact: Vec<String>,
+        /// Turn OFF the built-in secret/PII scanner (on by default).
+        #[arg(long)]
+        no_scan: bool,
+        /// Don't page through $PAGER.
+        #[arg(long)]
+        no_pager: bool,
+        /// Include commits this agent didn't make.
+        #[arg(long)]
+        full_history: bool,
+        /// Colors: auto (default), always, never.
+        #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
+        color: report::ColorMode,
+    },
     /// Audit one or more Claude Code sessions against a git repo.
     #[command(
         long_about = "\
@@ -400,7 +470,87 @@ fn main() -> Result<()> {
     }
 
     let cli = Cli::parse();
-    match cli.command {
+    // No subcommand → recap this repo. Bare `git receipts` only printed
+    // help before, so giving it a default takes nothing away.
+    let command = cli.command.unwrap_or(Cmd::Recap {
+        sessions: Vec::new(),
+        latest: false,
+        all: false,
+        repo: None,
+        project: None,
+        store: None,
+        agent: report::Agent::Claude,
+        commit: None,
+        this_session: None,
+        no_prompt: false,
+        no_summary: false,
+        no_intent: false,
+        no_identity: false,
+        redact: Vec::new(),
+        no_scan: false,
+        no_pager: false,
+        full_history: false,
+        color: report::ColorMode::Auto,
+    });
+    match command {
+        Cmd::Recap {
+            sessions,
+            latest,
+            all,
+            repo,
+            project,
+            store,
+            agent,
+            commit,
+            this_session,
+            no_prompt,
+            no_summary,
+            no_intent,
+            no_identity,
+            redact,
+            no_scan,
+            no_pager,
+            full_history,
+            color,
+        } => audit::run(
+            sessions,
+            latest,
+            all,
+            repo,
+            project,
+            store,
+            no_pager,
+            report::Options {
+                color,
+                show: report::Show {
+                    prompt: !no_prompt && !no_intent,
+                    summary: !no_summary && !no_intent,
+                },
+                show_identity: !no_identity,
+                filter: report::Filter::All,
+                format: report::Format::Text,
+                expand: report::Expand::Auto,
+                // A named commit gets its whole story; otherwise the spine.
+                verbose: commit.is_some(),
+                with_output: false,
+                commit: None,
+                oneline: false,
+                summary: commit.is_none(),
+                // Muted by design: emoji dots are the audit's language.
+                emoji: false,
+                narrative: true,
+                full: commit.is_some(),
+                project_section: false,
+                siblings: Vec::new(),
+            },
+            commit,
+            redact,
+            !no_scan,
+            agent,
+            full_history,
+            false,
+            this_session,
+        ),
         Cmd::Man { out, install } => {
             use clap::CommandFactory;
             let dir = if install { man_install_dir()? } else { out };
@@ -467,6 +617,7 @@ fn main() -> Result<()> {
                 oneline,
                 summary,
                 emoji,
+                narrative: false,
                 full,
                 project_section: false,
                 siblings: Vec::new(),

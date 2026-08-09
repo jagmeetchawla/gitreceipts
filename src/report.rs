@@ -139,6 +139,10 @@ pub struct Options {
     /// Status dots as emoji (🟢⚪🟡🔴) instead of ANSI-colored marks — for
     /// chat surfaces where terminal color is stripped.
     pub emoji: bool,
+    /// Recap framing: lead with what was ASKED and what happened, mute the
+    /// verdict marks, and close with what to run next. The numbers are the
+    /// same receipt the audit renders — only the emphasis differs.
+    pub narrative: bool,
     /// Print each commit's full conversation (every prompt and assistant
     /// message) — the whole chat, not just intent + summary. Most useful
     /// scoped with `--commit`; the whole session gets long.
@@ -1366,6 +1370,17 @@ fn render_interval(
 
 /// The status dot for a summary/oneline row. Emoji for chat surfaces
 /// (terminal colors get stripped there); ANSI-painted marks otherwise.
+fn status_dot_muted(st: &Style, s: Status) -> String {
+    // Recap names findings without shouting them: one dim character, and
+    // nothing at all where there is nothing to say.
+    st.dim(match s {
+        Status::Green => " ",
+        Status::Grey => "·",
+        Status::Amber => "!",
+        Status::Red => "✘",
+    })
+}
+
 fn status_dot(st: &Style, s: Status, emoji: bool) -> String {
     if emoji {
         match s {
@@ -1463,7 +1478,7 @@ pub fn findings_cell(iv: &Interval) -> String {
     }
 }
 
-fn summary_row(st: &Style, iv: &Interval, emoji: bool) {
+fn summary_row(st: &Style, iv: &Interval, emoji: bool, narrative: bool) {
     let landed = iv
         .ledger
         .iter()
@@ -1472,7 +1487,11 @@ fn summary_row(st: &Style, iv: &Interval, emoji: bool) {
     let subject: String = iv.commit.subject.chars().take(45).collect();
     println!(
         "  {} {} {:<45} {:>5}  {}",
-        status_dot(st, iv.status(), emoji),
+        if narrative {
+            status_dot_muted(st, iv.status())
+        } else {
+            status_dot(st, iv.status(), emoji)
+        },
         iv.commit.short,
         redact_home(&subject),
         format!("{landed}/{}", iv.ledger.len()),
@@ -1487,6 +1506,9 @@ pub fn print_summary(audit: &Audit, opts: &Options) {
     let st = Style::new(opts.color);
     let c = audit.counts();
     const CAP: usize = 15;
+    if opts.narrative {
+        return print_recap(audit, opts, &st, c, CAP);
+    }
     println!(
         "commits {} (+{} by others held out) · {} · claims {}/{} · broken promises {}",
         c.total,
@@ -1522,7 +1544,7 @@ pub fn print_summary(audit: &Audit, opts: &Options) {
         .collect();
     let omitted = findings.len().saturating_sub(CAP);
     for iv in findings.iter().take(CAP) {
-        summary_row(&st, iv, opts.emoji);
+        summary_row(&st, iv, opts.emoji, opts.narrative);
     }
     if omitted > 0 {
         println!(
@@ -1539,7 +1561,7 @@ pub fn print_summary(audit: &Audit, opts: &Options) {
         );
     }
     for iv in &eq[older..] {
-        summary_row(&st, iv, opts.emoji);
+        summary_row(&st, iv, opts.emoji, opts.narrative);
     }
 }
 
@@ -1553,21 +1575,30 @@ pub fn print_project_summary(sections: &[(String, &Audit)], opts: &Options) {
         .map(|(_, a)| a.verdict())
         .max()
         .unwrap_or(Status::Green);
-    let word = match verdict {
-        Status::Green => "green",
-        Status::Grey => "grey",
-        Status::Amber => "amber",
-        Status::Red => "red",
-    };
-    println!(
-        "project verdict: {} {word} · {} repos",
-        status_dot(&st, verdict, opts.emoji),
-        sections.len()
-    );
+    if opts.narrative {
+        let commits: usize = sections.iter().map(|(_, a)| a.counts().total).sum();
+        println!("{} repos · {commits} commits", sections.len());
+    } else {
+        let word = match verdict {
+            Status::Green => "green",
+            Status::Grey => "grey",
+            Status::Amber => "amber",
+            Status::Red => "red",
+        };
+        println!(
+            "project verdict: {} {word} · {} repos",
+            status_dot(&st, verdict, opts.emoji),
+            sections.len()
+        );
+    }
     println!();
     println!(
         "{}",
-        st.dim("    repo                   commits    claims  findings")
+        st.dim(if opts.narrative {
+            "    repo                   commits    claims  what happened"
+        } else {
+            "    repo                   commits    claims  findings"
+        })
     );
     for (name, a) in sections {
         let s = a.landing_summary();
@@ -1580,7 +1611,11 @@ pub fn print_project_summary(sections: &[(String, &Audit)], opts: &Options) {
         }
         println!(
             "  {} {:<22} {:>5}  {:>8}  {}",
-            status_dot(&st, s.verdict, opts.emoji),
+            if opts.narrative {
+                status_dot_muted(&st, s.verdict)
+            } else {
+                status_dot(&st, s.verdict, opts.emoji)
+            },
             name,
             s.commits,
             format!("{}/{}", s.landed, s.claims),
@@ -1599,4 +1634,83 @@ pub fn print_project_summary(sections: &[(String, &Audit)], opts: &Options) {
         println!("{}", st.bold(&format!("=== {name} ===")));
         print_summary(a, opts);
     }
+}
+
+/// The recap view — the default command's output.
+///
+/// Same receipt as the audit, different first sentence. The audit leads
+/// with what LANDED (balance, broken promises, colored dots); the recap
+/// leads with what was ASKED and what happened next, mutes the marks, and
+/// closes by naming what to run to go deeper. Findings are never hidden —
+/// comprehension without the trust layer is a prettier memoir — they just
+/// don't shout.
+fn print_recap(
+    audit: &Audit,
+    _opts: &Options,
+    st: &Style,
+    c: crate::reconcile::Counts,
+    cap: usize,
+) {
+    let commits = if c.total == 1 { "commit" } else { "commits" };
+    println!(
+        "{} {commits} · {} prompts · {}/{} claimed files landed",
+        c.total, audit.prompts, c.claims_landed, c.claims_total,
+    );
+    let findings = c.amber + c.red;
+    if findings > 0 {
+        println!(
+            "{}",
+            st.dim(&format!(
+                "{findings} of them have something worth a look — `git receipts audit` for the verdict"
+            ))
+        );
+    }
+    println!();
+    println!(
+        "{}",
+        st.dim(&format!(
+            "    commit  {:<45} claims  what happened",
+            "subject"
+        ))
+    );
+
+    let eq: Vec<&Interval> = audit.equation().collect();
+    let older = eq.len().saturating_sub(cap);
+    let earlier_findings: Vec<&&Interval> = eq[..older]
+        .iter()
+        .filter(|iv| iv.status() != Status::Green)
+        .collect();
+    let omitted = earlier_findings.len().saturating_sub(cap);
+    for iv in earlier_findings.iter().take(cap) {
+        summary_row(st, iv, false, true);
+    }
+    if omitted > 0 {
+        println!("    {}", st.dim(&format!("… {omitted} more omitted")));
+    }
+    if older > 0 {
+        println!(
+            "    {}",
+            st.dim(&format!(
+                "… {older} earlier commits (anything notable is above)"
+            ))
+        );
+    }
+    for iv in &eq[older..] {
+        summary_row(st, iv, false, true);
+    }
+
+    // What to run next — the invitation that turns a table into a thread
+    // you can pull. Always the drill-down; the audit only when it has
+    // something to say.
+    println!();
+    let example = eq
+        .last()
+        .map(|iv| iv.commit.short.as_str())
+        .unwrap_or("<hash>");
+    println!(
+        "{}",
+        st.dim(&format!(
+            "the story of one commit:  git receipts recap --commit {example}"
+        ))
+    );
 }
