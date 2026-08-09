@@ -370,10 +370,10 @@ pub fn session_containing(store: &Path, marker: &str) -> anyhow::Result<PathBuf>
 /// Resolve a folder to THE repo it names — the one rule used both for
 /// `--repo <dir>` and for the bare invocation's cwd.
 ///
-/// Look at the folder itself, then one level down. **Never upward**, and
-/// never pick between candidates: pointing one folder too high is a typo
-/// worth forgiving, but choosing among several repos is a decision only
-/// the user can make. `--project` is the switch for "all of them".
+/// The folder must itself contain `.git`. Nothing else resolves — not an
+/// ancestor, not a child, not even a lone child. Repos found below are
+/// NAMED in the error so the next command is obvious, but choosing one is
+/// the user's call; `--project` is the switch for "all of them".
 pub fn resolve_repo(folder: &Path) -> Result<PathBuf> {
     if !folder.exists() {
         bail!("no such directory: {}", folder.display());
@@ -381,6 +381,12 @@ pub fn resolve_repo(folder: &Path) -> Result<PathBuf> {
     if !folder.is_dir() {
         bail!("{} is a file, not a directory", folder.display());
     }
+    // Errors name the real path: "." tells the reader nothing in a
+    // scrollback, and --repo/--project both default to it.
+    let shown = folder
+        .canonicalize()
+        .unwrap_or_else(|_| folder.to_path_buf());
+    let folder = &shown;
     if folder.join(".git").exists() {
         return Ok(folder.to_path_buf());
     }
@@ -397,15 +403,6 @@ pub fn resolve_repo(folder: &Path) -> Result<PathBuf> {
     children.sort();
 
     match children.len() {
-        1 => {
-            let child = children.remove(0);
-            eprintln!(
-                "note: {} is not a git repo — using {}",
-                folder.display(),
-                child.display()
-            );
-            Ok(child)
-        }
         0 => bail!(
             "{} is not a git repo.\n       \
              Run this from a git repo, or name one with --repo <dir>.\n       \
@@ -413,6 +410,9 @@ pub fn resolve_repo(folder: &Path) -> Result<PathBuf> {
             folder.display()
         ),
         n => {
+            // Repos below, but none HERE. Never pick — not even when there
+            // is only one candidate: choosing is the user's call, and a
+            // one-repo folder today may hold two tomorrow.
             let names: Vec<String> = children
                 .iter()
                 .take(6)
@@ -424,10 +424,14 @@ pub fn resolve_repo(folder: &Path) -> Result<PathBuf> {
                 })
                 .collect();
             bail!(
-                "{} holds {} repos ({}{}) — name one with --repo, or audit them all \
-                 with --project {}",
+                "{} is not a git repo. It holds {} ({}{}) — name one with \
+                 --repo <dir>, or audit them all with --project {}",
                 folder.display(),
-                n,
+                if n == 1 {
+                    "1 repo".to_string()
+                } else {
+                    format!("{n} repos")
+                },
                 names.join(", "),
                 if n > 6 { ", …" } else { "" },
                 folder.display()

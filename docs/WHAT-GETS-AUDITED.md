@@ -2,7 +2,8 @@
 
 One rule decides what `git receipts` reports on:
 
-> **This folder, or one level below. Never upward, and never a guess.**
+> **`.git` in this exact folder, or the tool asks. Never upward, never a
+> guess.**
 
 If the tool can't name the target with certainty, it stops and tells you
 what to pass. It will not pick a repo for you.
@@ -82,27 +83,23 @@ git receipts audit
 That's deliberate: the target is always something you can see from where
 you stand.
 
-If the folder isn't a repo but **exactly one** folder inside it is, that
-one is used — pointing one level too high is a typo, not a different
-intent — and it says so:
+A folder that isn't a repo is always an error, even when exactly one repo
+sits inside it. The error names what it found, so the next command is
+obvious — but it never picks for you:
 
 ```
-note: ~/code/wrapper is not a git repo — using ~/code/wrapper/myapp
+Error: ~/work/acme is not a git repo. It holds 4 repos (api, docs, ops, web)
+       — name one with --repo <dir>, or audit them all with --project …
 ```
 
 ## Naming a repo: `--repo`
 
 ```bash
 git receipts audit --repo ~/code/myapp
+git receipts audit --repo            # value optional: means "this folder"
 ```
 
-Same rule, applied to the folder you named. A folder holding several
-repos is an error, never a choice made on your behalf:
-
-```
-Error: ~/Developer/Projects/myworkspace holds 4 repos (api, ops, web, docs)
-       — name one with --repo, or audit them all with --project …
-```
+Same rule, applied to the folder you named: it must contain `.git` itself.
 
 ## Several repos at once: `--project`
 

@@ -52,9 +52,10 @@ fn a_folder_holding_repos_refuses_to_pick_one() {
 }
 
 #[test]
-fn a_folder_with_one_repo_below_resolves_to_it() {
-    // Pointing one folder too high is a typo worth forgiving — there is
-    // exactly one candidate, so nothing is being chosen.
+fn a_folder_with_one_repo_below_still_asks() {
+    // Not even a lone candidate is chosen for you: `.git` is here or the
+    // tool asks. A folder with one repo today can hold two tomorrow, and
+    // the answer should not change shape when it does.
     let container = TempRepo::new("one-below");
     std::fs::remove_dir_all(container.root.join(".git")).unwrap();
     let inner = container.root.join("app");
@@ -69,8 +70,12 @@ fn a_folder_with_one_repo_below_resolves_to_it() {
             .success()
     );
 
-    let got = discover::resolve_repo(&container.root).unwrap();
-    assert_eq!(got, inner);
+    let err = discover::resolve_repo(&container.root)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("is not a git repo"), "error was: {err}");
+    assert!(err.contains("1 repo"), "counts what it found: {err}");
+    assert!(err.contains("app"), "names it: {err}");
 }
 
 #[test]

@@ -85,9 +85,10 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// commits from that era show as unclaimed keyframes.
         #[arg(long)]
         all: bool,
-        /// A single git repo to reconcile against (default: the cwd's repo).
+        /// A single git repo to reconcile against. The value is optional —
+        /// bare --repo means "this folder", the same as passing nothing.
         /// Mutually exclusive with --project.
-        #[arg(long, conflicts_with = "project")]
+        #[arg(long, value_name = "DIR", conflicts_with = "project", num_args = 0..=1, default_missing_value = ".")]
         repo: Option<PathBuf>,
         /// A PROJECT folder holding several git repos (e.g. a public repo beside
         /// private ops/config repos, driven in one session). Discovers every git
@@ -256,9 +257,10 @@ EXAMPLES:
         /// an explicit synonym).
         #[arg(long)]
         all: bool,
-        /// Repo to reconcile against (default: cwd recorded in the session).
+        /// Repo to reconcile against. The value is optional — bare --repo
+        /// means "this folder", the same as passing nothing.
         /// Mutually exclusive with --project.
-        #[arg(long, conflicts_with = "project")]
+        #[arg(long, value_name = "DIR", conflicts_with = "project", num_args = 0..=1, default_missing_value = ".")]
         repo: Option<PathBuf>,
         /// A PROJECT folder holding several git repos: export a
         /// { project, repos: [receipt, …] } wrapper, one receipt per repo — the
