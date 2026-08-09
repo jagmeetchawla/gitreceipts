@@ -1710,7 +1710,9 @@ fn print_recap(
     println!(
         "{}",
         st.dim(&format!(
-            "the story of one commit:  git receipts recap --commit {example}"
+            "one commit's story:  git receipts recap --commit {example}\n\
+             keep or share it:    git receipts recap --format html > recap.html\n\
+             the data:            git receipts export > receipt.json"
         ))
     );
 }

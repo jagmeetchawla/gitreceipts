@@ -102,6 +102,13 @@ one.")]
         /// Colors: auto (default), always, never.
         #[arg(long, value_enum, default_value_t = report::ColorMode::Auto)]
         color: report::ColorMode,
+        /// text (default) or html — a self-contained page you can keep or
+        /// share. Same report the audit renders, framed as the story.
+        #[arg(long, value_enum, default_value_t = report::Format::Text)]
+        format: report::Format,
+        /// HTML only: which commits start expanded — auto, all, none.
+        #[arg(long, value_enum, default_value_t = report::Expand::Auto)]
+        expand: report::Expand,
     },
     /// Audit one or more Claude Code sessions against a git repo.
     #[command(
@@ -491,6 +498,8 @@ fn main() -> Result<()> {
         no_pager: false,
         full_history: false,
         color: report::ColorMode::Auto,
+        format: report::Format::Text,
+        expand: report::Expand::Auto,
     });
     match command {
         Cmd::Recap {
@@ -512,6 +521,8 @@ fn main() -> Result<()> {
             no_pager,
             full_history,
             color,
+            format,
+            expand,
         } => audit::run(
             sessions,
             latest,
@@ -528,8 +539,8 @@ fn main() -> Result<()> {
                 },
                 show_identity: !no_identity,
                 filter: report::Filter::All,
-                format: report::Format::Text,
-                expand: report::Expand::Auto,
+                format,
+                expand,
                 // A named commit gets its whole story; otherwise the spine.
                 verbose: commit.is_some(),
                 with_output: false,

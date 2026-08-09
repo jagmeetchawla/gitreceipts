@@ -53,6 +53,7 @@ fn command_home_paths_render_as_tilde_in_html() {
         false,
         None,
         false,
+        false,
     );
 
     assert!(

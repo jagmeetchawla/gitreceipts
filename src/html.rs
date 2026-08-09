@@ -63,6 +63,7 @@ fn render_body(
     full: bool,
     show_notice: bool,
     filter_controls: bool,
+    narrative: bool,
 ) -> String {
     // Headline counts over the EQUATION set (agent's own commits by default,
     // everything under --full-history) — same source as console/JSON, so a
@@ -159,9 +160,26 @@ fn render_body(
     );
 
     // ---- stat tiles ----------------------------------------------------
-    let _ = write!(
-        b,
-        "<div class=\"stats\">\
+    // Recap leads with the shape of the work — commits, prompts, what
+    // landed. The audit's verdict tiles (green %, broken promises) are the
+    // other command's headline; here they would bury the story.
+    if narrative {
+        let _ = write!(
+            b,
+            "<div class=\"stats\">\
+             <div class=\"stat\"><b>{total}</b><span>commits</span></div>\
+             <div class=\"stat\"><b>{}</b><span>prompts</span></div>\
+             <div class=\"stat\"><b>{claims_landed}/{claims_total}</b><span>claimed files landed</span></div>\
+             <div class=\"stat {}\"><b>{}</b><span>worth a look</span></div>\
+             </div>\n",
+            audit.prompts,
+            if c.amber + c.red == 0 { "good" } else { "warn" },
+            c.amber + c.red,
+        );
+    } else {
+        let _ = write!(
+            b,
+            "<div class=\"stats\">\
          <div class=\"stat good\"><b>{:.0}%</b><span>intervals green · {green}/{total}</span></div>\
          <div class=\"stat good\"><b>{:.0}%</b><span>claims landed · {claims_landed}/{claims_total}</span></div>\
          <div class=\"stat {}\"><b>{broken}</b><span>broken promises</span></div>\
@@ -169,23 +187,24 @@ fn render_body(
          <div class=\"stat {}\"><b>{}</b><span>MCP with errors</span></div>\
          <div class=\"stat {}\"><b>{residue_files}</b><span>residue</span></div>\
          </div>\n",
-        pct(green, total),
-        pct(claims_landed, claims_total),
-        if broken == 0 { "good" } else { "bad" },
-        if audit.cmd_failed == 0 {
-            "good"
-        } else {
-            "warn"
-        },
-        audit.cmd_failed,
-        if audit.mcp_errored == 0 {
-            "good"
-        } else {
-            "warn"
-        },
-        audit.mcp_errored,
-        if residue_files == 0 { "good" } else { "warn" },
-    );
+            pct(green, total),
+            pct(claims_landed, claims_total),
+            if broken == 0 { "good" } else { "bad" },
+            if audit.cmd_failed == 0 {
+                "good"
+            } else {
+                "warn"
+            },
+            audit.cmd_failed,
+            if audit.mcp_errored == 0 {
+                "good"
+            } else {
+                "warn"
+            },
+            audit.mcp_errored,
+            if residue_files == 0 { "good" } else { "warn" },
+        );
+    }
 
     // ---- intent → outcome + exceptions --------------------------------
     render_summary(
@@ -335,6 +354,7 @@ pub fn render(
     with_output: bool,
     commit: Option<&str>,
     full: bool,
+    narrative: bool,
 ) -> String {
     let mut b = String::with_capacity(64 * 1024);
     doc_head(&mut b, &esc(session_name));
@@ -352,6 +372,7 @@ pub fn render(
         full,
         true,
         true,
+        narrative,
     ));
     doc_tail(&mut b);
     b
@@ -373,6 +394,7 @@ pub struct HtmlSection<'a> {
 /// A `--project` HTML page: one masthead (project path + notice + where-it-landed
 /// roll-up + a single global color filter), then one section per repo — the HTML
 /// twin of `audit --project`. Self-contained, like the single-repo report.
+#[allow(clippy::too_many_arguments)]
 pub fn render_project(
     project_display: &str,
     sections: &[HtmlSection],
@@ -381,6 +403,7 @@ pub fn render_project(
     expand: Expand,
     with_output: bool,
     full: bool,
+    narrative: bool,
 ) -> String {
     let mut b = String::with_capacity(128 * 1024);
     // tilde the path first: it must never ship the home dir in the <title>.
@@ -450,6 +473,7 @@ pub fn render_project(
             full,
             false,
             false,
+            narrative,
         ));
         b.push_str("</section>\n");
     }

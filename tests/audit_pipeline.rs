@@ -177,6 +177,7 @@ fn html_report_is_self_contained_and_well_formed() {
         false,
         None,
         false,
+        false,
     );
 
     assert!(out.starts_with("<!doctype html>"));
@@ -232,6 +233,7 @@ fn html_report_escapes_hostile_content() {
         false,
         None,
         false,
+        false,
     );
 
     assert!(
@@ -283,6 +285,7 @@ fn html_drilldown_shows_statement_commands_and_push_status() {
         gitreceipts::report::Expand::All,
         false,
         None,
+        false,
         false,
     );
 
@@ -371,6 +374,7 @@ fn multibyte_commit_subject_does_not_panic_the_console_report() {
         false,
         None,
         false,
+        false,
     );
 }
 
@@ -431,6 +435,7 @@ fn project_html_is_one_self_contained_page_with_a_section_per_repo() {
         },
         true,
         report::Expand::Auto,
+        false,
         false,
         false,
     );
