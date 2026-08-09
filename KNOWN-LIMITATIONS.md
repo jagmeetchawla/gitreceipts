@@ -57,13 +57,14 @@ own audit. The tool guards against accidents (clock anomalies, amends, rebases)
 and you get a wall of red: the tool correctly saying "these claims have nothing
 to do with this repo."
 
-## 7. No man page yet — `git receipts --help` doesn't work
+## 7. ~~No man page~~ — FIXED in 0.1.1
 
-git intercepts `--help` for subcommands and looks for a man page, which v0.1.0
-doesn't ship — so plain `git receipts --help` fails. Use `git receipts -h` or
-`git-receipts --help` (both print full help). A generated man page ships in
-the next version, at which point `git receipts --help` opens proper docs like
-any native git command.
+git intercepts `--help` for subcommands and looks for a man page, which
+v0.1.0 didn't ship — so plain `git receipts --help` failed. 0.1.1 generates
+the pages from the CLI definition itself (they can't drift from `--help`)
+and installs them from the tarballs and the brew formula. Installing by
+`cargo install` still gets no man page — cargo has no man-install step —
+so on that path use `git receipts -h` or `git-receipts --help`.
 
 ## 8. Cross-machine / mounted-drive audits are NOT supported in v0.1
 

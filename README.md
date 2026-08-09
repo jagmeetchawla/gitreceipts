@@ -161,9 +161,9 @@ or plain `gitreceipts` (the brew install aliases the package name too;
 `cargo install` gives only `git-receipts` — cargo convention, like
 `ripgrep` → `rg` — symlink it yourself if you want the alias).
 
-For help use `git receipts -h` or `git-receipts --help`. (Plain
-`git receipts --help` makes git look for a man page, which we don't ship
-yet — coming in 0.1.1.)
+`git receipts --help`, `git receipts -h`, and `git-receipts --help` all
+work: the release tarballs and the brew formula install a man page, so
+git's own `--help` lookup finds it like any native subcommand.
 
 **Verified on macOS (Apple Silicon) and Linux (x86_64).** The Intel macOS
 binary passes the full test suite as x86_64 code (under Rosetta 2 translation

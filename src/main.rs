@@ -335,6 +335,18 @@ EXAMPLES:
         #[arg(long)]
         full_history: bool,
     },
+    /// Write roff man pages for this CLI into a directory.
+    ///
+    /// Hidden: it exists so the release build can ship the same pages the
+    /// binary's own `--help` describes — one source, never out of sync.
+    /// git looks for `man git-receipts` when you type `git receipts
+    /// --help`, so the packaged page is what makes that work.
+    #[command(hide = true)]
+    Man {
+        /// Directory to write `git-receipts*.1` into (created if absent).
+        #[arg(long, value_name = "DIR", default_value = "man")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -348,6 +360,13 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
+        Cmd::Man { out } => {
+            use clap::CommandFactory;
+            std::fs::create_dir_all(&out)?;
+            clap_mangen::generate_to(Cli::command(), &out)?;
+            eprintln!("man pages written to {}", out.display());
+            Ok(())
+        }
         Cmd::Audit {
             sessions,
             latest,

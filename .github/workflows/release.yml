@@ -43,12 +43,19 @@ jobs:
         run: cargo test --release --target ${{ matrix.target }}
       - name: build
         run: cargo build --release --target ${{ matrix.target }}
+      # Man pages come from the CLI definition itself (`git-receipts man`),
+      # so they can never drift from --help. Generated with a HOST build:
+      # roff is platform-independent, and a cross-compiled binary can't run
+      # on the runner to emit its own.
+      - name: man pages
+        run: cargo run --release -- man --out man
       - name: package
         run: |
           BIN=target/${{ matrix.target }}/release/git-receipts
           NAME=git-receipts-${GITHUB_REF_NAME}-${{ matrix.target }}
-          mkdir "$NAME"
+          mkdir -p "$NAME/man"
           cp "$BIN" LICENSE README.md THIRD-PARTY-NOTICES.md "$NAME/"
+          cp man/*.1 "$NAME/man/"
           tar czf "$NAME.tar.gz" "$NAME"
           shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
       - uses: actions/upload-artifact@v4
