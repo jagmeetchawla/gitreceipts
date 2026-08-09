@@ -158,6 +158,25 @@ pub fn diagnose_project(project: &Path, store: &Path) -> ProjectMiss {
     }
 }
 
+/// A directory with this basename near the current one — checked against
+/// the cwd's ancestors and their immediate children. Turns a "no such
+/// directory: gitreceipts" dead end into the path the user meant, which
+/// is nearly always a sibling or an ancestor of where they are standing.
+pub fn nearby_dir_named(name: &Path) -> Option<PathBuf> {
+    let name = name.file_name()?;
+    let cwd = std::env::current_dir().ok()?;
+    for anc in cwd.ancestors().take(6) {
+        if anc.file_name() == Some(name) {
+            return Some(anc.to_path_buf());
+        }
+        let candidate = anc.join(name);
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// Repos under a folder, ignoring whether the store has sessions for them.
 fn walk_repos(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     if dir.join(".git").exists() {

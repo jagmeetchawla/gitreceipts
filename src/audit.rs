@@ -232,11 +232,20 @@ fn run_project(
         // Three unlike problems used to share one message. Name which.
         use discover::ProjectMiss::*;
         match discover::diagnose_project(&project, &store) {
-            NoSuchDir => bail!(
-                "no such directory: {} (--project takes a FOLDER holding git repos; \
-                 for one repo use --repo <dir>)",
-                project.display()
-            ),
+            NoSuchDir => match discover::nearby_dir_named(&project) {
+                Some(found) => bail!(
+                    "no such directory: {} — did you mean {}?\n\
+                     (--project takes a FOLDER holding git repos; run it again \
+                     with that path, or use --repo <dir> for a single repo)",
+                    project.display(),
+                    found.display()
+                ),
+                None => bail!(
+                    "no such directory: {} (--project takes a FOLDER holding git \
+                     repos; for one repo use --repo <dir>)",
+                    project.display()
+                ),
+            },
             NotADir => bail!(
                 "{} is a file, not a directory — --project takes a folder holding \
                  git repos; to audit one session file, pass it as an argument",
