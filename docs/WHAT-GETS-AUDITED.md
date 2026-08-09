@@ -1,6 +1,7 @@
-# What gets audited
+# What gets read
 
-One rule decides what `git receipts` reports on:
+One rule decides what `git receipts` reports on — recap, audit and export
+alike:
 
 > **`.git` in this exact folder, or the tool asks. Never upward, never a
 > guess.**
@@ -62,7 +63,7 @@ one fact — a repo is a directory with `.git` — and supports two shapes:
 ~/code/myapp/          ← .git here
 └── src/               ← a subdirectory is not the repo
 
-cd ~/code/myapp && git receipts audit
+cd ~/code/myapp && git receipts
 ```
 
 **A container of repos.** Not a repo itself; holds several. Use
@@ -74,7 +75,7 @@ cd ~/code/myapp && git receipts audit
 ├── web/   .git
 └── ops/   .git
 
-cd ~/work/acme && git receipts audit --project
+cd ~/work/acme && git receipts --project
 ```
 
 **Anything else — name it.** Deeper nesting, odd groupings, repos scattered
@@ -90,7 +91,7 @@ becoming separate project members.)
 
 ```bash
 cd ~/code/myapp
-git receipts audit          # audits myapp
+git receipts                # reads myapp
 ```
 
 The folder you're in must **be** a git repo. Unlike `git status`, running
@@ -98,7 +99,7 @@ from a subdirectory does not walk up:
 
 ```bash
 cd ~/code/myapp/src
-git receipts audit
+git receipts
 # Error: …/myapp/src is not a git repo.
 #        Run this from a git repo, or name one with --repo <dir>.
 #        To audit every repo under a folder: --project <dir>

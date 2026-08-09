@@ -14,14 +14,23 @@ use gitreceipts::report;
 #[command(
     name = "git-receipts",
     version,
-    about = "See what your agent actually did.",
+    about = "Read what your agent actually did.",
     long_about = "\
-git receipts — see what your agent actually did.
+git receipts — read what your agent actually did.
 
-git is the oracle. A coding agent tells you what it did; git kept its own \
-record of what actually persisted — a log the agent can't fabricate after \
-the fact. gitreceipts reconciles the two, claim by claim, against that \
-record. Not the agent's word. Git's.
+An agent can produce a day of commits in an hour. Understanding what \
+happened is the slow part, and the session log is megabytes nobody reads. \
+gitreceipts turns it into an account you can read at reading speed: each \
+prompt you typed, the work it drove, the commit it became.
+
+  git receipts            what happened here (the default)
+  git receipts audit      …and did every claimed edit really land?
+  git receipts export     the same receipt as JSON
+
+You can trust the account because it is checked, not narrated. The session \
+log is the agent's story; git kept an independent record the agent cannot \
+rewrite. Every file claim is verified against the actual commit blobs — so \
+`audit` can say \"broken promises: 0\" and mean it.
 
 Most useful when you can't reconstruct it by hand: unattended or overnight \
 runs you weren't watching, or work from a while ago you no longer remember."

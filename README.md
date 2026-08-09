@@ -2,11 +2,11 @@
   <br>
   <strong style="font-size: 1.5em;">git receipts</strong>
   <br><br>
-  See what your agent <b>actually</b> did — every prompt → commands → MCP → files → commit,
-  <br>reconciled against the one record the agent can't rewrite: <b>git</b>.
+  Read what your agent <b>actually</b> did — every prompt → commands → MCP → files → commit,
+  <br>checked against the one record the agent can't rewrite: <b>git</b>.
   <br><br>
   A <b>Claude Code plugin</b> with a deterministic Rust CLI at its core —
-  <br>ask <i>"what did the agent actually do?"</i> and get findings <b>explained, not just flagged</b>.
+  <br>ask <i>"what happened here?"</i> and read the session as a story you can trust.
   <br><br>
   <a href="#audit-from-inside-claude-code">Plugin</a> ·
   <a href="#install">Install</a> ·
@@ -14,7 +14,7 @@
   <a href="https://github.com/jagmeetchawla/gitreceipts/releases">Releases</a> ·
   <a href="RECEIPTS.md">RECEIPTS.md</a> ·
   <a href="KNOWN-LIMITATIONS.md">Known limitations</a> ·
-  <a href="docs/WHAT-GETS-AUDITED.md">What gets audited</a> ·
+  <a href="docs/WHAT-GETS-AUDITED.md">What gets read</a> ·
   <a href="docs/COMPAT.md">Compatibility</a> ·
   <a href="qa/">QA harness</a>
   <br><br>
@@ -25,17 +25,22 @@ An agent can produce a day's worth of commits in an hour. Understanding what
 happened is now the slow part. The raw session log is tens of megabytes of
 JSON nobody reads.
 
-gitreceipts turns that log into an account you can read at reading speed:
-each prompt you typed → the commands and MCP calls it made → the files it
-touched → the commit that resulted. An 11,000-event session becomes a spine of commits you
-scan in a minute and expand only where something looks off.
+`git receipts` turns that log into an account you can read at reading
+speed: each prompt you typed → the commands and MCP calls it made → the
+files it touched → the commit that resulted. An 11,000-event session
+becomes a spine of commits you scan in a minute and expand only where
+something looks off.
 
-And you can trust the account, because it's audited, not narrated. The
+And you can trust the account, because it's checked, not narrated. The
 session log is the agent's own story. git kept an independent record of what
 actually persisted — a log the agent can't fabricate after the fact.
 gitreceipts reads the two side by side and reconciles them, claim by claim,
 content-level against the actual commit blobs. You're not reading the
-agent's memoir. You're reading an audited one. Not the agent's word. Git's.
+agent's memoir. You're reading a checked one. Not the agent's word. Git's.
+
+That checking is always running; `git receipts audit` is where it takes
+the headline — every claim accounted for, and the number that matters:
+**broken promises**, claims git never got that nothing explains.
 
 The account is also **yours**. Everything runs locally. It reads exactly one
 directory (your session logs) plus your repo, and sends nothing anywhere. A
@@ -52,12 +57,12 @@ agent is:
 /plugin install gitreceipts@cloudcraft
 ```
 
-Then ask exactly that — or run `/gitreceipts:audit`. Claude runs the audit
-and presents it: a color-coded spine of every commit, findings **explained
-in the context of what the session was trying to do** — not just flagged —
-and the full HTML report one word away (say "report"). A red is presented
-as a question, not a conviction: it means nothing on record explains the
-claim, and you may know something the log doesn't.
+Then ask exactly that. Claude reads the session back to you: a spine of
+every commit, what each prompt drove, findings **explained in the context
+of what the session was trying to do** — not just flagged — and the full
+HTML report one word away (say "report"). When something didn't land, it's
+presented as a question, not a conviction: it means nothing on record
+explains the claim, and you may know something the log doesn't.
 
 The division of labor is the point: the facts come from a deterministic,
 local Rust CLI that Claude cannot sweet-talk, and Claude reads those facts
@@ -190,13 +195,34 @@ in CI), but hasn't been hand-verified on Intel silicon — reports welcome.
 
 ## Usage
 
-**What gets audited: this folder, or one level below — never upward, and
+**Two commands.** `git receipts` tells you *what happened*; `git receipts
+audit` tells you *whether every claimed edit really landed*. Same receipt
+underneath — the second is the first with the verification brought
+forward.
+
+```bash
+git receipts                       # what happened here — the default
+git receipts audit                 # …and did it all land?
+```
+
+**What gets read: this folder, or one level below — never upward, and
 never a guess.** Run it from a git repo; use `--project` for a folder that
 holds several. Full rules: [docs/WHAT-GETS-AUDITED.md](docs/WHAT-GETS-AUDITED.md).
 
 ```bash
-# audit ALL of this repo's sessions — the default, the complete picture
+# the story of this repo's sessions — every prompt, what it drove, what landed
 # (run from the repo root; a subdirectory is not the repo)
+git receipts
+
+# one commit's whole story: the ask, the conversation, what was tried
+git receipts recap --commit 6d6cdc4
+
+# a page to keep or share
+git receipts recap --format html > recap.html
+
+# --- verification: the same work, with the checking brought forward ---
+
+# audit ALL of this repo's sessions — the complete picture
 git receipts audit
 
 # just my last run (one session). CAVEAT: a single-session audit still
