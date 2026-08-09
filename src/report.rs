@@ -1138,14 +1138,37 @@ fn render_interval(
             interval.dismissed_residue.len()
         ));
     }
-    println!(
-        "    {} claimed / {} landed{} / {} residue{}",
-        interval.ledger.len(),
-        landed,
-        late_note,
-        interval.residue.len(),
-        residue_notes,
-    );
+    if opts.narrative {
+        // The story's version of the same numbers: what the agent touched
+        // and where it ended up — the equation's vocabulary (claimed /
+        // landed / residue) is the audit's way of saying it.
+        let mut parts: Vec<String> = Vec::new();
+        if !interval.ledger.is_empty() {
+            parts.push(format!(
+                "{} file{} written, {landed} landed here{late_note}",
+                interval.ledger.len(),
+                if interval.ledger.len() == 1 { "" } else { "s" },
+            ));
+        }
+        if !interval.residue.is_empty() {
+            parts.push(format!(
+                "{} changed without a matching edit{residue_notes}",
+                interval.residue.len()
+            ));
+        }
+        if !parts.is_empty() {
+            println!("    {}", st.dim(&parts.join(" · ")));
+        }
+    } else {
+        println!(
+            "    {} claimed / {} landed{} / {} residue{}",
+            interval.ledger.len(),
+            landed,
+            late_note,
+            interval.residue.len(),
+            residue_notes,
+        );
+    }
     // Line 2 — the work behind this commit: commands, MCP calls, and the agent
     // token cost of its conversation window. Each part appears only when it has
     // something to say, and the whole line is skipped for an empty keyframe.
@@ -1189,7 +1212,11 @@ fn render_interval(
             let n = |s: char| interval.statement.iter().filter(|c| c.status == s).count();
             println!(
                 "    {} {} added · {} modified · {} deleted · {} renamed",
-                st.dim("files git recorded:"),
+                st.dim(if opts.narrative {
+                    "what changed:"
+                } else {
+                    "files git recorded:"
+                }),
                 n('A'),
                 n('M'),
                 n('D'),
