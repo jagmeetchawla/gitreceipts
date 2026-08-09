@@ -74,8 +74,10 @@ git intercepts `--help` for subcommands and looks for a man page, which
 v0.1.0 didn't ship — so plain `git receipts --help` failed. 0.1.1 generates
 the pages from the CLI definition itself (they can't drift from `--help`)
 and installs them from the tarballs and the brew formula. Installing by
-`cargo install` still gets no man page — cargo has no man-install step —
-so on that path use `git receipts -h` or `git-receipts --help`.
+`cargo install` ships no man page — cargo has no man-install step — so on
+that path run `git-receipts man --install` once: it writes the pages to
+the first writable directory on your MANPATH (and tells you what to add
+to MANPATH if there isn't one).
 
 ## 8. Cross-machine / mounted-drive audits are NOT supported in v0.1
 

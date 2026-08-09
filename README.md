@@ -179,7 +179,9 @@ or plain `gitreceipts` (the brew install aliases the package name too;
 
 `git receipts --help`, `git receipts -h`, and `git-receipts --help` all
 work: the release tarballs and the brew formula install a man page, so
-git's own `--help` lookup finds it like any native subcommand.
+git's own `--help` lookup finds it like any native subcommand. Installed
+via `cargo install`? Cargo has no man-install step — run
+`git-receipts man --install` once and git's `--help` works there too.
 
 **Verified on macOS (Apple Silicon) and Linux (x86_64).** The Intel macOS
 binary passes the full test suite as x86_64 code (under Rosetta 2 translation

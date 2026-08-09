@@ -346,7 +346,46 @@ EXAMPLES:
         /// Directory to write `git-receipts*.1` into (created if absent).
         #[arg(long, value_name = "DIR", default_value = "man")]
         out: PathBuf,
+        /// Install into the first writable directory on your MANPATH
+        /// instead, so `git receipts --help` works. For `cargo install`,
+        /// which has no man-install step of its own.
+        #[arg(long, conflicts_with = "out")]
+        install: bool,
     },
+}
+
+/// The first `man1` directory on this machine's MANPATH we can actually
+/// write to. `cargo install` ships no man page, so this is how a
+/// cargo-installed binary can still make `git receipts --help` work.
+/// Prefers a user-owned prefix; falls back to ~/.local/share/man/man1 and
+/// says so, since that path needs to be on MANPATH to take effect.
+fn man_install_dir() -> Result<PathBuf> {
+    let raw = std::process::Command::new("manpath")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    for base in raw.split(':').filter(|s| !s.is_empty()) {
+        // Skip the read-only system/SDK trees; only a prefix we can write
+        // is a candidate, and probing beats hardcoding a list.
+        let dir = PathBuf::from(base).join("man1");
+        let probe = dir.join(".gitreceipts-write-probe");
+        if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            return Ok(dir);
+        }
+    }
+
+    let home = std::env::var("HOME").map_err(|_| anyhow::anyhow!("no HOME set"))?;
+    let fallback = PathBuf::from(home).join(".local/share/man/man1");
+    eprintln!(
+        "note: no writable directory on your MANPATH — using {}.\n\
+         If `git receipts --help` still fails, add it:  export MANPATH=\"$HOME/.local/share/man:$(manpath)\"",
+        fallback.display()
+    );
+    Ok(fallback)
 }
 
 fn main() -> Result<()> {
@@ -360,11 +399,15 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
-        Cmd::Man { out } => {
+        Cmd::Man { out, install } => {
             use clap::CommandFactory;
-            std::fs::create_dir_all(&out)?;
-            clap_mangen::generate_to(Cli::command(), &out)?;
-            eprintln!("man pages written to {}", out.display());
+            let dir = if install { man_install_dir()? } else { out };
+            std::fs::create_dir_all(&dir)?;
+            clap_mangen::generate_to(Cli::command(), &dir)?;
+            eprintln!("man pages written to {}", dir.display());
+            if install {
+                eprintln!("`git receipts --help` should work now.");
+            }
             Ok(())
         }
         Cmd::Audit {
