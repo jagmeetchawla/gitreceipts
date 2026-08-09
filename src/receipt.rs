@@ -33,7 +33,7 @@ use crate::report::{Filter, Show};
 pub const SCHEMA_VERSION: &str = "0.8";
 
 /// The privacy caution stamped on every receipt (single-repo and project).
-const NOTICE: &str = "Private audit report — built from chat/agent logs, git contents, \
+const NOTICE: &str = "Private report — built from chat/agent logs, git contents, \
      and command output. Meant for developers to audit their own work; \
      handle with extreme caution and treat as private before sharing.";
 

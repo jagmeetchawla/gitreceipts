@@ -449,7 +449,7 @@ fn project_html_is_one_self_contained_page_with_a_section_per_repo() {
     let count = |needle: &str| page.matches(needle).count();
     assert_eq!(count("<!doctype html>"), 1, "one document");
     assert_eq!(count("</body></html>"), 1, "one closing");
-    assert_eq!(count("private audit report"), 1, "notice appears once");
+    assert_eq!(count("private report"), 1, "notice appears once");
     assert_eq!(count("id=\"f-all\""), 1, "one global color filter");
     assert_eq!(count("class=\"repo-section\""), 2, "one section per repo");
     assert!(

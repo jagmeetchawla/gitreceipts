@@ -350,6 +350,7 @@ fn render_body(
             prov,
             cost,
             compact,
+            narrative,
         );
     }
     b.push_str("</section>\n");
@@ -369,7 +370,7 @@ fn render_body(
 
 /// The privacy notice — emitted once per page (a project page carries it in the
 /// masthead, not per section).
-const NOTICE_HTML: &str = "<div class=\"notice\"><b>\u{26a0} private audit report</b> \u{2014} \
+const NOTICE_HTML: &str = "<div class=\"notice\"><b>\u{26a0} private report</b> \u{2014} \
      built from your chat &amp; agent logs, code and history from git, and the \
      output of the commands that ran. It is meant for developers to review and \
      audit their own work, and can contain sensitive detail. Handle it with \
@@ -776,12 +777,20 @@ fn render_interval(
     prov: Option<String>,
     cost: (usize, u64),
     compact: bool,
+    narrative: bool,
 ) {
-    let (cls, mark) = match iv.status() {
-        Status::Green => ("green", "\u{2714}"),
-        Status::Grey => ("grey", "\u{25cb}"),
-        Status::Amber => ("amber", "!"),
-        Status::Red => ("red", "\u{2718}"),
+    // Recap keeps its grammar on the page too: the verdict class still
+    // drives the filter controls, but the mark is muted and the ask is
+    // what you read first.
+    let (cls, mark) = match (narrative, iv.status()) {
+        (true, Status::Green) => ("green", "\u{00b7}"),
+        (true, Status::Grey) => ("grey", "\u{00b7}"),
+        (true, Status::Amber) => ("amber", "!"),
+        (true, Status::Red) => ("red", "\u{2718}"),
+        (false, Status::Green) => ("green", "\u{2714}"),
+        (false, Status::Grey) => ("grey", "\u{25cb}"),
+        (false, Status::Amber) => ("amber", "!"),
+        (false, Status::Red) => ("red", "\u{2718}"),
     };
     let mut subject = iv.commit.subject.clone();
     if subject.chars().count() > 72 {
@@ -798,6 +807,20 @@ fn render_interval(
         Expand::None => false,
         Expand::Auto => iv.status() != Status::Green,
     };
+    // Recap's summary line leads with the ask; the commit subject follows
+    // as what it became. Audit leads with the commit.
+    let ask = if narrative && show.prompt {
+        iv.intents.first().map(|t| {
+            let one: String = t.split_whitespace().collect::<Vec<_>>().join(" ");
+            if one.chars().count() > 96 {
+                one.chars().take(96).collect::<String>() + "\u{2026}"
+            } else {
+                one
+            }
+        })
+    } else {
+        None
+    };
     let _ = write!(
         b,
         "<details class=\"interval {cls}\"{}><summary>\
@@ -806,8 +829,14 @@ fn render_interval(
         if open { " open" } else { "" },
         esc(&iv.commit.short),
         iv.commit.ts.format("%m-%d %H:%M"),
-        esc(&subject)
+        match &ask {
+            Some(a) => esc(a),
+            None => esc(&subject),
+        }
     );
+    if ask.is_some() {
+        let _ = write!(b, "<span class=\"tag dim\">{}</span>", esc(&subject));
+    }
     if !iv.agent_committed {
         b.push_str("<span class=\"tag\">keyframe</span>");
     }

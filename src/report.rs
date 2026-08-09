@@ -228,7 +228,7 @@ pub fn project_header(project_display: &str, repo_count: usize, color: ColorMode
     println!(
         "{}",
         st.dim(
-            "⚠ private audit report — from your chat/agent logs, git, and command output; handle with caution before sharing."
+            "⚠ private report — from your chat/agent logs, git, and command output; handle with caution before sharing."
         )
     );
 }
@@ -343,7 +343,7 @@ pub fn print(
         println!(
             "{}",
             st.dim(
-                "⚠ private audit report — from your chat/agent logs, git, and command output; handle with caution before sharing."
+                "⚠ private report — from your chat/agent logs, git, and command output; handle with caution before sharing."
             )
         );
     }
@@ -975,11 +975,18 @@ fn render_interval(
     let resolved: Vec<_> = interval.resolved_never().collect();
     let late: Vec<_> = interval.landed_late().collect();
     let landed = interval.ledger.len() - never.len() - resolved.len() - late.len();
-    let mark = match interval.status() {
-        Status::Green => st.green("✔"),
-        Status::Grey => st.dim("○"),
-        Status::Amber => st.yellow("!"),
-        Status::Red => st.red("✘"),
+    // Recap keeps its own grammar at every depth: --verbose is the same
+    // reading, further in — not the audit's drill-down wearing a different
+    // header. Muted mark, and the ask leads (below).
+    let mark = if opts.narrative {
+        status_dot_muted(st, interval.status())
+    } else {
+        match interval.status() {
+            Status::Green => st.green("✔"),
+            Status::Grey => st.dim("○"),
+            Status::Amber => st.yellow("!"),
+            Status::Red => st.red("✘"),
+        }
     };
     // A keyframe is not this session's commit — name who git says made it.
     let who = if interval.agent_committed {
@@ -1008,15 +1015,47 @@ fn render_interval(
         .chars()
         .take(56)
         .collect();
-    println!(
-        "{mark} {} {} {}{}{}{}",
-        interval.commit.short,
-        interval.commit.ts.format("%m-%d %H:%M"),
-        st.dim(&subject),
-        st.dim(&who),
-        st.dim(ghost),
-        st.dim(hist),
-    );
+    // Recap's entry shape, at depth: the ask on top, what it became
+    // underneath — the same two lines the non-verbose view prints, so the
+    // reading does not change shape when you ask for more of it.
+    let asked = if opts.narrative && opts.show.prompt {
+        interval.intents.first().map(|first| {
+            let one: String = redact_home(first)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let clipped: String = one.chars().take(96).collect();
+            if one.chars().count() > 96 {
+                format!("{clipped}…")
+            } else {
+                clipped
+            }
+        })
+    } else {
+        None
+    };
+    match &asked {
+        Some(ask) => {
+            println!("{mark} {} {ask}", st.cyan(&interval.commit.short));
+            println!(
+                "         {} {}{}{}{}",
+                st.dim("↳"),
+                st.dim(&subject),
+                st.dim(&who),
+                st.dim(ghost),
+                st.dim(hist),
+            );
+        }
+        None => println!(
+            "{mark} {} {} {}{}{}{}",
+            interval.commit.short,
+            interval.commit.ts.format("%m-%d %H:%M"),
+            st.dim(&subject),
+            st.dim(&who),
+            st.dim(ghost),
+            st.dim(hist),
+        ),
+    }
     if let Some(p) = &prov {
         println!("    {}", st.dim(p));
     }
@@ -1039,7 +1078,10 @@ fn render_interval(
                 ))
             );
     }
+    // In recap the ask is already the header line — repeating it as
+    // "» intent:" would be the same sentence twice.
     if opts.show.prompt
+        && asked.is_none()
         && let Some(first) = interval.intents.first()
     {
         let redacted = redact_home(first);
