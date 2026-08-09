@@ -1,53 +1,61 @@
 ---
-description: Explain what the gitreceipts plugin can do — its commands, scope defaults, switches, and setup. Use when the user asks for gitreceipts help, how to use the gitreceipts plugin, or what the audit skill can do.
+description: Explain what the gitreceipts plugin can do — its commands, scopes, switches, and setup. Use when the user asks for gitreceipts help, how to use the gitreceipts plugin, or what its skills can do.
 ---
 
 # gitreceipts plugin — help
 
 Present this reference to the user, concisely and formatted:
 
-**What it is.** gitreceipts audits a Claude Code session against git history —
-what the agent *claimed* vs. what actually *landed*, commit by commit. Runs
-locally; nothing leaves the machine.
+**What it is.** gitreceipts reads a Claude Code session against the repo's
+git history: each prompt you typed → the work it drove → the commit it
+became. Runs locally; nothing leaves the machine.
 
-**Setup.** Needs the `git-receipts` binary — if it's missing, the audit
-skill detects what you have and offers to install it (your approval, your
-choice of route): `brew install cloudcraft-ai/tap/gitreceipts` ·
-`cargo install gitreceipts` · or a checksum-verified prebuilt binary from
-https://github.com/jagmeetchawla/gitreceipts/releases (no brew/cargo
-needed).
+**Setup.** Needs the `git-receipts` binary (0.1.1+). If it's missing, the
+skills detect what you have and offer to install it — your approval, your
+choice of route: `brew install cloudcraft-ai/tap/gitreceipts` ·
+`cargo install gitreceipts` (then `git-receipts man --install` once) · or a
+checksum-verified prebuilt binary, no package manager needed.
 
-**Main skill: `/gitreceipts:audit`** (also fires automatically when you ask
-things like "what did the agent actually do?" or "did that work land?")
+**Two skills, one receipt.**
+
+| | |
+|---|---|
+| **`/gitreceipts:recap`** | *what happened* — the story: what you asked, what the agent did, what landed. Fires on "what happened here", "catch me up", "recap that commit". |
+| **`/gitreceipts:audit`** | *did it land* — the verdict: every claimed edit checked against the real commit blobs, and the broken-promise count. Fires on "did that land", "any broken promises". |
+
+**Say it however you like** — both skills map plain language to scopes:
 
 | You say | It runs |
 |---|---|
-| nothing (bare) / "audit this repo" | all sessions of the current repo — the complete picture |
-| "this session" | exactly the live session (identity-matched, not newest-file guessing) |
-| "the latest run" | `--latest` (single-session caveats stated) |
+| nothing / "what happened" | all sessions for this repo |
+| "this session" | the live one, found by identity (not newest-file guessing) |
+| "the last run" | `--latest` |
+| "what happened in commit X" | `--commit <hash>` |
+| "all my repos here" | `--project` |
+| "more detail" | `--verbose` |
 | "just the problems" | `--filter red-amber` |
-| "what happened in commit X" | `--commit <hash>` (add `--full` for its conversation) |
-| "audit all my repos here" | `--project <folder>` roll-up |
-| "include my hand-made commits" | `--full-history` |
-| explicit flags after the command | passed through to the CLI verbatim |
+| "include my own commits" | `--full-history` |
 
-**Reading the verdict.** Green = balanced. Amber = worth a look, never a lie.
-Red = a claimed edit git never got and nothing explains — presented as a
-question, not a conviction. `broken promises: 0` is earned, not assumed.
+**Reading the marks.** 🟢 nothing to report · ⚪ explained findings, each
+with its reason · 🟡 unexplained residue — a loose end with no answer on
+record · 🔴 a broken promise: a claimed edit git never got. The verdict is
+what git can witness; everything else is a finding. `broken promises: 0`
+is earned, not assumed — and a red is a question, not a conviction.
 
-**Durable outputs.** After any audit, say **report** — the full HTML
-report opens in your browser (every commit, drill-downs, the conversation
-behind each verdict). Manual: `git-receipts audit --format html >
-audit.html` · `git-receipts export > receipt.json` (machine-readable,
-same numbers — commit it, diff it, feed it to tools).
+**Things to keep.** Say **report** for a self-contained HTML page
+(`--compact` keeps it small enough to open anywhere), or
+`git receipts export > receipt.json` for the same numbers machine-readable
+— commit it, diff it, feed it to tools.
 
-**Sharing.** Reports contain prompts and command output — private by default.
-For a shareable report add `--no-intent` (drops conversation, keeps counts),
-`--no-identity`, and `--redact <word>` as needed.
+**Sharing.** Reports are built from your prompts and command output —
+private by default. For a shareable one: `--no-intent` (drops the
+conversation, keeps every count), `--no-identity`, `--redact <word>`. Home
+paths are masked automatically.
 
-**Guardrails.** The plugin never disables the secret/PII scanner, never
-installs the binary unasked (it offers; you approve and pick the route),
-and every run goes through your normal Bash permission prompt.
+**Guardrails.** Never disables the secret/PII scanner, never installs the
+binary unasked (it offers; you approve and pick the route), never loads a
+full report into the conversation, and every run goes through your normal
+Bash permission prompt.
 
-**More:** README and KNOWN-LIMITATIONS.md at
+**More:** README, docs/WHAT-GETS-AUDITED.md and KNOWN-LIMITATIONS.md at
 https://github.com/jagmeetchawla/gitreceipts
