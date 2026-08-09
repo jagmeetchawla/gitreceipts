@@ -14,6 +14,7 @@
   <a href="https://github.com/jagmeetchawla/gitreceipts/releases">Releases</a> ·
   <a href="RECEIPTS.md">RECEIPTS.md</a> ·
   <a href="KNOWN-LIMITATIONS.md">Known limitations</a> ·
+  <a href="docs/COMPAT.md">Compatibility</a> ·
   <a href="qa/">QA harness</a>
   <br><br>
 </p>
@@ -108,6 +109,21 @@ something the log doesn't — each explainable red is a candidate for a new
 resolution category. The current honest gaps are cataloged in
 [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
 
+**The verdict is what git can witness; everything else is a finding.**
+Four marks, mutually exclusive — the worst one that applies wins:
+
+| | | |
+|---|---|---|
+| 🟢 | **green** | nothing to report: every claim landed, no residue, no failures |
+| ⚪ | **grey** | explained findings — a file written and discarded before any commit, a command that failed, an MCP call that errored. Each is shown *with* its explanation. The equation still balances. |
+| 🟡 | **amber** | **un**explained residue: git recorded a change no claim and no command accounts for. A loose end with no answer on record. |
+| 🔴 | **red** | a broken promise: a claimed edit git never got, and nothing explains it. |
+
+The difference between ⚪ and 🟡 is the whole point: grey means *we know
+why*, amber means *nobody does yet*. A failed command never colors the
+verdict — git can't witness what a command did, so it is reported, never
+judged.
+
 **When you'd reach for it** — two moments especially, both where you can't
 just reconstruct what happened by hand:
 
@@ -199,9 +215,10 @@ git receipts audit <session>.jsonl --repo ~/code/myapp
 # just the broken promises
 git receipts audit --filter red
 
-# filter the spine purely by color (red = broken promises; amber = residue,
-# failed command, or errored MCP; green = clean)
+# filter the spine purely by color. red-amber = the UNANSWERED findings
+# (broken promises + unexplained residue); grey = the explained ones
 git receipts audit --filter red-amber
+git receipts audit --filter grey
 
 # drop conversational content before sharing — counts always stay
 git receipts audit --no-prompt     # your prompts
@@ -212,7 +229,7 @@ git receipts audit --no-intent     # both
 git receipts audit --with-output
 
 # a self-contained HTML report (theme-aware, no external assets).
-# green commits collapse to a line; red or amber commits open with their
+# clean commits collapse to a line; commits with findings open with their
 # files and commands, and succeeded detail is dulled so failures stand out
 git receipts audit --format html > audit.html
 
@@ -272,9 +289,9 @@ What it **surfaces** — the rest of the story, honestly labeled:
 - **MCP calls** — first-class actions, not observations. Every call is
   classified like a command: the server's own response is its receipt
   (the `tool_result` is the oracle — receipted vs errored), and an
-  errored call tints the commit **amber**: worth a look, never
-  manufactured into red. Your own aborts count as your stop, not the
-  agent's failure.
+  errored call marks the commit **grey**: a finding shown with its
+  reason, never manufactured into a verdict. Your own aborts count as
+  your stop, not the agent's failure.
 - **Model provenance** — which model(s) produced the session, per commit. A
   mid-session switch (say Opus → Fable) shows exactly what wrote what.
   Reasoning effort rides along where the log records it, labeled with its
@@ -375,7 +392,10 @@ smaller than the raw session log it distills.
   blast radii, identity roll-up. **Every number matches the console and
   HTML** — three renderings of one receipt.
 - Versioned schema (`schema_version`); pretty by default, `--compact` for a
-  single line.
+  single line. Within 0.x the schema is **additive-only** — new fields may
+  appear, existing ones never change meaning. The full promise (schema,
+  verdict semantics, exit codes, plugin/binary floors) is in
+  [docs/COMPAT.md](docs/COMPAT.md).
 - Same scoping switches as `audit`: `--filter`, `--commit`, `--no-prompt` /
   `--no-summary` / `--no-intent` / `--no-identity` for a receipt you can
   share — counts always stay.

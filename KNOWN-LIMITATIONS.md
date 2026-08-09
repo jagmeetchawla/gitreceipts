@@ -6,18 +6,29 @@ human judgment, and where we've deliberately deferred a fix rather than ship a
 clever guess. (The deeper boundary — what git can and cannot witness at all —
 is in the README's "Why git — and where it stops.")
 
-## 1. Red conflates three different kinds of "never landed"
+## 1. ~~Red conflates three kinds of "never landed"~~ — LARGELY FIXED in 0.1.1
 
-A **broken promise** (red) today covers: *deliberate scratch* (a file written,
-used, and thrown away on purpose), *build-tool churn* (Astro, Wrangler, npm and
-friends regenerating a file between the agent's edit and the commit — the write
-was real; tooling rewrote it), and *genuine loss* (a claimed edit that simply
-vanished). Only the last is a broken promise in the trust sense. The
-`diagnosis` field already distinguishes the cases; the *color* does not yet.
-Planned refinement: scratch and churn become **amber** ("worth a look"), red
-stays reserved for genuine unexplained loss. Until then, read a red's diagnosis
-before reading it as a lie — the errors here skew toward false alarms, never
-toward hiding.
+v0.1.0's red covered *deliberate scratch* (a file written, used, and thrown
+away on purpose), *build-tool churn* (Astro, Wrangler, npm regenerating a
+file between the agent's edit and the commit), and *genuine loss*. Only the
+last is a broken promise in the trust sense.
+
+0.1.1 splits them. A claim whose path **never entered any commit** and is
+gone from disk resolves as *scratch churn* — shown, with its reason, as a
+grey finding; never red. Genuine loss (the file IS in history, the claimed
+content reached no commit) stays red. Two related false-red classes went
+with it: **cross-repo attribution** (one session driving sibling repos used
+to bill each repo for the others' edits — 48 false reds on a real four-repo
+corpus, now 1 genuine one) and a **path-level late-landing check** that had
+regressed into treating any later touch of the same path as "landed".
+
+What remains: **build-tool churn is still red** when the file exists in
+history and the agent's content was overwritten before the commit. The
+diagnosis says so ("a tracked file, but this edit's content reached no later
+commit"), but distinguishing "a generator rewrote it" from "the edit was
+lost" needs evidence we don't yet collect. Read that diagnosis before
+reading the red as a lie — the errors here still skew toward false alarms,
+never toward hiding.
 
 ## 2. Uncommitted work in the working tree reads as red
 
@@ -72,8 +83,11 @@ Auditing sessions recorded on a **different machine** — a mounted backup
 drive, a copied `~/.claude/projects`, a second computer — is **not a
 supported flow in v0.1**. First-class cross-machine support is **on the
 roadmap** (a `--map-root OLD=NEW` to remap the original machine's paths
-explicitly, plus stricter store matching); until it ships, treat everything
-below as unsupported behavior, not a contract.
+explicitly); until it ships, treat everything below as unsupported
+behavior, not a contract. 0.1.1 did tighten one sharp edge: the name-based
+store fallback now matches the **repo's own directory name only**, so a
+path component like `/data/dev` no longer "matches" an unrelated repo whose
+name merely ends in `-dev`.
 
 What breaks today, concretely:
 
