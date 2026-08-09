@@ -811,7 +811,11 @@ fn render_interval(
     // as what it became. Audit leads with the commit.
     let ask = if narrative && show.prompt {
         iv.intents.first().map(|t| {
-            let one: String = t.split_whitespace().collect::<Vec<_>>().join(" ");
+            // Same rule as the console: redact before display, not after.
+            let one: String = crate::fmt::redact_home(t)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
             if one.chars().count() > 96 {
                 one.chars().take(96).collect::<String>() + "\u{2026}"
             } else {

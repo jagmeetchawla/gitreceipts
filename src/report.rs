@@ -1574,7 +1574,13 @@ fn recap_entry(st: &Style, iv: &Interval, show_intent: bool) {
     let mark = status_dot_muted(st, iv.status());
 
     let ask = iv.intents.first().filter(|_| show_intent).map(|t| {
-        let one: String = t.split_whitespace().collect::<Vec<_>>().join(" ");
+        // redact_home FIRST: a prompt routinely names a file by absolute
+        // path, and the recap prints prompts more prominently than the
+        // audit ever did. (Caught by the QA leak check, 2026-08-09.)
+        let one: String = redact_home(t)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         let clipped: String = one.chars().take(96).collect();
         if one.chars().count() > 96 {
             format!("{clipped}…")
