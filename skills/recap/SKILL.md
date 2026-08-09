@@ -46,12 +46,32 @@ If `which -a git-receipts` shows more than one path, say which one wins and
 that the others are shadowed — an older copy earlier on PATH silently
 decides everything below.
 
-## Version floor
+## Version floor — and offering the upgrade
 
-This skill drives the native views that shipped in **0.1.1**. If
-`git-receipts --version` reports older, say so once and use the fallback
-in "Older binaries" at the end — everything still works, it's just doing
-by hand what the binary now does.
+This skill drives views that shipped in **binary 0.1.1**. If
+`git-receipts --version` reports older, say so ONCE, offer the upgrade for
+the route they actually installed by, and carry on with the fallback in
+"Older binaries" — never block the answer they asked for.
+
+Detect the route rather than guessing (a cargo copy can sit behind a brew
+one on PATH):
+
+```bash
+which -a git-receipts
+brew list gitreceipts >/dev/null 2>&1 && echo "route: brew"
+[ -x "$HOME/.cargo/bin/git-receipts" ] && echo "route: cargo"
+```
+
+| Route | Offer |
+|---|---|
+| brew | `brew update && brew upgrade gitreceipts` |
+| cargo | `cargo install gitreceipts --force` (then `git-receipts man --install`) |
+| prebuilt binary | re-run the download block above — it always fetches the latest release |
+
+Phrase it as an offer, once per conversation, and run it only on an
+explicit yes — the same rule as the install. Something like: *"this is
+binary 0.1.0; recap arrived in 0.1.1. Want me to run `brew upgrade
+gitreceipts`? I can read the session either way."*
 
 ## Reading a session
 

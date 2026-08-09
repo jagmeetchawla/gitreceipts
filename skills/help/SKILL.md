@@ -10,7 +10,8 @@ Present this reference to the user, concisely and formatted:
 git history: each prompt you typed → the work it drove → the commit it
 became. Runs locally; nothing leaves the machine.
 
-**Setup.** Needs the `git-receipts` binary (0.1.1+). If it's missing, the
+**Setup.** Needs the `git-receipts` binary (0.1.1+ — the skills offer the
+upgrade if yours is older, and work either way). If it's missing, the
 skills detect what you have and offer to install it — your approval, your
 choice of route: `brew install cloudcraft-ai/tap/gitreceipts` ·
 `cargo install gitreceipts` (then `git-receipts man --install` once) · or a

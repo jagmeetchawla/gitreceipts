@@ -86,7 +86,13 @@ predates a feature it would prefer to use, rather than failing.
 | plugin | binary floor | notes |
 |---|---|---|
 | 0.1.x | 0.1.0 | extracts the condensed view from `export` JSON (schema 0.7) |
-| 0.2.0+ | 0.1.1 | uses native `--summary`, `--emoji`, `--this-session`; falls back to the 0.1.x path on older binaries |
+| 0.2.0+ | 0.1.1 | uses `recap`, `--summary`, `--emoji`, `--this-session`, `--compact`; on an older binary it says so, offers the upgrade for the route you installed by, and falls back to the 0.1.x path |
+
+The plugin ships no binary and never could — it is markdown that invokes
+whatever `git-receipts` is on your PATH. So the two version independently
+and the coupling is this floor, not a lockstep: plugin 0.1.1 through
+0.1.13 all ran against binary 0.1.0. A plugin never fails because the
+binary is old; it degrades, says so once, and offers the upgrade.
 
 ## What is explicitly *not* promised
 
