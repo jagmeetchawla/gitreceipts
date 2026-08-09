@@ -229,10 +229,47 @@ fn run_project(
     let store = resolve_store(store)?;
     let repos = discover::project_repos(&project, &store);
     if repos.is_empty() {
-        bail!(
-            "no git repos with sessions found under {} — audit a single repo with --repo <dir>, or check the folder/store",
-            project.display()
-        );
+        // Three unlike problems used to share one message. Name which.
+        use discover::ProjectMiss::*;
+        match discover::diagnose_project(&project, &store) {
+            NoSuchDir => bail!(
+                "no such directory: {} (--project takes a FOLDER holding git repos; \
+                 for one repo use --repo <dir>)",
+                project.display()
+            ),
+            NotADir => bail!(
+                "{} is a file, not a directory — --project takes a folder holding \
+                 git repos; to audit one session file, pass it as an argument",
+                project.display()
+            ),
+            NoRepos => bail!(
+                "no git repos under {} (searched 5 levels) — is this the right folder?",
+                project.display()
+            ),
+            NoSessions(found) => {
+                let names: Vec<String> = found
+                    .iter()
+                    .take(4)
+                    .map(|r| {
+                        r.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("?")
+                            .to_string()
+                    })
+                    .collect();
+                bail!(
+                    "found {} git repo(s) under {} ({}{}) — but none has sessions in {}. \
+                     Sessions are matched by the path they were recorded at, so a repo \
+                     audited on another machine (or moved since) won't match; see \
+                     KNOWN-LIMITATIONS.md §8.",
+                    found.len(),
+                    project.display(),
+                    names.join(", "),
+                    if found.len() > 4 { ", …" } else { "" },
+                    store.display()
+                )
+            }
+        }
     }
 
     // Reconcile every repo up front — the roll-up table needs all their numbers

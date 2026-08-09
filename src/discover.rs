@@ -127,6 +127,59 @@ pub fn project_repos(project: &Path, store: &Path) -> Vec<PathBuf> {
     repos
 }
 
+/// Why a `--project` folder yielded nothing — so the error can say which
+/// of three unlike problems the user actually has (a typo'd path, a folder
+/// with no repos, or repos whose sessions this store doesn't hold).
+pub enum ProjectMiss {
+    NoSuchDir,
+    NotADir,
+    NoRepos,
+    /// Repos are there; none has sessions in this store.
+    NoSessions(Vec<PathBuf>),
+}
+
+pub fn diagnose_project(project: &Path, store: &Path) -> ProjectMiss {
+    if !project.exists() {
+        return ProjectMiss::NoSuchDir;
+    }
+    if !project.is_dir() {
+        return ProjectMiss::NotADir;
+    }
+    let start = project
+        .canonicalize()
+        .unwrap_or_else(|_| project.to_path_buf());
+    let mut repos = Vec::new();
+    walk_repos(&start, 5, &mut repos);
+    if repos.is_empty() {
+        ProjectMiss::NoRepos
+    } else {
+        let _ = store;
+        ProjectMiss::NoSessions(repos)
+    }
+}
+
+/// Repos under a folder, ignoring whether the store has sessions for them.
+fn walk_repos(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    if dir.join(".git").exists() {
+        out.push(dir.to_path_buf());
+        return;
+    }
+    if depth == 0 {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let mut sub: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        sub.sort();
+        for p in sub {
+            walk_repos(&p, depth - 1, out);
+        }
+    }
+}
+
 /// Newest .jsonl across the candidate directories.
 pub fn latest_session(store: &Path, repo: &Path) -> Result<PathBuf> {
     let dirs = session_dirs_for(store, repo);
