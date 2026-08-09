@@ -72,7 +72,7 @@ fn full_pipeline_balances_the_interval_equation() {
     assert_eq!(
         interval.status(),
         Status::Amber,
-        "a never-committed discarded file is scratch churn — ambers, never red (0.1.1 contract)"
+        "unexplained residue (extra.txt) outranks the grey scratch finding — amber wins"
     );
 
     let landed: Vec<&str> = interval
@@ -348,6 +348,8 @@ fn multibyte_commit_subject_does_not_panic_the_console_report() {
             with_output: false,
             commit: None,
             oneline: false,
+            summary: false,
+            emoji: false,
             full: false,
             project_section: false,
             siblings: Vec::new(),

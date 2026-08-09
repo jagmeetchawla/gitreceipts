@@ -70,6 +70,7 @@ fn render_body(
     let c = audit.counts();
     let total = c.total;
     let green = c.green;
+    let grey = c.grey;
     let red = c.red;
     let amber = c.amber;
     let claims_total = c.claims_total;
@@ -262,7 +263,7 @@ fn render_body(
     let residue_total: usize = audit.intervals.iter().map(|i| i.residue.len()).sum();
     let _ = write!(
         b,
-        "<div class=\"balance\">balance: {green} green · {amber} amber · {red} red \
+        "<div class=\"balance\">balance: {green} green · {grey} grey · {amber} amber · {red} red \
          of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} · \
          residue {residue_total}</div>\n",
         pct(green, total),
@@ -402,6 +403,7 @@ pub fn render_project(
         let l = s.audit.landing_summary();
         let (cls, word) = match l.verdict {
             Status::Green => ("good", "green"),
+            Status::Grey => ("note", "grey"),
             Status::Amber => ("warn", "amber"),
             Status::Red => ("bad", "red"),
         };
@@ -656,6 +658,7 @@ fn render_interval(
 ) {
     let (cls, mark) = match iv.status() {
         Status::Green => ("green", "\u{2714}"),
+        Status::Grey => ("grey", "\u{25cb}"),
         Status::Amber => ("amber", "!"),
         Status::Red => ("red", "\u{2718}"),
     };

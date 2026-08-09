@@ -961,7 +961,7 @@ fn gitignored_claim_whose_content_persists_on_disk_is_resolved() {
 }
 
 #[test]
-fn a_never_committed_vanished_file_is_scratch_amber_not_red() {
+fn a_never_committed_vanished_file_is_scratch_grey_not_red() {
     // 0.1.1 contract: a file that never entered ANY commit and is gone from
     // disk is scratch churn — written, used, thrown away before the work
     // took its committed shape. Nothing that was ever in history got lost,
@@ -999,8 +999,8 @@ fn a_never_committed_vanished_file_is_scratch_amber_not_red() {
     assert_eq!(audit.counts().broken, 0, "scratch is not a broken promise");
     assert_eq!(
         first.status(),
-        Status::Amber,
-        "scratch ambers — worth a look, never green, never red"
+        Status::Grey,
+        "scratch greys — explained, worth a glance, never green, never red"
     );
     assert_eq!(audit.exceptions().resolved_scratch, 1);
 }
@@ -1070,7 +1070,7 @@ fn a_tracked_files_lost_edit_stays_red() {
 }
 
 #[test]
-fn a_discarded_starter_scaffold_ambers_as_scratch_not_red() {
+fn a_discarded_starter_scaffold_greys_as_scratch_not_red() {
     // The ClipBob shape: a generator writes a starter tree, the agent works
     // in it, the approach changes, the tree is discarded before the first
     // commit ever includes it. Five files, one interval, zero broken.
@@ -1132,8 +1132,8 @@ fn a_discarded_starter_scaffold_ambers_as_scratch_not_red() {
     );
     assert_eq!(
         audit.intervals[0].status(),
-        Status::Amber,
-        "and the interval ambers"
+        Status::Grey,
+        "and the interval greys"
     );
 }
 
@@ -1297,7 +1297,11 @@ fn a_broken_promise_is_not_resolved_by_a_substring_mention() {
         line.resolution
     );
     assert!(line.scratch, "resolves only as scratch churn");
-    assert_eq!(first.status(), Status::Amber, "worth a look — never green");
+    assert_eq!(
+        first.status(),
+        Status::Grey,
+        "explained finding — never green"
+    );
 }
 
 #[test]
@@ -1730,4 +1734,84 @@ fn this_repos_own_dead_path_still_aliases_by_content() {
         "the old home's claims belong in THIS ledger"
     );
     assert!(audit.intervals[0].balanced(), "the interval balances");
+}
+
+#[test]
+fn failure_triage_never_flips_a_verdict() {
+    // PM condition on the 0.1.1 verdict contract: the triage classifier is
+    // PRESENTATION ONLY. Whatever class a failure lands in — benign or
+    // genuine — the interval's status must be identical, because failures
+    // are findings, not verdict evidence. Same fixture twice: once with a
+    // failure the classifier calls benign (grep no-match), once with one it
+    // cannot explain. Both must read Grey; neither may reach Amber or Red,
+    // and neither may fall back to Green (a failure is always SHOWN).
+    let status_for = |name: &str, command: &str, output: &str| {
+        let repo = TempRepo::new(name);
+        let root = repo.root.display().to_string();
+        let body = SessionBuilder::default_body("a.txt");
+
+        let mut s = SessionBuilder::new(&root);
+        s.user_text("2026-01-01T10:00:00Z", "go")
+            .write_claim("2026-01-01T10:00:01Z", "2026-01-01T10:00:02Z", "a.txt")
+            .bash_claim_failed(
+                "2026-01-01T10:00:03Z",
+                "2026-01-01T10:00:04Z",
+                command,
+                output,
+            )
+            .bash_claim(
+                "2026-01-01T10:00:05Z",
+                "2026-01-01T10:00:07Z",
+                "git add -A && git commit -m one",
+            );
+
+        repo.write("a.txt", &body);
+        repo.git(&["add", "-A"]);
+        repo.git_at(&["commit", "-q", "-m", "one"], Some("2026-01-01T10:00:06Z"));
+
+        let audit = run(&repo, &s);
+        let iv = &audit.intervals[0];
+        let class = iv.commands_run[0]
+            .triage
+            .as_ref()
+            .map(|t| t.class)
+            .unwrap_or("none");
+        // Evidence is mandatory for every classification (PM condition c).
+        assert!(
+            iv.commands_run[0]
+                .triage
+                .as_ref()
+                .is_some_and(|t| !t.evidence.trim().is_empty()),
+            "every triage class cites evidence"
+        );
+        (iv.status(), class, audit.counts().broken)
+    };
+
+    let (benign_status, benign_class, benign_broken) = status_for(
+        "triage-benign",
+        "grep -q needle haystack.txt",
+        "Exit code 1\n",
+    );
+    let (genuine_status, genuine_class, genuine_broken) = status_for(
+        "triage-genuine",
+        "cargo build --release",
+        "Exit code 101\nerror: could not compile\n",
+    );
+
+    assert_eq!(benign_class, "expected-nonzero");
+    assert_eq!(genuine_class, "genuine");
+    assert_eq!(
+        benign_status, genuine_status,
+        "the triage class must not change the verdict — presentation only"
+    );
+    assert_eq!(
+        benign_status,
+        Status::Grey,
+        "a failed command is a finding: grey, never green, never amber/red"
+    );
+    assert_eq!(benign_broken, 0);
+    assert_eq!(
+        genuine_broken, 0,
+        "a failed command is never a broken promise"
+    );
 }

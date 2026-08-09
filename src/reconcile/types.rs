@@ -65,6 +65,19 @@ pub struct Superseded {
     pub seconds_before_amend: i64,
 }
 
+/// Why a failed command failed — presentation-only triage. Every class
+/// carries its evidence; a classification can NEVER change the verdict
+/// (any failure greys its interval regardless of class).
+#[derive(Debug, Clone)]
+pub struct FailureTriage {
+    /// "user-abort" | "retried-and-passed" | "expected-nonzero" |
+    /// "guarded" | "sandbox-denial" | "genuine".
+    pub class: &'static str,
+    /// The cited evidence: "exit 1 — grep no-match convention",
+    /// "retried and passed", "guarded by || in the command", …
+    pub evidence: String,
+}
+
 /// One effectful command that ran in an interval, for the drill-down.
 #[derive(Debug)]
 pub struct CommandRun {
@@ -77,6 +90,8 @@ pub struct CommandRun {
     pub committed: bool,
     pub pushed: bool,
     pub failed: bool,
+    /// Present iff `failed` — which way it failed, with cited evidence.
+    pub triage: Option<FailureTriage>,
     /// The command's captured output, when the log carried one. Held for the
     /// receipt's opt-in `--with-output`; the reports never render it.
     pub output: Option<Receipt>,
@@ -142,9 +157,12 @@ pub struct Interval {
 /// - **Amber** = worth a look: genuine residue, a failed command, or an errored
 ///   MCP call. Not a lie — but not "nothing to see" either.
 /// - **Green** = clean: nothing to look at on either axis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Status {
     Green,
+    /// Explained findings present (scratch churn, failed commands, MCP
+    /// errors) — each carries its explanation; the verdict is untouched.
+    Grey,
     Amber,
     Red,
 }
@@ -185,19 +203,26 @@ impl Interval {
             .any(|l| l.landing == Landing::Never && l.resolution.is_none())
         {
             Status::Red
-        } else if !self.residue.is_empty()
-            || self.ledger.iter().any(|l| l.scratch)
+        } else if !self.residue.is_empty() {
+            // UNEXPLAINED residue is the only amber: a loose end with no
+            // answer on record.
+            Status::Amber
+        } else if self.ledger.iter().any(|l| l.scratch)
             || self.commands_run.iter().any(|c| c.failed)
             || self.mcp_runs.iter().any(|m| m.errored)
         {
-            Status::Amber
+            // Explained findings — worth a glance, each with its reason;
+            // never a verdict.
+            Status::Grey
         } else {
             Status::Green
         }
     }
 
+    /// The interval EQUATION balances — no broken promise, no unexplained
+    /// residue. Grey findings (explained) do not unbalance it.
     pub fn balanced(&self) -> bool {
-        self.status() == Status::Green
+        matches!(self.status(), Status::Green | Status::Grey)
     }
 }
 
@@ -311,6 +336,8 @@ pub struct Audit {
 #[derive(Debug, Clone, Copy)]
 pub struct Counts {
     pub green: usize,
+    /// Intervals with explained findings only (scratch, failed cmds, MCP).
+    pub grey: usize,
     pub amber: usize,
     pub red: usize,
     pub total: usize,
@@ -415,13 +442,16 @@ impl Audit {
     }
 
     /// The whole audit's verdict = the strongest color across the equation set:
-    /// Red if any equation interval is red (a broken promise), else Amber if any
-    /// is amber, else Green. A teammate's keyframe never sets your verdict.
+    /// Red if any equation interval is red (a broken promise), else Amber if
+    /// any is amber (unexplained residue), else Grey if any carries explained
+    /// findings, else Green. A teammate's keyframe never sets your verdict.
     pub fn verdict(&self) -> Status {
         if self.equation().any(|i| i.status() == Status::Red) {
             Status::Red
         } else if self.equation().any(|i| i.status() == Status::Amber) {
             Status::Amber
+        } else if self.equation().any(|i| i.status() == Status::Grey) {
+            Status::Grey
         } else {
             Status::Green
         }
@@ -432,6 +462,7 @@ impl Audit {
     pub fn counts(&self) -> Counts {
         let mut c = Counts {
             green: 0,
+            grey: 0,
             amber: 0,
             red: 0,
             total: 0,
@@ -444,6 +475,7 @@ impl Audit {
             c.total += 1;
             match i.status() {
                 Status::Green => c.green += 1,
+                Status::Grey => c.grey += 1,
                 Status::Amber => c.amber += 1,
                 Status::Red => c.red += 1,
             }

@@ -33,7 +33,11 @@ pub enum Filter {
     Amber,
     /// Green only: clean intervals.
     Green,
-    /// Red + amber: everything that isn't green (the old `red-residue`).
+    /// Grey only: explained findings (scratch churn, failed commands, MCP
+    /// errors) — each carries its explanation.
+    Grey,
+    /// Red + amber: the UNANSWERED findings. Grey (answered) and green are
+    /// both excluded.
     RedAmber,
 }
 
@@ -44,7 +48,8 @@ impl Filter {
             Filter::Red => status == Status::Red,
             Filter::Amber => status == Status::Amber,
             Filter::Green => status == Status::Green,
-            Filter::RedAmber => status != Status::Green,
+            Filter::Grey => status == Status::Grey,
+            Filter::RedAmber => matches!(status, Status::Red | Status::Amber),
         }
     }
 }
@@ -127,6 +132,13 @@ pub struct Options {
     /// Terse spine: one line per commit after the session summary, instead of
     /// the full per-commit drill-down (like `git log --oneline`).
     pub oneline: bool,
+    /// The canonical condensed view: headline + spine table (commit ·
+    /// subject · claims · findings) — every finding any age, recent tail,
+    /// zeros never printed, every cause named. The agent-native default.
+    pub summary: bool,
+    /// Status dots as emoji (🟢⚪🟡🔴) instead of ANSI-colored marks — for
+    /// chat surfaces where terminal color is stripped.
+    pub emoji: bool,
     /// Print each commit's full conversation (every prompt and assistant
     /// message) — the whole chat, not just intent + summary. Most useful
     /// scoped with `--commit`; the whole session gets long.
@@ -236,6 +248,7 @@ pub fn landing_table(rows: &[(String, crate::reconcile::LandingSummary)], color:
     for (name, s) in rows {
         let (dot, word) = match s.verdict {
             Status::Green => (st.green("●"), st.green("green")),
+            Status::Grey => (st.dim("●"), st.dim("grey")),
             Status::Amber => (st.yellow("●"), st.yellow("amber")),
             Status::Red => (st.red("●"), st.red("red")),
         };
@@ -276,6 +289,10 @@ pub fn print(
     audit: &Audit,
     opts: &Options,
 ) {
+    if opts.summary {
+        print_summary(audit, opts);
+        return;
+    }
     let st = Style::new(opts.color);
     // A per-commit model line is only worth printing when the session spanned
     // more than one model (a mid-session switch); otherwise the header roll-up
@@ -403,6 +420,7 @@ pub fn print(
     let total = c.total;
     let red_n = c.red;
     let residue_n = c.amber;
+    let grey_n = c.grey;
     let claims_total = c.claims_total;
     let claims_landed = c.claims_landed;
     let keyframes_excluded = c.keyframes_excluded;
@@ -690,6 +708,7 @@ pub fn print(
             Filter::Red => format!(" — showing only red ({red_n} of {total})"),
             Filter::Amber => format!(" — showing only amber ({residue_n} of {total})"),
             Filter::Green => format!(" — showing only green ({green} of {total})"),
+            Filter::Grey => format!(" — showing only grey ({grey_n} of {total})"),
             Filter::RedAmber => {
                 format!(" — showing red + amber ({} of {total})", red_n + residue_n)
             }
@@ -735,13 +754,13 @@ pub fn print(
         println!(
             "{}",
             st.dim(&format!(
-                "{:<9} {:<48} {:>7} {:>7} {:>7} {:>7}",
-                "commit", "subject", "claimed", "landed", "residue", "broken"
+                "{:<9}   {:<48} {:>7}  {}",
+                "commit", "subject", "claims", "findings"
             ))
         );
         for interval in &audit.intervals {
             if in_eq(interval) && opts.filter.keeps(interval.status()) {
-                render_oneline_row(&st, interval);
+                render_oneline_row(&st, interval, opts.emoji);
             }
         }
     } else {
@@ -785,7 +804,7 @@ pub fn print(
     println!(
         "{}",
         st.bold(&format!(
-            "balance: {green} green · {residue_n} amber · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue {residue_total} (+{attributed_total} command-attributed, +{dismissed_total} dismissed)",
+            "balance: {green} green · {grey_n} grey · {residue_n} amber · {red_n} red of {total} intervals ({:.0}% green) · claims landed {claims_landed}/{claims_total} ({:.0}%) · residue {residue_total} (+{attributed_total} command-attributed, +{dismissed_total} dismissed)",
             pct(green, total),
             pct(claims_landed, claims_total),
         ))
@@ -846,48 +865,29 @@ fn render_conversation(
 }
 
 /// One `--oneline` spine row: the commit's short hash (the handle for
-/// `--commit`), status mark, subject, and four aligned count columns —
-/// claimed, landed, residue, broken. Column-aligned to the header above.
-fn render_oneline_row(st: &Style, iv: &Interval) {
-    let (mark, paint): (&str, fn(&Style, &str) -> String) = match iv.status() {
-        Status::Green => ("✔", Style::green),
-        Status::Amber => ("!", Style::yellow),
-        Status::Red => ("✘", Style::red),
-    };
+/// `--commit`), status dot, subject, claims (landed/claimed) and the
+/// findings cell — one grammar with `--summary`: zeros never print, every
+/// cause named, `—` means clean.
+fn render_oneline_row(st: &Style, iv: &Interval, emoji: bool) {
     let claimed = iv.ledger.len();
     let landed = iv
         .ledger
         .iter()
         .filter(|l| l.landing != crate::reconcile::Landing::Never)
         .count();
-    let n_broken = iv.never_landed().count();
-    let residue = iv.residue.len();
-    // char-safe truncate + pad so the count columns align (byte ops panic
+    // char-safe truncate + pad so the columns align (byte ops panic
     // mid-multibyte — a real crash found dogfooding).
     let subject: String = redact_home(&iv.commit.subject).chars().take(48).collect();
     let pad = 48usize.saturating_sub(subject.chars().count());
 
-    // Right-aligned 7-wide count cells; a zero is dimmed so non-zero counts
-    // (residue in yellow, broken in red) draw the eye.
-    let neutral = |n: usize| {
-        let s = format!("{n:>7}");
-        if n == 0 { st.dim(&s) } else { s }
-    };
-    let flagged = |n: usize, paint: fn(&Style, &str) -> String| {
-        let s = format!("{n:>7}");
-        if n == 0 { st.dim(&s) } else { paint(st, &s) }
-    };
-
     println!(
-        "{} {} {}{} {} {} {} {}",
+        "{} {} {}{} {:>7}  {}",
         st.cyan(&iv.commit.short),
-        paint(st, mark),
+        status_dot(st, iv.status(), emoji),
         subject,
         " ".repeat(pad),
-        neutral(claimed),
-        neutral(landed),
-        flagged(residue, Style::yellow),
-        flagged(n_broken, Style::red),
+        format!("{landed}/{claimed}"),
+        findings_cell(iv),
     );
 }
 
@@ -953,6 +953,7 @@ fn render_interval(
     let landed = interval.ledger.len() - never.len() - resolved.len() - late.len();
     let mark = match interval.status() {
         Status::Green => st.green("✔"),
+        Status::Grey => st.dim("○"),
         Status::Amber => st.yellow("!"),
         Status::Red => st.red("✘"),
     };
@@ -1334,5 +1335,248 @@ fn render_interval(
             shown.push('\u{2026}');
         }
         println!("    {} {}", st.cyan("\u{ab} summary:"), shown);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The condensed summary view (`--summary`) — the canonical agent-native
+// table. One grammar everywhere: header row, zeros never printed, every
+// cause named, `—` means clean. Shared by `--oneline`'s findings column.
+// ---------------------------------------------------------------------------
+
+/// The status dot for a summary/oneline row. Emoji for chat surfaces
+/// (terminal colors get stripped there); ANSI-painted marks otherwise.
+fn status_dot(st: &Style, s: Status, emoji: bool) -> String {
+    if emoji {
+        match s {
+            Status::Green => "🟢".into(),
+            Status::Grey => "⚪".into(),
+            Status::Amber => "🟡".into(),
+            Status::Red => "🔴".into(),
+        }
+    } else {
+        match s {
+            Status::Green => st.green("✔"),
+            Status::Grey => st.dim("○"),
+            Status::Amber => st.yellow("!"),
+            Status::Red => st.red("✘"),
+        }
+    }
+}
+
+/// The findings column: one consistent rule — zero counts never print,
+/// every nonzero cause is named, a clean row shows `—`. Failed commands
+/// name their program (skipping VAR= prefixes) and only GENUINE failures
+/// read as "failed"; triaged-benign classes carry their own labels.
+pub fn findings_cell(iv: &Interval) -> String {
+    let mut fs: Vec<String> = Vec::new();
+    if !iv.residue.is_empty() {
+        fs.push(format!("{} residue", iv.residue.len()));
+    }
+    let scratch = iv.ledger.iter().filter(|l| l.scratch).count();
+    if scratch > 0 {
+        fs.push(format!("{scratch} scratch (discarded pre-commit)"));
+    }
+    let prog = |c: &str| -> String {
+        let t = c
+            .split_whitespace()
+            .find(|t| !t.contains('='))
+            .unwrap_or("?");
+        t.rsplit('/').next().unwrap_or(t).to_string()
+    };
+    let mut genuine: Vec<String> = Vec::new();
+    let mut by_class: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    for r in iv.commands_run.iter().filter(|r| r.failed) {
+        match r.triage.as_ref().map(|t| t.class) {
+            Some("genuine") | None => {
+                let p = prog(&r.command);
+                if !genuine.contains(&p) {
+                    genuine.push(p);
+                }
+                *by_class.entry("genuine").or_default() += 1;
+            }
+            Some(c) => *by_class.entry(c).or_default() += 1,
+        }
+    }
+    if let Some(&n) = by_class.get("genuine") {
+        let mut progs = genuine;
+        let more = progs.len() > 2;
+        progs.truncate(2);
+        fs.push(format!(
+            "{n} cmd{} failed ({}{})",
+            if n > 1 { "s" } else { "" },
+            progs.join(", "),
+            if more { ", …" } else { "" }
+        ));
+    }
+    for (class, label) in [
+        ("expected-nonzero", "expected-nonzero"),
+        ("guarded", "guarded"),
+        ("retried-and-passed", "retried"),
+        ("user-abort", "aborted by you"),
+        ("sandbox-denial", "sandbox-denied"),
+    ] {
+        if let Some(&n) = by_class.get(class) {
+            fs.push(format!("{n} {label}"));
+        }
+    }
+    let mcp: Vec<&str> = iv
+        .mcp_runs
+        .iter()
+        .filter(|m| m.errored)
+        .map(|m| m.server.as_str())
+        .collect();
+    if !mcp.is_empty() {
+        let mut servers: Vec<&str> = Vec::new();
+        for s in &mcp {
+            if !servers.contains(s) {
+                servers.push(s);
+            }
+        }
+        servers.truncate(2);
+        fs.push(format!("{} mcp err ({})", mcp.len(), servers.join(", ")));
+    }
+    if fs.is_empty() {
+        "—".into()
+    } else {
+        fs.join(" · ")
+    }
+}
+
+fn summary_row(st: &Style, iv: &Interval, emoji: bool) {
+    let landed = iv
+        .ledger
+        .iter()
+        .filter(|l| l.landing != crate::reconcile::Landing::Never)
+        .count();
+    let subject: String = iv.commit.subject.chars().take(45).collect();
+    println!(
+        "  {} {} {:<45} {:>5}  {}",
+        status_dot(st, iv.status(), emoji),
+        iv.commit.short,
+        redact_home(&subject),
+        format!("{landed}/{}", iv.ledger.len()),
+        findings_cell(iv)
+    );
+}
+
+/// `--summary`: the headline and ONE table — findings of any age, then the
+/// recent tail. CAP recent rows; older findings capped with an announced
+/// omission (never silent).
+pub fn print_summary(audit: &Audit, opts: &Options) {
+    let st = Style::new(opts.color);
+    let c = audit.counts();
+    const CAP: usize = 15;
+    println!(
+        "commits {} (+{} by others held out) · {} · claims {}/{} · broken promises {}",
+        c.total,
+        c.keyframes_excluded,
+        if opts.emoji {
+            format!(
+                "{} 🟢 / {} ⚪ / {} 🟡 / {} 🔴",
+                c.green, c.grey, c.amber, c.red
+            )
+        } else {
+            format!(
+                "{} · {} · {} · {}",
+                st.green(&format!("{} green", c.green)),
+                st.dim(&format!("{} grey", c.grey)),
+                st.yellow(&format!("{} amber", c.amber)),
+                st.red(&format!("{} red", c.red)),
+            )
+        },
+        c.claims_landed,
+        c.claims_total,
+        c.broken,
+    );
+    println!();
+    println!(
+        "{}",
+        st.dim(&format!("    commit  {:<45} claims  findings", "subject"))
+    );
+    let eq: Vec<&Interval> = audit.equation().collect();
+    let older = eq.len().saturating_sub(CAP);
+    let findings: Vec<&&Interval> = eq[..older]
+        .iter()
+        .filter(|iv| iv.status() != Status::Green)
+        .collect();
+    let omitted = findings.len().saturating_sub(CAP);
+    for iv in findings.iter().take(CAP) {
+        summary_row(&st, iv, opts.emoji);
+    }
+    if omitted > 0 {
+        println!(
+            "    {}",
+            st.dim(&format!("… {omitted} more findings omitted"))
+        );
+    }
+    if older > 0 {
+        println!(
+            "    {}",
+            st.dim(&format!(
+                "… {older} earlier commits (findings above shown; --oneline for all)"
+            ))
+        );
+    }
+    for iv in &eq[older..] {
+        summary_row(&st, iv, opts.emoji);
+    }
+}
+
+/// `--summary --project`: the roll-up (repo · commits · claims · findings),
+/// then a condensed table per repo that has commits. Zero-commit repos stay
+/// as roll-up rows. Same grammar as the single-repo summary.
+pub fn print_project_summary(sections: &[(String, &Audit)], opts: &Options) {
+    let st = Style::new(opts.color);
+    let verdict = sections
+        .iter()
+        .map(|(_, a)| a.verdict())
+        .max()
+        .unwrap_or(Status::Green);
+    let word = match verdict {
+        Status::Green => "green",
+        Status::Grey => "grey",
+        Status::Amber => "amber",
+        Status::Red => "red",
+    };
+    println!(
+        "project verdict: {} {word} · {} repos",
+        status_dot(&st, verdict, opts.emoji),
+        sections.len()
+    );
+    println!();
+    println!(
+        "{}",
+        st.dim("    repo                   commits    claims  findings")
+    );
+    for (name, a) in sections {
+        let s = a.landing_summary();
+        let mut fs: Vec<String> = Vec::new();
+        if s.broken > 0 {
+            fs.push(format!("{} broken", s.broken));
+        }
+        if s.residue_files > 0 {
+            fs.push(format!("{} residue", s.residue_files));
+        }
+        println!(
+            "  {} {:<22} {:>5}  {:>8}  {}",
+            status_dot(&st, s.verdict, opts.emoji),
+            name,
+            s.commits,
+            format!("{}/{}", s.landed, s.claims),
+            if fs.is_empty() {
+                "—".into()
+            } else {
+                fs.join(" · ")
+            }
+        );
+    }
+    for (name, a) in sections {
+        if a.counts().total == 0 {
+            continue;
+        }
+        println!();
+        println!("{}", st.bold(&format!("=== {name} ===")));
+        print_summary(a, opts);
     }
 }

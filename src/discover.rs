@@ -56,13 +56,17 @@ pub fn session_dirs_for(store: &Path, repo: &Path) -> Vec<PathBuf> {
         return exact;
     }
 
-    // cross-machine fallback: suffix-match on directory basenames
+    // Cross-machine fallback: suffix-match on the REPO's own basename only.
+    // Matching every ancestor's name over-matched (`/data/dev` produced the
+    // suffix `-dev`, which "matched" a store dir for `rusticplayground-dev`
+    // — a different repo). The repo directory's name is the one identity
+    // worth trusting across machines.
     let suffixes: Vec<String> = start
-        .ancestors()
-        .filter_map(|a| a.file_name())
-        .filter_map(|n| n.to_str())
+        .file_name()
+        .and_then(|n| n.to_str())
         .filter(|n| n.len() >= 3)
         .map(|n| format!("-{}", encode(Path::new(n))))
+        .into_iter()
         .collect();
     let Ok(entries) = std::fs::read_dir(store) else {
         return Vec::new();
@@ -311,4 +315,44 @@ pub fn infer_repo(session: &Session) -> Result<PathBuf> {
                 .join("\n")
         ),
     }
+}
+
+/// Find the ONE session file that contains `marker` — identity-based
+/// targeting for `--this-session`. The caller has just emitted the marker
+/// into its own live conversation, so exactly one file should carry it.
+/// Session files flush asynchronously; one short retry absorbs write lag.
+pub fn session_containing(store: &Path, marker: &str) -> anyhow::Result<PathBuf> {
+    for attempt in 0..2 {
+        let mut hits: Vec<PathBuf> = Vec::new();
+        if let Ok(projects) = std::fs::read_dir(store) {
+            for proj in projects.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+                if let Ok(files) = std::fs::read_dir(&proj) {
+                    for f in files.flatten().map(|e| e.path()) {
+                        if f.extension().and_then(|e| e.to_str()) == Some("jsonl")
+                            && std::fs::read_to_string(&f).is_ok_and(|c| c.contains(marker))
+                        {
+                            hits.push(f);
+                        }
+                    }
+                }
+            }
+        }
+        match hits.len() {
+            1 => return Ok(hits.remove(0)),
+            0 if attempt == 0 => std::thread::sleep(std::time::Duration::from_secs(1)),
+            0 => anyhow::bail!(
+                "no session in {} contains the marker — echo it into the conversation first, then run this",
+                store.display()
+            ),
+            _ => {
+                hits.sort();
+                anyhow::bail!(
+                    "{} sessions contain the marker (it must be unique): {}",
+                    hits.len(),
+                    hits.last().unwrap().display()
+                );
+            }
+        }
+    }
+    unreachable!()
 }

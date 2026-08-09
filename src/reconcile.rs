@@ -15,8 +15,8 @@ mod types;
 
 pub use matching::longest_prefix;
 pub use types::{
-    Audit, CommandRun, Counts, Exceptions, Grade, GradeCount, Interval, Landing, LandingSummary,
-    LedgerLine, McpRun, RadiusCount, SiblingWrites, Status, Superseded,
+    Audit, CommandRun, Counts, Exceptions, FailureTriage, Grade, GradeCount, Interval, Landing,
+    LandingSummary, LedgerLine, McpRun, RadiusCount, SiblingWrites, Status, Superseded,
 };
 
 use std::collections::{BTreeMap, HashMap};
@@ -314,6 +314,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                         committed: commit_count > 0,
                         pushed: has_push,
                         failed,
+                        triage: None, // filled by the triage post-pass below
                         output: claim.receipt.clone(),
                     });
                 }
@@ -671,6 +672,31 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 "deleted before any commit — written, used, thrown away"
             };
             line.diagnosis = Some(diagnosis);
+        }
+    }
+
+    // Failure triage post-pass (presentation only — never touches status):
+    // classify every failed command with cited evidence. "Retried and
+    // passed" needs the whole session's successes, so it runs after all
+    // commands are collected.
+    let norm = |c: &str| c.split_whitespace().collect::<Vec<_>>().join(" ");
+    let succeeded: std::collections::HashSet<String> = audit
+        .intervals
+        .iter()
+        .flat_map(|iv| iv.commands_run.iter())
+        .filter(|r| !r.failed)
+        .map(|r| norm(&r.command))
+        .collect();
+    for iv in audit.intervals.iter_mut() {
+        for run in iv.commands_run.iter_mut().filter(|r| r.failed) {
+            let out = run.output.as_ref().map(|o| o.text.as_str()).unwrap_or("");
+            let retried_ok = succeeded.contains(&norm(&run.command));
+            run.triage = Some(matching::triage_failure(
+                &run.command,
+                out,
+                is_user_abort(out),
+                retried_ok,
+            ));
         }
     }
 

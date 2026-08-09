@@ -86,6 +86,19 @@ fn find_enclosing_repo(dir: &Path) -> Option<PathBuf> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// `--exit-code`: encode the verdict in the process exit status.
+/// 0 = green or grey (the equation balances) · 1 = amber · 2 = red.
+/// Grey never raises — explained findings are not failures.
+fn exit_with_verdict(v: gitreceipts::reconcile::Status) -> ! {
+    use gitreceipts::reconcile::Status as S;
+    std::process::exit(match v {
+        S::Red => 2,
+        S::Amber => 1,
+        S::Green | S::Grey => 0,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     sessions: Vec<PathBuf>,
     latest: bool,
@@ -100,7 +113,14 @@ pub fn run(
     scan: bool,
     agent: report::Agent,
     full_history: bool,
+    exit_code: bool,
+    this_session: Option<String>,
 ) -> Result<()> {
+    let mut sessions = sessions;
+    if let Some(marker) = &this_session {
+        let store_dir = resolve_store(store.clone())?;
+        sessions = vec![discover::session_containing(&store_dir, marker)?];
+    }
     // Project mode: one header, then each repo under the folder reported in turn.
     if let Some(project) = project {
         return run_project(
@@ -115,6 +135,7 @@ pub fn run(
             scan,
             agent,
             full_history,
+            exit_code,
         );
     }
     let loaded = {
@@ -176,6 +197,9 @@ pub fn run(
             )
         ),
     }
+    if exit_code {
+        exit_with_verdict(audit.verdict());
+    }
     Ok(())
 }
 
@@ -197,6 +221,7 @@ fn run_project(
     scan: bool,
     agent: report::Agent,
     full_history: bool,
+    exit_code: bool,
 ) -> Result<()> {
     if !sessions.is_empty() {
         bail!("--project audits the folder's own sessions; don't also pass session file(s)");
@@ -308,9 +333,39 @@ fn run_project(
             &opts,
         );
         finish_pager(pager);
+        if exit_code {
+            exit_with_verdict(only.audit.verdict());
+        }
         return Ok(());
     }
 
+    if opts.summary {
+        // Project summary: the roll-up, then one condensed table per repo
+        // with commits — the same grammar as single-repo `--summary`.
+        let sections: Vec<(String, &gitreceipts::reconcile::Audit)> = repos
+            .iter()
+            .zip(&loaded)
+            .map(|(repo, l)| {
+                let name = repo
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("(repo)")
+                    .to_string();
+                (name, &l.audit)
+            })
+            .collect();
+        report::print_project_summary(&sections, &opts);
+        finish_pager(pager);
+        if exit_code {
+            let worst = loaded
+                .iter()
+                .map(|l| l.audit.verdict())
+                .max()
+                .unwrap_or(gitreceipts::reconcile::Status::Green);
+            exit_with_verdict(worst);
+        }
+        return Ok(());
+    }
     report::project_header(&project.display().to_string(), loaded.len(), opts.color);
     let rows: Vec<(String, gitreceipts::reconcile::LandingSummary)> = repos
         .iter()
@@ -347,6 +402,14 @@ fn run_project(
         );
     }
     finish_pager(pager);
+    if exit_code {
+        let worst = loaded
+            .iter()
+            .map(|l| l.audit.verdict())
+            .max()
+            .unwrap_or(gitreceipts::reconcile::Status::Green);
+        exit_with_verdict(worst);
+    }
     Ok(())
 }
 

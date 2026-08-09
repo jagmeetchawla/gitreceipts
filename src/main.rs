@@ -148,6 +148,17 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// per-commit drill-down. Like `git log --oneline`. Console only.
         #[arg(long)]
         oneline: bool,
+        /// The condensed view: the headline, then ONE table — commit ·
+        /// subject · claims · findings. Findings of any age plus the recent
+        /// tail; zeros never printed; every cause named; `—` means clean.
+        /// The agent-native default view. (alias: --brief)
+        #[arg(long, alias = "brief")]
+        summary: bool,
+        /// With --summary or --oneline: status dots as emoji (🟢⚪🟡🔴)
+        /// instead of ANSI color — for chat surfaces that strip terminal
+        /// colors.
+        #[arg(long)]
+        emoji: bool,
         /// Print each commit's full conversation (every prompt and assistant
         /// message), not just intent + summary. Most useful scoped with
         /// --commit — the whole session gets long. Implies --verbose.
@@ -194,6 +205,19 @@ a pipe or redirect never pages. Use --no-pager to opt out."
         /// merges) as before.
         #[arg(long)]
         full_history: bool,
+        /// Exit with the verdict: 0 = green or grey (the equation balances),
+        /// 1 = amber (unexplained residue), 2 = red (a broken promise). For
+        /// CI gates; a red-only gate tests exit >= 2. Grey never raises the
+        /// exit code — explained findings are not failures. Default exit
+        /// semantics are unchanged without this flag.
+        #[arg(long)]
+        exit_code: bool,
+        /// Audit exactly THIS live session, found by identity: pass a unique
+        /// marker you have just echoed into the conversation, and the store
+        /// is searched for the session file that contains it. Beats --latest,
+        /// which guesses by file time and can race a parallel session.
+        #[arg(long, value_name = "MARKER", conflicts_with_all = ["latest", "all"])]
+        this_session: Option<String>,
     },
     /// Export the reconciled audit as a versioned JSON receipt.
     #[command(
@@ -341,6 +365,8 @@ fn main() -> Result<()> {
             format,
             expand,
             oneline,
+            summary,
+            emoji,
             full,
             verbose,
             with_output,
@@ -349,6 +375,8 @@ fn main() -> Result<()> {
             no_scan,
             no_pager,
             full_history,
+            exit_code,
+            this_session,
         } => audit::run(
             sessions,
             latest,
@@ -373,6 +401,8 @@ fn main() -> Result<()> {
                 with_output,
                 commit: None,
                 oneline,
+                summary,
+                emoji,
                 full,
                 project_section: false,
                 siblings: Vec::new(),
@@ -382,6 +412,8 @@ fn main() -> Result<()> {
             !no_scan,
             agent,
             full_history,
+            exit_code,
+            this_session,
         ),
         Cmd::Export {
             sessions,

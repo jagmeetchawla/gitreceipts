@@ -234,3 +234,74 @@ pub(crate) fn command_removes_path(command: &str, path: &str) -> bool {
     }
     false
 }
+
+/// Presentation-only failure triage (VERDICT: can never flip a verdict).
+/// Classifies a failed command by cited evidence; ambiguous stays "genuine".
+pub(crate) fn triage_failure(
+    command: &str,
+    output: &str,
+    user_abort: bool,
+    retried_ok: bool,
+) -> crate::reconcile::FailureTriage {
+    use crate::reconcile::FailureTriage;
+    if user_abort {
+        return FailureTriage {
+            class: "user-abort",
+            evidence: "stopped by the user — their stop, not the agent's failure".into(),
+        };
+    }
+    if retried_ok {
+        return FailureTriage {
+            class: "retried-and-passed",
+            evidence: "the same command ran again later and passed".into(),
+        };
+    }
+    // Exit-code conventions: nonzero that documented behavior defines as a
+    // RESULT, not an error. Program = first token, skipping VAR= prefixes.
+    let exit = output
+        .lines()
+        .next()
+        .and_then(|l| l.strip_prefix("Exit code "))
+        .and_then(|n| n.trim().parse::<u32>().ok());
+    let program = command
+        .split_whitespace()
+        .find(|t| !t.contains('='))
+        .unwrap_or("");
+    let program = program.rsplit('/').next().unwrap_or(program);
+    if exit == Some(1) {
+        let convention = match program {
+            "grep" | "rg" | "egrep" | "fgrep" | "ugrep" => Some("no match"),
+            "diff" | "cmp" => Some("inputs differ"),
+            "test" | "[" | "[[" => Some("condition false"),
+            _ => None,
+        };
+        if let Some(meaning) = convention {
+            return FailureTriage {
+                class: "expected-nonzero",
+                evidence: format!("exit 1 — {program}'s documented \"{meaning}\" result"),
+            };
+        }
+    }
+    if command.contains("||") || command.trim_start().starts_with("! ") {
+        return FailureTriage {
+            class: "guarded",
+            evidence: "the command guards its own nonzero path (`||`/`!`)".into(),
+        };
+    }
+    let low = output.to_ascii_lowercase();
+    if low.contains("operation not permitted") || low.contains("sandbox") {
+        return FailureTriage {
+            class: "sandbox-denial",
+            evidence: "blocked by the sandbox/permissions, not by the command".into(),
+        };
+    }
+    // No output excerpt here: evidence strings travel un-redacted into
+    // every surface, and raw output can carry home paths and usernames
+    // (the QA leak check caught exactly that). The output field itself
+    // ships alongside, through the normal redaction pipeline.
+    let _ = output;
+    FailureTriage {
+        class: "genuine",
+        evidence: "unclassified failure — its captured output is attached".into(),
+    }
+}

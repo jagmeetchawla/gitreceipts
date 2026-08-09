@@ -286,7 +286,10 @@ pub struct ExecutionFacts {
 #[derive(Debug, Serialize)]
 pub struct Balance {
     pub green: usize,
-    /// Amber = worth a look: residue, a failed command, or an errored MCP.
+    /// Grey = explained findings: scratch churn, failed commands, MCP errors
+    /// — each carries its explanation; the equation balances.
+    pub grey: usize,
+    /// Amber = unexplained residue: a loose end with no answer on record.
     pub amber: usize,
     pub red: usize,
     pub total: usize,
@@ -413,6 +416,12 @@ pub struct CommandRunReceipt {
     pub committed: bool,
     pub pushed: bool,
     pub failed: bool,
+    /// Failure triage (present iff failed): why it failed, with evidence.
+    /// Presentation-only — a class never changes the verdict.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_class: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_evidence: Option<String>,
     /// Captured output — the agent's own receipt for the un-verifiable tail,
     /// not proof. Present for failed commands by default, and for every
     /// command under `--with-output`.
@@ -620,6 +629,7 @@ impl Receipt {
             exceptions: audit.exceptions().into(),
             balance: Balance {
                 green,
+                grey: counts.grey,
                 amber,
                 red,
                 total: counts.total,
@@ -926,6 +936,8 @@ fn interval_receipt(
                     committed: r.committed,
                     pushed: r.pushed,
                     failed: r.failed,
+                    failure_class: r.triage.as_ref().map(|t| t.class.to_string()),
+                    failure_evidence: r.triage.as_ref().map(|t| t.evidence.clone()),
                     // Output when asked (--with-output) or when the command
                     // failed — a failure's output is the receipt you always
                     // want, and it's low-volume.
@@ -1018,6 +1030,7 @@ fn file_change(fc: &crate::gitio::FileChange) -> FileChangeReceipt {
 fn status_str(s: Status) -> &'static str {
     match s {
         Status::Green => "green",
+        Status::Grey => "grey",
         Status::Amber => "amber",
         Status::Red => "red",
     }
