@@ -4,10 +4,15 @@ description: Read a Claude Code session as a story with the git-receipts CLI —
 
 # git receipts — read the session as a story
 
+**recap answers "where are things". audit answers "where should I look".**
+Recap is the state-face you glance at; `/gitreceipts:audit` is the
+attention-ladder you climb.
+
 `git receipts` reconciles a Claude Code session log against the repo's git
 history, then reads it back: each prompt you typed → the work it drove →
 the commit it became. The checking always runs (git is the record the
-agent can't rewrite); recap just doesn't lead with the verdict.
+agent can't rewrite); recap just doesn't lead with the verdict. Same
+receipt, same checking — only the framing differs.
 
 ## Prerequisite: the binary
 

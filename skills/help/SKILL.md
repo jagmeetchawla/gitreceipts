@@ -21,8 +21,11 @@ checksum-verified prebuilt binary, no package manager needed.
 
 | | |
 |---|---|
-| **`/gitreceipts:recap`** | *what happened* — the story: what you asked, what the agent did, what landed. Fires on "what happened here", "catch me up", "recap that commit". |
-| **`/gitreceipts:audit`** | *did it land* — the verdict: every claimed edit checked against the real commit blobs, and the broken-promise count. Fires on "did that land", "any broken promises". |
+| **`/gitreceipts:recap`** | *where are things* — the state-face: what you asked, what the agent did, what landed. Fires on "what happened here", "catch me up", "recap that commit". |
+| **`/gitreceipts:audit`** | *where should I look* — the attention-ladder: every claimed edit checked against the real commit blobs, and the broken-promise count. Fires on "did that land", "any broken promises", and when a delegated lane reports done. |
+
+Same receipt and the same checking underneath — recap just doesn't lead with
+the score. Recap orients; the audit escalates.
 
 **Say it however you like** — both skills map plain language to scopes:
 

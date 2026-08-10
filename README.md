@@ -146,6 +146,11 @@ a full standalone tool — all of it works with no AI in the loop.
 
 ## 2. Read it — `git receipts`
 
+**recap answers "where are things". audit answers "where should I look".**
+Recap is the state-face you glance at; the audit is an attention-ladder you
+climb. Same receipt, same checking underneath — only the framing differs, and
+recap simply doesn't lead with the score.
+
 The default command answers *what happened here*. One command, one screen:
 
 ```bash
@@ -200,7 +205,13 @@ they're resolved. A recap is exactly where they belong.
 ## 3. Check it — `git receipts audit`
 
 Same receipt, verification brought forward. The question is no longer
-*what happened* but *did every claimed edit actually land*:
+*what happened* but *did every claimed edit actually land*.
+
+This is the **attention-ladder**, and the word is close to literal: the
+four-dot verdict is the ladder, and every switch here is a rung on it —
+`--filter red-amber` climbs to what's unanswered, `--filter grey` drops to
+what's already explained, and `--exit-code` maps the same ladder onto 0/1/2
+for CI.
 
 ```bash
 git receipts audit --summary --emoji

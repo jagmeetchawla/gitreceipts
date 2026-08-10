@@ -4,12 +4,16 @@ description: Verify a Claude Code session against git history with the git-recei
 
 # git receipts — the verdict
 
+**recap answers "where are things". audit answers "where should I look".**
+This is the attention-ladder, and the word is close to literal: the four-dot
+verdict IS the ladder, and every switch below is a rung on it.
+
 The audit answers one question: **did every claimed edit actually land?**
 It reconciles the session log's file claims against the real commit blobs
 and reports what balanced, what didn't, and what nothing explains.
 
-For "what happened here", use `/gitreceipts:recap` — same receipt, read as
-a story. This skill is for when the number matters.
+For "where are things", use `/gitreceipts:recap` — same receipt, same
+checking, read as a state-face. This skill is for when the number matters.
 
 ## Prerequisite: the binary
 
