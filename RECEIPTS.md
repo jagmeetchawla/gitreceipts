@@ -2,31 +2,32 @@
 
 gitreceipts was built by an AI coding agent. So we pointed the shipped binary at
 its own construction and let it reconcile what the agent *claimed* against what
-git actually *recorded*, commit by commit. Numbers as of v0.1.0, launch day
-(2026-08-04); rerun the command below for the current ones.
+git actually *recorded*, commit by commit. Numbers as of **v0.1.1**
+(2026-08-09); rerun the command below for the current ones.
 
 ## The receipt
 
 ```
-window   2026-07-23 → 2026-08-04  (~12 days)
-events   10,139 kept / 19,501 log lines
+window   2026-07-23 → 2026-08-09  (~17 days)
 
-110 commits · 318 file-edit claims · 1,282 commands · 309 prompts
+173 commits · 347 file-edit claims · 2,104 commands · 497 prompts
 
-balance  86 green · 24 amber · 0 red  of 110 intervals   (78% green)
-claims   318 / 318 landed in git                         (100%)
+balance  136 green · 32 grey · 5 amber · 0 red  of 173 intervals
+claims   347 / 347 landed in git                            (100%)
 broken   0 broken promises
 ```
 
-**Every one of the 318 file edits the agent said it made landed in the git
-history — zero broken promises.** 14 of those claims landed a commit or two
-late and were content-verified against the commit they landed in. The 24 amber
-intervals are "worth a look," not lies: unclaimed changes git recorded (93 of
-them attributed to a command the agent ran, 2 dismissed as since-gitignored)
-plus commands that exited non-zero — 27 of 1,282, surfaced as *facts*, not
-manufactured into red (a failed `grep` often means the test passed; the tool
-never cries wolf). One in-window commit wasn't the agent's and is held out of
-the equation, counted honestly in the header.
+**Every one of the 347 file edits the agent said it made landed in the git
+history — zero broken promises.** 14 of those landed a commit or two late and
+were content-verified against the commit they landed in.
+
+The four marks say what they mean. **32 grey** intervals carry findings that
+already explain themselves — 43 commands exited non-zero out of 2,104, and 9
+of those were the author stopping the agent, not the agent failing. **5 amber**
+are the ones with no answer on record: 6 unclaimed changes git recorded that
+no command accounts for (242 others *are* accounted for by a command the agent
+ran, 1 dismissed as since-gitignored). **0 red.** One in-window commit wasn't
+the agent's and is held out of the equation, counted in the header.
 
 ## Reproduce it
 
@@ -35,8 +36,8 @@ The proof isn't these numbers — it's that you can run the same audit on
 
 ```sh
 # from inside any repo a coding agent has worked in
-git receipts audit                    # the whole spine, every session merged
-git receipts audit --latest --oneline # just the most recent session
+git receipts                          # what happened — every session merged
+git receipts audit                    # …and did every claimed edit land?
 git receipts export > receipt.json    # the versioned JSON receipt
 ```
 
@@ -46,28 +47,51 @@ the fact.
 
 ## The full dogfood corpus
 
-gitreceipts wasn't only pointed at itself. Launch-morning snapshot across every
-agent-driven project on the author's machine — **14 sessions · 11 repos · 5
-projects · ~221k LOC · 106 days · 3 models** (two projects are pre-announcement
-and appear under stealth labels; the numbers are real):
+gitreceipts wasn't only pointed at itself. Every agent-driven project on the
+author's machine, re-audited under v0.1.1 (two are pre-announcement and appear
+under stealth labels; the numbers are real):
 
-| Project | Stack | LOC | Sessions | Agent commits | Claims landed | Broken |
-|---|---|---|---|---|---|---|
-| a stealth macOS app | Swift/SPM · 3 worktrees | ~115k | 7 | 278 | 489/497 | 1 |
-| ClipBob (menu-bar app) | Swift/SPM | ~9k | 2 | 204 | 483/490 | 1 |
-| **gitreceipts** (this tool) | Rust | ~13k | 1 | 102 | 310/310 | 0 |
-| a private ops repo | Markdown/Shell | ~6k | 1 | 88 | 98/98 | 0 |
-| rustic-playground | Rust + Tauri + Svelte | ~39k | 2 | 70 | 98/100 | 0 |
-| four Astro/Wrangler sites | Astro | ~39k | 2 | 94 | 173/224 | 48 |
-| **Total** | five stacks | **~221k** | **14** | **836** | **1,651/1,719 (96%)** | **50** |
+| Project | Stack | Agent commits | Claims landed | Broken |
+|---|---|---|---|---|
+| a stealth macOS app | Swift/SPM · 3 worktrees | 273 | 477/493 | 3 |
+| ClipBob (menu-bar app) | Swift/SPM | 204 | 481/490 | 1 |
+| **gitreceipts** (this tool) | Rust | 173 | 347/347 | 0 |
+| a private ops repo | Markdown/Shell | 108 | 105/105 | 0 |
+| four Astro/Wrangler sites | Astro | 96 | 166/168 | 1 |
+| rustic-playground | Rust + Tauri + Svelte | 70 | 97/100 | 0 |
+| **Total** | five stacks | **924** | **1,673/1,703 (98%)** | **5** |
 
-Verdicts across the corpus: **682 green · 142 amber · 12 red** of 836 agent
-commits — and **every one of the 50 broken promises carries a diagnosis** (25
-scratch files written-and-discarded, 24 overwritten by build tooling before
-landing, 1 file still sitting uncommitted on disk). No mystery reds. The
-largest red cluster (the Astro sites) is build-tool churn — exactly the
-known-limitation the taxonomy refinement will move to amber
-(`KNOWN-LIMITATIONS.md` §1).
+Verdicts across the corpus: **752 green · 128 grey · 39 amber · 5 red** of 924
+agent commits.
+
+### The number that moved: 50 broken promises → 5
+
+At launch this table said **50**. The corpus has grown since, and the count
+fell by 90% — so it is worth saying exactly why, because "our bad number got
+better" is the one claim a tool like this cannot ask you to take on faith.
+
+Four of every five of those 50 were **the tool's fault, not the agent's**:
+
+- **~40 were cross-repo attribution.** A session driving several sibling
+  repos in one turn had its claims counted against every one of them, so
+  each repo was billed for edits that landed in its neighbour. Claims now
+  attribute by absolute-path containment; the four Astro sites went from 48
+  broken to 1.
+- **A cluster were scratch churn** — files written, used, and discarded
+  before any commit ever contained them. Nothing that was ever in git was
+  lost, so they resolve as grey findings with their reason attached rather
+  than counting as promises broken.
+- **One was a formatter.** A test file the agent wrote, which `cargo fmt`
+  rewrapped and gave a trailing comma before it was committed one commit
+  later. Verification looked for the exact bytes, found none, and called a
+  kept promise broken.
+
+The remaining **5 are real** and each carries its own diagnosis — a tracked
+file whose claimed content reached no later commit, which is exactly what red
+is for. What changed is not the standard; it is that red now means only that.
+The tool that found these four false-positive classes was this tool, auditing
+its own history — every one surfaced as an unexplained red that turned out to
+have an explanation the engine could see and wasn't using.
 
 The harness behind these numbers ships in [`qa/`](qa/) — run it on your own
 repos.

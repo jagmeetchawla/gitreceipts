@@ -462,15 +462,20 @@ every release; nothing ships while any number disagrees. It ships in
 [`qa/`](qa/) — point it at your own repos.
 
 **Dogfood.** gitreceipts was built by a coding agent and audited with
-itself, alongside every other agent-driven project on this machine: **14
-sessions · 11 repos · 5 projects · ~221k LOC across Swift, Rust, Svelte,
-Astro, and Tauri · 106 days · 3 models · 836 agent commits · 1,719 file
-claims — 96% landed in git, every exception diagnosed.** The full corpus
-table, including the per-project numbers and what the 50 broken promises
-turned out to be, is in [RECEIPTS.md](RECEIPTS.md).
+itself, alongside every other agent-driven project on this machine —
+Swift, Rust, Svelte, Astro and Tauri: **924 agent commits · 1,703 file
+claims — 98% landed in git, 5 broken promises, every one diagnosed.**
+
+That number was 50 at launch. Most of those turned out to be the *tool's*
+errors, not the agent's — claims from one repo billed against its
+siblings, scratch files that no commit ever contained, a formatter
+rewrapping a file between the write and the commit. Each was found by
+this tool auditing its own history. The full accounting, per project and
+per class, is in [RECEIPTS.md](RECEIPTS.md).
 
 The self-audit of this very repo — every claim landed, `broken promises: 0`
-earned, not asserted:
+earned, not asserted (screenshot from v0.1.0; the current numbers are in
+[RECEIPTS.md](RECEIPTS.md)):
 
 ![The self-audit of gitreceipts' own repo: 100% claims landed (324/324), 0 broken promises, the exception waterfall with every unclaimed change attributed, and the spine header noting one held-out commit](docs/images/self-audit-section.png)
 
