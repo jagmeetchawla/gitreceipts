@@ -219,7 +219,16 @@ amber means *nobody does yet*. `broken promises: 0` is earned, claim by
 claim — and a red is a **question, not a conviction**. It means nothing on
 record explains the claim; you may know something the log doesn't.
 
-<!-- SCREENSHOT: an audit with a real red, and its diagnosis line -->
+Here is an amber interval in full — and what makes it amber. Git recorded
+eight files; four are **attributed** to a command that ran in this
+interval, and one, `Cargo.lock`, is **residue**: changed, never claimed,
+nothing naming it. That single unaccounted-for line is the whole
+difference between 🟡 and ⚪:
+
+![An amber commit drill-down: badges for committed-by-agent and pushed, model provenance, the 8 files git recorded, four commands tagged by blast radius, then one residue line (Cargo.lock, changed and never claimed) beside four attributed ones, and the agent's own summary labelled as its own words, not verified](docs/images/commit-drilldown.png)
+
+*(No red to show you here — this repo has none. When there is one, it
+arrives with its diagnosis attached and is presented as a question.)*
 
 ```bash
 git receipts audit --filter red-amber   # just the unanswered ones
@@ -375,12 +384,11 @@ Think of it as bank reconciliation for agent work:
 The operating principle throughout: **when the evidence is ambiguous, the
 report says "ambiguous"** — it never picks the flattering interpretation.
 
-A real interval from this repo's own audit. Note the bottom half: one file
-git recorded is flagged **residue** — changed, never claimed — while four
-others are **attributed** to a command that ran in the same interval. That
-distinction is the difference between a loose end and an accounted-for one:
-
-![A commit drill-down: an amber interval, committed-by-agent and pushed badges, model provenance, the 8 files git recorded, four commands tagged by blast radius, then one residue line and four attributed ones, and the agent's own summary marked as unverified](docs/images/commit-drilldown.png)
+The [amber interval above](#3-check-it--git-receipts-audit) is this
+machinery in one frame: the statement (eight files git recorded), the
+ledger (three claims, all landed), the commands that ran with their blast
+radii, and then every leftover accounted for — four attributed to a
+command, one left as genuine residue.
 
 ## Your commits, not the whole repo
 
