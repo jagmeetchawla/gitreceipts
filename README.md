@@ -491,6 +491,45 @@ receipt in the JSON wrapper) is safe to hand out without exposing another
 repo's file tree. Truly-external writes (scratch dirs, memory files) still
 show their paths. `--project` and `--repo` are mutually exclusive.
 
+## Verifying a lane you can't see
+
+The use this tool was *not* designed for, and may be the one it's best at.
+
+Run several agents in parallel — a coordinating session relaying work
+between an engine lane, an app lane, a design lane — and the coordinator's
+job becomes passing along claims it cannot check. A lane reports *"done,
+all green."* That gets relayed upward as fact. The only other way to
+confirm it is to **ask the lane**, which is asking the party under review to
+file its own report.
+
+The lane writes its own summary. It does not write the git history.
+
+That's the whole argument, and it's why the competition here isn't
+"nothing" — it's the agent's own status report, which is always available,
+far richer, and free. gitreceipts doesn't beat it on richness and never
+will. It beats it on being **unfalsifiable**.
+
+We ran this on our own multi-lane work: four parallel sessions on a stealth
+macOS app, one coordinating three others across three worktrees. The
+coordinator audited a lane it had been relaying for six weeks without ever
+independently seeing, and the audit surfaced a **broken promise the lane
+had no explanation for** — a claimed edit to a tracked file whose content
+reached no later commit. That is the failure mode a status report
+structurally cannot catch, because the same party writes both.
+
+Two honest caveats from that run:
+
+- **Auditing your own live session is the least useful case.** An agent
+  with its context intact remembers more than any recap can reconstruct.
+  Recap is for whoever *wasn't there* — which is you, and which is also the
+  agent itself **after compaction**, when the receipts hand back a
+  prompt→commit chain the session no longer holds. git can't rewrite it.
+- **Picking one lane out of many is still manual.** By default gitreceipts
+  merges every session for a repo, which is right for solo work and wrong
+  here — it blends the lanes together. Isolating one currently means
+  identifying its session file yourself. A first-class way to list and
+  select sessions is the top item on the roadmap for this workflow.
+
 ## Where sessions come from
 
 v0.1 reads Claude Code session logs (the JSONL under `~/.claude/projects/`).

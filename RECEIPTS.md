@@ -98,5 +98,30 @@ The tool that found these four false-positive classes was this tool, auditing
 its own history — every one surfaced as an unexplained red that turned out to
 have an explanation the engine could see and wasn't using.
 
+
+### Dogfooded across four parallel agent lanes
+
+The corpus above is one agent at a time. The stealth macOS app is also run
+the other way: **four concurrent sessions across three worktrees**, one
+coordinating the other three.
+
+The coordinating session audited a lane it had been relaying for six weeks
+and had never independently seen — a transcript far too large to read. The
+audit returned a **broken promise the lane had no explanation for**: a
+claimed edit to a tracked file whose content reached no later commit. Not a
+false positive of the kind this page catalogues above; a real one, of the
+class red exists for.
+
+Its own read of the exercise, worth recording because it cuts both ways:
+auditing the session it was *living in* told it almost nothing it didn't
+already know, and auditing the lane it *couldn't see* was the first
+independent view it had ever had of that work. An agent holding its own
+context does not need a recap; the human does, and so does the agent once
+it has been compacted.
+
+Two limits that run exposed, both open: isolating one lane out of several
+is still manual (the default merges every session for a repo — right alone,
+wrong in parallel), and there is no "what changed since I last looked".
+
 The harness behind these numbers ships in [`qa/`](qa/) — run it on your own
 repos.
