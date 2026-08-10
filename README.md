@@ -375,10 +375,12 @@ Think of it as bank reconciliation for agent work:
 The operating principle throughout: **when the evidence is ambiguous, the
 report says "ambiguous"** — it never picks the flattering interpretation.
 
-A real interval from this repo's own audit — badges, per-commit model, the
-files git recorded, and every command with its blast radius:
+A real interval from this repo's own audit. Note the bottom half: one file
+git recorded is flagged **residue** — changed, never claimed — while four
+others are **attributed** to a command that ran in the same interval. That
+distinction is the difference between a loose end and an accounted-for one:
 
-![A commit drill-down: committed-by-agent and pushed badges, model provenance, 8 modified files git recorded, and radius-tagged commands](docs/images/commit-drilldown.png)
+![A commit drill-down: an amber interval, committed-by-agent and pushed badges, model provenance, the 8 files git recorded, four commands tagged by blast radius, then one residue line and four attributed ones, and the agent's own summary marked as unverified](docs/images/commit-drilldown.png)
 
 ## Your commits, not the whole repo
 
@@ -513,10 +515,9 @@ this tool auditing its own history. The full accounting, per project and
 per class, is in [RECEIPTS.md](RECEIPTS.md).
 
 The self-audit of this very repo — every claim landed, `broken promises: 0`
-earned, not asserted (screenshot from v0.1.0; the current numbers are in
-[RECEIPTS.md](RECEIPTS.md)):
+earned, not asserted:
 
-![The self-audit of gitreceipts' own repo: 100% claims landed (324/324), 0 broken promises, the exception waterfall with every unclaimed change attributed, and the spine header noting one held-out commit](docs/images/self-audit-section.png)
+![gitreceipts auditing its own repo: 8 sessions merged over 17 days, 100% of claims landed (347/347), 0 broken promises, 41 commands with errors surfaced as facts, and the exception waterfall accounting for all 239 unclaimed changes — 232 attributed to a command the agent ran, 6 unexplained](docs/images/self-audit-section.png)
 
 **Release provenance.** Every release tarball is built by a public GitHub
 Actions run (tests execute per-target) and carries a **build-provenance

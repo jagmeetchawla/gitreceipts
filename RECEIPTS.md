@@ -8,12 +8,13 @@ git actually *recorded*, commit by commit. Numbers as of **v0.1.1**
 ## The receipt
 
 ```
-window   2026-07-23 → 2026-08-09  (~17 days)
+window   2026-07-23 12:25Z → 2026-08-09 22:35Z   (17d 10h, 8 sessions)
+events   13,573 kept / 26,755 log lines
 
-173 commits · 347 file-edit claims · 2,104 commands · 497 prompts
+169 commits · 347 file-edit claims · 2,061 commands · 479 prompts
 
-balance  136 green · 32 grey · 5 amber · 0 red  of 173 intervals
-claims   347 / 347 landed in git                            (100%)
+balance  133 of 169 intervals fully balanced             (79%)
+claims   347 / 347 landed in git                        (100%)
 broken   0 broken promises
 ```
 
@@ -21,13 +22,17 @@ broken   0 broken promises
 history — zero broken promises.** 14 of those landed a commit or two late and
 were content-verified against the commit they landed in.
 
-The four marks say what they mean. **32 grey** intervals carry findings that
-already explain themselves — 43 commands exited non-zero out of 2,104, and 9
-of those were the author stopping the agent, not the agent failing. **5 amber**
-are the ones with no answer on record: 6 unclaimed changes git recorded that
-no command accounts for (242 others *are* accounted for by a command the agent
-ran, 1 dismissed as since-gitignored). **0 red.** One in-window commit wasn't
-the agent's and is held out of the equation, counted in the header.
+Everything else is a finding, and each one says what it is. Git recorded 239
+changes no edit claim covered: **232 are accounted for** by a command the
+agent ran, 1 was dismissed as since-gitignored, and **6 are unexplained** —
+the only ones that colour an interval amber. 41 of 2,061 commands exited
+non-zero, 7 of them the author stopping the agent rather than the agent
+failing; those are grey, never red. One in-window commit wasn't the agent's
+and is held out of the equation, counted in the header.
+
+479 prompts drove those 169 commits — which is the other half of the point:
+the receipt is not only a check, it is the fastest way to read back what
+seventeen days of agent work actually was.
 
 ## Reproduce it
 
