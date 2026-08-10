@@ -450,6 +450,23 @@ audit that filtered everything out looks exactly like an audit that found
 nothing wrong, and only one of those is true — so it names the identity it
 resolved, tells you how to check it, and stops.
 
+**If git has no identity at all** — `user.name` and `user.email` both unset,
+which happens on a machine you only ever pull to — there is nothing to match
+on, and filtering would be a guess dressed as a fact. So the run is
+**equivalent to `--all-authors`**: every commit is treated as yours. It says
+so rather than implying a filter ran:
+
+```
+you: (git user.name and user.email are both unset)
+     (everyone — git has no user.name or user.email set here,
+      so whose commits these are cannot be determined)
+```
+
+Be aware of what that costs: on such a machine the multi-contributor
+protection is **off**. In a shared repo a colleague's commits would count as
+the agent's, which is exactly what identity exists to prevent. Setting
+`user.name` and `user.email`, or passing `--me`, restores it.
+
 | | |
 |---|---|
 | `--me <name\|email>` | count another identity as you (repeatable) |

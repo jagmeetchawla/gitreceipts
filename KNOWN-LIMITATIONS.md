@@ -79,6 +79,12 @@ What remains true: attributing *what someone else did* would need **their**
 session logs, which you don't have. Their commits are shown and counted,
 never explained.
 
+**With no git identity configured, there is no filter.** If `user.name` and
+`user.email` are both unset, nothing can be matched and the run behaves like
+`--all-authors` — every commit counts as yours, stated plainly in the report
+header. On such a machine a colleague's commits would be counted as the
+agent's, which is what identity exists to prevent.
+
 **And one thing git genuinely cannot tell you.** Every coding agent commits
 under *your* git identity — Claude runs `git commit` with your
 `user.name`/`user.email`, and so does every other tool. So git cannot

@@ -77,6 +77,13 @@ covered (`191 of 204 commits are yours`), names identities it skipped, and
 everything out is indistinguishable from one that found nothing wrong.
 Override with `--me <name|email>` (repeatable) or `--all-authors`.
 
+**No identity at all** — `user.name` and `user.email` both unset, common on
+a machine you only pull to — makes the run **equivalent to
+`--all-authors`**: nothing can be matched, so everything is treated as
+yours, and the report says so rather than implying a filter ran. The
+multi-contributor protection is off in that state; setting the config, or
+passing `--me`, restores it.
+
 What git *cannot* tell you: every coding agent commits under your identity,
 so an agent's commit and one you typed are identical to git. Only a session
 log separates them, and only for the sessions a run loaded.
