@@ -43,10 +43,13 @@ record · 🔴 a broken promise: a claimed edit git never got. The verdict is
 what git can witness; everything else is a finding. `broken promises: 0`
 is earned, not assumed — and a red is a question, not a conviction.
 
-**Things to keep.** Say **report** for a self-contained HTML page
-(`--compact` keeps it small enough to open anywhere), or
-`git receipts export > receipt.json` for the same numbers machine-readable
-— commit it, diff it, feed it to tools.
+**Three ways to keep it** — same receipt, different artifact:
+
+| | |
+|---|---|
+| **`/gitreceipts:HTMLReport-Compact`** | a small page that renders right here in the preview. One commit is ~20KB; a whole repo a few hundred. Findings keep their full detail; everything else collapses, and every cap says what it hid. |
+| **`/gitreceipts:HTMLReport-Full`** | the complete record — every commit's files, commands and conversation — opened in your browser. Too big for a preview pane by design. |
+| **`/gitreceipts:JSONExport`** | the data: a versioned receipt to commit, diff between runs, or feed to another tool. Same numbers as both pages. |
 
 **Sharing.** Reports are built from your prompts and command output —
 private by default. For a shareable one: `--no-intent` (drops the
