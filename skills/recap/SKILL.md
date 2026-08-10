@@ -47,6 +47,26 @@ Detect what's available (`command -v brew; command -v cargo`) and ask:
 
   **The checksum line must print `OK`** — never proceed past a failed one.
 
+  Then, optionally, verify PROVENANCE — which commit and which CI run built
+  that tarball. Probe the SUBCOMMAND, not `gh` itself: the attestation
+  command arrived in gh 2.49, and on an older gh `command -v gh` succeeds
+  while the call dumps a usage screen. A confusing error during a security
+  check is worse than no check, because the user cannot tell whether their
+  DOWNLOAD is suspect or the tool is.
+
+  ```bash
+  if gh attestation --help >/dev/null 2>&1; then
+    gh attestation verify "$A" -R jagmeetchawla/gitreceipts
+  else
+    echo "provenance check skipped — needs gh 2.49+; the checksum above is the gate"
+  fi
+  ```
+
+  Say which one you got. The checksum proves the bytes match what was
+  published; the attestation proves who published them. brew and cargo
+  verify integrity on their own, so this is the only route where the user
+  does it by hand — and the route taken by machines with the fewest tools.
+
 If `which -a git-receipts` shows more than one path, say which one wins and
 that the others are shadowed — an older copy earlier on PATH silently
 decides everything below.
