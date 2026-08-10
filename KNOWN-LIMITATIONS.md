@@ -185,3 +185,59 @@ oversight question after a day away is *what moved since yesterday*, and
 today the repo-wide default answers it by showing everything, oldest
 findings included, with recent work no more prominent than months-old
 history. `--latest` narrows to one session, which is not the same question.
+
+## 12. `genuine` is a residual failure class, not a diagnosis
+
+Every failed command is triaged — expected-nonzero, guarded, retried-and-passed,
+user-abort, sandbox-denial, or **`genuine`**. That last one is what's left when
+no known-benign pattern matched, and its evidence string says so
+(*"unclassified failure — its captured output is attached"*). The **name**
+reads like a positive finding of a real problem, which is not what it means.
+
+In one real audit, 132 of 143 failed commands landed there. Reading their
+captured output, the actual mix was: a command run from the wrong working
+directory, commands the harness blocked, a genuine scripting bug, real network
+failures during DNS propagation, cleanup of paths that didn't exist — and at
+least one **harness cancellation that should have been `user-abort`**.
+
+Treat `genuine` as *"we could not classify this — read the output"*, which is
+what the export's `failure_evidence` is for. Renaming it, and adding the
+classes that are cheap to detect, is the top item on the roadmap.
+
+## 13. Files written by shell commands aren't always attributed
+
+A file the agent creates through the Write/Edit tools is a claim. A file it
+creates by running `cp`, `sips`, `convert`, or a script is not — the ledger
+never sees it, so it surfaces as unexplained residue.
+
+Command attribution catches many of these already: if the path appears as a
+whole token in a command that ran in the same interval, it's attributed. What
+it cannot catch is a path that **never appears in the command at all** — a
+Python script that writes `favicon-16.png`, a build tool that fills a
+directory.
+
+This matters because agents shell out constantly for anything binary or bulk,
+so the noise scales with how much real work the agent did — the worst shape a
+false positive can have. Note the flip side, which is the feature working: a
+file a *human* dropped into the repo and the agent committed is also residue,
+and should stay visible.
+
+## 14. Project-mode exports repeat session-level events per repo
+
+When one session drives several repos under `--project`, each repo's section
+of the JSON export carries that session's command runs. The same command can
+therefore appear in several repos' sections, because it genuinely falls
+between two commits in each of them.
+
+The rendered output is unaffected — per-repo and per-commit figures are
+correct. But **a consumer summing a field across repos will over-count**: in
+one real audit, one repo showed 34 failed commands while naively summing all
+four gave 143.
+
+Two rules for anyone parsing the export:
+
+- **Don't sum across repos** in project mode without deduplicating.
+- **Don't derive broken-promise counts from `ledger[].landing`.** Use
+  `summary.broken_promises`. A never-landed claim may carry a `resolution`
+  (superseded, deliberately removed, gitignored, scratch churn), and resolved
+  claims are not broken promises.
