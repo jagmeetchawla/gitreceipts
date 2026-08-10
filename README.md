@@ -44,6 +44,15 @@ That checking is always running; `git receipts audit` is where it takes
 the headline — every claim accounted for, and the number that matters:
 **broken promises**, claims git never got that nothing explains.
 
+It follows **git's own conventions**, and adds no configuration of its own.
+Git decides whose commits are yours — `user.name` / `user.email`, matched on
+author or committer, `.mailmap` honoured — and `.gitignore` decides which
+paths git was never going to take, so a claimed edit to one of those is an
+explained finding rather than a broken promise. Both are settings you
+already maintain, and every report states the identity it used and how much
+of the window it covered. See
+[your commits, not the whole repo](#your-commits-not-the-whole-repo).
+
 The account is also **yours**. Everything runs locally. It reads exactly one
 directory (your session logs) plus your repo, and sends nothing anywhere. A
 mirror for your own work, not a badge to show anyone. Details in
@@ -392,19 +401,70 @@ command, one left as genuine residue.
 
 ## Your commits, not the whole repo
 
-By default the verdict, balance, and spine cover **only the commits this
-agent made**. Commits in the same window that the agent *didn't* make — a
-teammate's push, a `git pull`/merge, your own hand-commits, an existing
-codebase's history swept into the window — are **held out** as context,
-never counted as the agent's residue or broken promises.
+gitreceipts is a git tool, so it asks **git** who you are and what git was
+told to ignore. It introduces no config of its own — the two inputs below
+are ones you already maintain, and `git log`, `git blame` and `git status`
+read them the same way.
 
-This is what makes gitreceipts usable when you adopt agentic development
-**on top of a mature codebase**: you get an account of *your agent's* work,
-not a wall of red for years of history it never touched.
+### Whose commits count — `user.name` / `user.email`
 
-Pass `--full-history` to put every in-window commit back in the equation. A
-count of what was held out is always shown, so nothing is hidden — e.g.
-*"99 agent commits · 3 commits by others held out."*
+A commit is **yours** when git records you as its **author or committer**,
+matched by **name or email**. Either side, either field, and `.mailmap` is
+honoured — so an old address, a squash-merge that lists the forge as
+committer, or a rebase of someone else's patch all still resolve to you.
+
+That looseness is deliberate. Matching too loosely costs you a stray commit
+inside your own audit; matching too tightly *silently drops your own work*.
+One repo in our own dogfood carries three different emails under one name —
+email-only matching would have claimed 59 of 242 commits and quietly
+discarded three quarters of the author's history as someone else's.
+
+Every report says which identity it used and how much of the window it
+covers, so a wrong `user.email` shows up as a line you can read rather than
+a smaller, cleaner-looking audit:
+
+```
+you: Ada Lovelace <ada@example.com>   (191 of 204 commits are yours)
+     not counted as you: A. Lovelace <old@corp.example> — if one of those is
+     also you, add it with --me, or map it in .mailmap
+```
+
+If **nothing** matches, gitreceipts refuses to print a report at all. An
+audit that filtered everything out looks exactly like an audit that found
+nothing wrong, and only one of those is true — so it names the identity it
+resolved, tells you how to check it, and stops.
+
+| | |
+|---|---|
+| `--me <name\|email>` | count another identity as you (repeatable) |
+| `--all-authors` | include everyone's commits |
+| `--full-history` | include your own commits this agent didn't make |
+
+The last two are different axes and compose: `--full-history` opens **when**
+(your hand-made commits, not just this session's), `--all-authors` opens
+**who**. Opening one never opens the other, so a full-history run still
+won't bill you for a colleague's work.
+
+Holding other people's commits out is what makes gitreceipts usable when
+you adopt agentic development **on top of a mature codebase**: you get an
+account of *your agent's* work, not a wall of red for years of history it
+never touched. A count of what was held out is always shown.
+
+### What git was told to ignore — `.gitignore`
+
+A path matched by `.gitignore` (or `.git/info/exclude`, or your global
+excludes) is one git was **configured never to take**. So when a claimed
+edit to such a path never lands, that is not a broken promise — it is git
+doing exactly what you told it. Those are reported as **explained
+findings**, with the reason attached, and never as a lie. An agent writing
+into `dist/` or `target/` no longer produces a red the moment that output
+is cleaned.
+
+`.gitignore` is the right place for this precisely because it **costs
+something to abuse**: you cannot quietly add `src/` to it without git
+actually ignoring your source. A private config file that only this tool
+reads would have no such cost, and could be tuned into a permanently green
+report.
 
 ## Projects — several repos, one session
 

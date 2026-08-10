@@ -280,11 +280,16 @@ bal = s["balance"]; exe = s["execution"]
 want = {"commits": s["commits"], "broken": s["broken_promises"],
         "landed": s["claims_landed"], "total_claims": s["claims_total"],
         "landed_late": ex["landed_late"], "unclaimed_total": ex["unclaimed_total"],
-        "keyframes": ex["keyframes"], "created_elsewhere": ex["created_elsewhere"],
+        "keyframes": ex["keyframes"],
         "failed": ex["failed_commands_or_edits"],
         # color balance + execution-error counts (the amber model)
         "green": bal["green"], "grey": bal.get("grey"), "amber": bal["amber"], "red": bal["red"],
-        "cmd_errors": exe["os_fs_failed"], "mcp_errors": exe["mcp_errored"], "residue_files": s["residue_files"]}
+        "cmd_errors": exe["os_fs_failed"], "mcp_errors": exe["mcp_errored"], "residue_files": s["residue_files"],
+        # Identity (0.1.3): git config decides WHOSE commits the verdict covers,
+        # so the two counts must agree across all three formats like any other
+        # headline number. A console saying "180 of 180" beside a JSON saying
+        # something else would make the filter unauditable.
+        "commits_mine": s["commits_mine"], "commits_total": s["commits_total"]}
 got_text = {"commits": g(t, r"drove (\d+) commits"),
             "broken": g(t, r"broken promises \(claimed, never landed, nothing explains it\): (\d+)"),
             "landed": g(t, r"(\d+)/\d+ claimed files landed"),
@@ -292,8 +297,11 @@ got_text = {"commits": g(t, r"drove (\d+) commits"),
             "landed_late": g(t, r"claims that landed late: (\d+)"),
             "unclaimed_total": g(t, r"unclaimed changes \(git recorded it, no matching edit claim\): (\d+)"),
             "keyframes": g(t, r"(\d+) commits? not made by this session"),
-            "created_elsewhere": g(t, r"(\d+) created elsewhere"),
             "failed": g(t, r"failed commands or edits: (\d+)"),
+            # Anchored to the "you:" header line, for the same reason as the
+            # balance fields below: session prose quotes this output verbatim.
+            "commits_mine": g(t, r"(?m)^you: .*\((\d+) of \d+ commits are yours\)"),
+            "commits_total": g(t, r"(?m)^you: .*\(\d+ of (\d+) commits are yours\)"),
             # Anchor EVERY field to the balance line itself. A session's own
             # prose quotes audit output verbatim (this repo's commits are full
             # of it), so an unanchored "green · N grey" reads the conversation
@@ -315,14 +323,17 @@ got_html = {"commits": g(h, r"green · \d+/(\d+)</span>"),
             "landed_late": g(h, r"claims that landed late: (\d+)"),
             "unclaimed_total": g(h, r"unclaimed changes \(git recorded it, no matching edit claim\): (\d+)"),
             "keyframes": g(h, r"(\d+) commit\(s\) not made by this session"),
-            "created_elsewhere": None, "failed": None,
+            "failed": None,
+            # Identity counts, anchored to the "· you:" line in the outcome block.
+            "commits_mine": g(h, r"· you: .*?(\d+) of \d+ commits in this window are yours"),
+            "commits_total": g(h, r"· you: .*?\d+ of (\d+) commits in this window are yours"),
             "green": g(h, r"class=.balance.>balance: (\d+) green"),
             "grey": g(h, r"class=.balance.>balance: \d+ green · (\d+) grey"),
             "amber": g(h, r"class=.balance.>balance: \d+ green · \d+ grey · (\d+) amber"),
             "red": g(h, r"class=.balance.>balance: \d+ green · \d+ grey · \d+ amber · (\d+) red"),
             "cmd_errors": g(h, r"<b>(\d+)</b><span>commands with errors"),
             "mcp_errors": g(h, r"<b>(\d+)<.b><span>MCP with errors"), "residue_files": g(h, r"<b>(\d+)<.b><span>residue<")}
-html_skip = {"created_elsewhere", "failed"}
+html_skip = {"failed"}
 def consistent(got, want): return got == want or (got is None and want == 0)
 ok = True
 for k in want:

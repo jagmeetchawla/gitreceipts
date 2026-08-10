@@ -73,9 +73,19 @@ struct Scope {
     /// THIS live session, found by a unique marker you just echoed.
     #[arg(long, value_name = "MARKER", conflicts_with_all = ["latest", "all"])]
     this_session: Option<String>,
-    /// Include commits this agent didn't make (teammates, pulls, merges).
+    /// Include your own commits this agent didn't make (hand-made, pulls,
+    /// merges). Opens the WHEN axis; other people's commits stay out.
     #[arg(long)]
     full_history: bool,
+    /// Include commits by OTHER people. Opens the WHO axis: by default a
+    /// colleague's commit is theirs, and neither its unexplained files nor
+    /// its verdict is yours.
+    #[arg(long)]
+    all_authors: bool,
+    /// Also count this name or email as you (repeatable). Use when a repo's
+    /// git identity differs from the one that made the commits.
+    #[arg(long = "me", value_name = "NAME|EMAIL")]
+    me: Vec<String>,
 }
 
 /// WHAT TO HIDE. Identical for every command — privacy that varied by
@@ -336,6 +346,12 @@ EXAMPLES:
         /// agent's own commits (the default). See `audit --full-history`.
         #[arg(long)]
         full_history: bool,
+        /// Include commits by other people. See `audit --all-authors`.
+        #[arg(long)]
+        all_authors: bool,
+        /// Also count this name or email as you (repeatable).
+        #[arg(long = "me", value_name = "NAME|EMAIL")]
+        me: Vec<String>,
     },
     /// Write roff man pages for this CLI into a directory.
     ///
@@ -478,6 +494,8 @@ fn main() -> Result<()> {
                 !privacy.no_scan,
                 scope.agent,
                 scope.full_history,
+                scope.all_authors,
+                &scope.me,
                 false,
                 scope.this_session,
             )
@@ -523,6 +541,8 @@ fn main() -> Result<()> {
                 !privacy.no_scan,
                 scope.agent,
                 scope.full_history,
+                scope.all_authors,
+                &scope.me,
                 exit_code,
                 scope.this_session,
             )
@@ -547,6 +567,8 @@ fn main() -> Result<()> {
             full,
             compact,
             full_history,
+            all_authors,
+            me,
         } => export::run(
             sessions,
             latest,
@@ -568,6 +590,8 @@ fn main() -> Result<()> {
             !no_scan,
             agent,
             full_history,
+            all_authors,
+            &me,
         ),
     }
 }

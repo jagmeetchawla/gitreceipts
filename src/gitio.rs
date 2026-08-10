@@ -39,6 +39,12 @@ pub struct SpineCommit {
     /// Who git records as the author: "Name <email>". Identity, not
     /// authorship method — a name never tells you agent-vs-hand-coded.
     pub author: String,
+    /// Who git records as the committer: "Name <email>". Usually the same
+    /// person as the author, but a rebase, cherry-pick, squash-merge or a
+    /// commit made through a forge's web UI keeps YOU as author while
+    /// someone (or something) else becomes the committer. Both are checked
+    /// when deciding whether a commit is yours — see [`Identity`].
+    pub committer: String,
     /// `Co-Authored-By:` trailer values from the commit message, e.g.
     /// "Claude Opus 4.8 <noreply@anthropic.com>". Present-only evidence of
     /// co-authorship (an agent, a pair); absence proves nothing.
@@ -107,7 +113,7 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
             "log",
             "-g",
             "--date=iso-strict",
-            "--format=%H%x00%h%x00%cI%x00%gd%x00%P%x00%gs%x00%an%x00%ae%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)%x00%s",
+            "--format=%H%x00%h%x00%cI%x00%gd%x00%P%x00%gs%x00%aN%x00%aE%x00%cN%x00%cE%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)%x00%s",
         ],
     )?;
     let reachable_raw = git(repo, &["rev-list", "--branches", "--tags", "HEAD"])?;
@@ -129,9 +135,13 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
             Some(gs),
             Some(aname),
             Some(aemail),
+            Some(cname),
+            Some(cemail),
             Some(co_raw),
             Some(subject),
         ) = (
+            parts.next(),
+            parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
@@ -182,6 +192,7 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
                 clock_anomaly: false,
                 from_history: false,
                 author: format!("{aname} <{aemail}>"),
+                committer: format!("{cname} <{cemail}>"),
                 co_authors: parse_co_authors(co_raw),
             },
             inside,
@@ -218,7 +229,7 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
         &[
             "log",
             "--all",
-            "--format=%H%x00%h%x00%cI%x00%P%x00%an%x00%ae%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)%x00%s",
+            "--format=%H%x00%h%x00%cI%x00%P%x00%aN%x00%aE%x00%cN%x00%cE%x00%(trailers:key=Co-authored-by,valueonly,separator=%x1f)%x00%s",
         ],
     )?;
     let mut extra: Vec<SpineCommit> = Vec::new();
@@ -231,9 +242,13 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
             Some(parents),
             Some(aname),
             Some(aemail),
+            Some(cname),
+            Some(cemail),
             Some(co_raw),
             Some(subject),
         ) = (
+            parts.next(),
+            parts.next(),
             parts.next(),
             parts.next(),
             parts.next(),
@@ -268,6 +283,7 @@ pub fn spine(repo: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<
             clock_anomaly: false,
             from_history: true,
             author: format!("{aname} <{aemail}>"),
+            committer: format!("{cname} <{cemail}>"),
             co_authors: parse_co_authors(co_raw),
         });
     }

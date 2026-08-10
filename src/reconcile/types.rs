@@ -57,6 +57,10 @@ pub struct LedgerLine {
     /// (never in history, gone from disk). Resolved — never a broken
     /// promise — but it AMBERS the interval: worth a look, not a lie.
     pub scratch: bool,
+    /// The path is gitignored, so git was never going to record it.
+    /// Resolved — never a broken promise — and GREY: an explained finding,
+    /// not an unexplained loose end.
+    pub gitignored: bool,
 }
 
 /// A draft commit replaced by an amend moments later — collapsed out of the
@@ -120,6 +124,12 @@ pub struct McpRun {
 pub struct Interval {
     pub commit: SpineCommit,
     pub agent_committed: bool,
+    /// Git's own record says this commit is YOURS — matched on author or
+    /// committer, by name or email. A commit that is not yours can never be
+    /// stamped `agent_committed`, so a colleague's work cannot enter your
+    /// verdict or become your residue. True for everything when no git
+    /// identity is configured, in which case the report says so.
+    pub mine: bool,
     /// This commit is reachable from a remote-tracking ref — pushed as of
     /// the repo's last fetch.
     pub pushed: bool,
@@ -212,6 +222,7 @@ impl Interval {
             // answer on record.
             Status::Amber
         } else if self.ledger.iter().any(|l| l.scratch)
+            || self.ledger.iter().any(|l| l.gitignored)
             || self.commands_run.iter().any(|c| c.failed)
             || self.mcp_runs.iter().any(|m| m.errored)
         {
@@ -281,8 +292,6 @@ pub struct Exceptions {
     /// Commits not made by this session (keyframes) vs made by it.
     pub keyframes: usize,
     pub agent_committed: usize,
-    /// Commits created elsewhere (pulled/fetched — absent from the reflog).
-    pub created_elsewhere: usize,
     /// Commands or edits the oracle reported as failed.
     pub failed_commands_or_edits: usize,
 }
@@ -332,6 +341,21 @@ pub struct Audit {
     /// an existing codebase. `--full-history` sets it true (the old behavior).
     /// Set by the caller after `reconcile` (which always leaves it false).
     pub full_history: bool,
+    /// Include commits by OTHER people — `--all-authors`. Default false: a
+    /// colleague's commit is theirs, and neither its residue nor its
+    /// verdict is yours. Set by the caller after `reconcile`.
+    pub all_authors: bool,
+    /// Was a git identity resolvable at all? False when `user.name` and
+    /// `user.email` are both unset, in which case every commit is treated
+    /// as yours and the report SAYS so rather than implying a filter ran.
+    pub identity_known: bool,
+    /// How the identity reads, for the message when nothing matches.
+    pub identity_described: String,
+    /// A git identity WAS resolved, the window HAS commits, and not one of
+    /// them is yours. Almost always the wrong identity for this clone
+    /// rather than a real "you did nothing here" — and it must never be
+    /// allowed to render as a confident, empty, green audit.
+    pub identity_matched_nothing: bool,
 }
 
 /// The headline numbers, computed over the equation set once so console, HTML,
@@ -352,6 +376,13 @@ pub struct Counts {
     /// Non-agent commits excluded from the equation (0 under --full-history) —
     /// reported as context, never as the agent's residue or broken promises.
     pub keyframes_excluded: usize,
+    /// EVERY commit in the session's time window, whoever made it. The
+    /// denominator the other two counts are honest about.
+    pub commits_total: usize,
+    /// Commits git records as YOURS (author or committer, name or email).
+    /// Equals `commits_total` when no git identity is configured — the
+    /// report says so rather than implying a filter ran.
+    pub commits_mine: usize,
 }
 
 impl Audit {
@@ -398,11 +429,6 @@ impl Audit {
             dismissed,
             keyframes,
             agent_committed: self.intervals.len() - keyframes,
-            created_elsewhere: self
-                .intervals
-                .iter()
-                .filter(|i| i.commit.from_history)
-                .count(),
             failed_commands_or_edits: self.grades.failed,
         }
     }
@@ -416,7 +442,7 @@ impl Audit {
     pub fn residue_files(&self) -> usize {
         let mut set = std::collections::HashSet::new();
         for i in &self.intervals {
-            if i.agent_committed {
+            if i.agent_committed && (self.all_authors || i.mine) {
                 for r in &i.residue {
                     set.insert(r.path.as_str());
                 }
@@ -430,8 +456,15 @@ impl Audit {
     /// commits, pulls, pre-agent history) are context, not the agent's account.
     pub fn equation(&self) -> impl Iterator<Item = &Interval> {
         let full = self.full_history;
+        let all_authors = self.all_authors;
         self.intervals
             .iter()
+            // Two independent gates. `--full-history` opens the WHEN axis
+            // (your hand-made commits, not just this session's);
+            // `--all-authors` opens the WHO axis (other people's commits).
+            // Neither implies the other, so a plain --full-history run still
+            // will not bill you for a colleague's work.
+            .filter(move |i| all_authors || i.mine)
             .filter(move |i| full || i.agent_committed)
     }
 
@@ -474,6 +507,8 @@ impl Audit {
             claims_landed: 0,
             broken: 0,
             keyframes_excluded: self.keyframes_excluded(),
+            commits_total: self.intervals.len(),
+            commits_mine: self.intervals.iter().filter(|i| i.mine).count(),
         };
         for i in self.equation() {
             c.total += 1;

@@ -35,6 +35,8 @@ pub fn run(
     scan: bool,
     agent: gitreceipts::report::Agent,
     full_history: bool,
+    all_authors: bool,
+    me: &[String],
 ) -> Result<()> {
     if let Some(project) = project {
         return run_project(
@@ -54,6 +56,8 @@ pub fn run(
             scan,
             agent,
             full_history,
+            all_authors,
+            me,
         );
     }
 
@@ -76,6 +80,8 @@ pub fn run(
             scan,
             agent,
             full_history,
+            all_authors,
+            me,
         )?
     };
 
@@ -129,6 +135,8 @@ fn run_project(
     scan: bool,
     agent: gitreceipts::report::Agent,
     full_history: bool,
+    all_authors: bool,
+    me: &[String],
 ) -> Result<()> {
     if !sessions.is_empty() {
         bail!("--project exports the folder's own sessions; don't also pass session file(s)");
@@ -166,6 +174,8 @@ fn run_project(
             scan,
             agent,
             full_history,
+            all_authors,
+            me,
         )?;
         let landing = loaded.audit.landing_summary();
         let receipt = Receipt::build(

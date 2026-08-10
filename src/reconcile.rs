@@ -57,6 +57,19 @@ fn grade_command(claim: &Claim, corroborated: bool) -> Grade {
 }
 
 pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
+    reconcile_as(
+        repo,
+        session,
+        &crate::identity::Identity::resolve(repo, &[]),
+    )
+}
+
+/// Reconcile with an explicit identity — the caller decides who "you" are.
+pub fn reconcile_as(
+    repo: &Path,
+    session: &Session,
+    identity: &crate::identity::Identity,
+) -> Result<Audit> {
     let from = session.first_ts.unwrap_or(DateTime::<Utc>::MIN_UTC);
     let to = session.last_ts.unwrap_or(Utc::now()) + chrono::Duration::minutes(2);
     let raw_spine = gitio::spine(repo, from, to)?;
@@ -136,6 +149,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         intervals.push(Interval {
             commit: commit.clone(),
             agent_committed: false,
+            mine: identity.owns(&commit.author, &commit.committer),
             pushed: pushed_set.contains(&commit.hash),
             commands_run: Vec::new(),
             mcp_runs: Vec::new(),
@@ -172,6 +186,10 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
         // Default: verdict/balance cover the agent's own commits. The caller
         // flips this on for --full-history after reconcile returns.
         full_history: false,
+        all_authors: false,
+        identity_known: identity.known,
+        identity_described: identity.described.clone(),
+        identity_matched_nothing: false,
     };
 
     for prompt in &session.prompts {
@@ -328,8 +346,20 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                     && !failed
                     && let Some(idx) = idx
                 {
+                    // This mapping is POSITIONAL — the next `commit_count`
+                    // spine entries after the command are assumed to be the
+                    // ones it created. Alone in a repo that holds; with a
+                    // second contributor it does not, because their commit
+                    // (or a merge from a pull) can sit inside that index
+                    // range and would be stamped as the agent's. Identity
+                    // is the guard: a commit git does not record as yours
+                    // can never be claimed by your session, so a
+                    // colleague's work cannot become your residue or your
+                    // verdict.
                     for k in idx..(idx + commit_count).min(audit.intervals.len()) {
-                        audit.intervals[k].agent_committed = true;
+                        if audit.intervals[k].mine {
+                            audit.intervals[k].agent_committed = true;
+                        }
                     }
                     corroborated = true;
                 }
@@ -359,6 +389,7 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                 diagnosis: None,
                 reformatted: false,
                 scratch: false,
+                gitignored: false,
             });
         }
         interval.residue = interval
@@ -674,6 +705,20 @@ pub fn reconcile(repo: &Path, session: &Session) -> Result<Audit> {
                         .is_ok_and(|now| now.contains(probe))
             });
             let diagnosis = if gitio::is_ignored(repo, &line.path) {
+                line.gitignored = true;
+                // Git was CONFIGURED never to take this path, so its
+                // absence from history is the system working, not a promise
+                // broken. The write was real; git declined it by your own
+                // instruction. Nothing that was ever in git was lost —
+                // the same reasoning that stopped scratch churn being red.
+                // Resolved, and GREY rather than amber: this is an
+                // explained finding carrying the most declared explanation
+                // there is, a rule you wrote down and committed.
+                line.resolution = Some(
+                    "gitignored — git was configured never to take this path, so it was \
+                     never going to land. The write was real; nothing git held was lost"
+                        .to_string(),
+                );
                 "gitignored — the write was real but git never saw it"
             } else if on_disk_with_content {
                 "the content is on disk right now, still uncommitted — it never reached a commit"

@@ -12,6 +12,7 @@ pub mod extract;
 pub mod fmt;
 pub mod gitio;
 pub mod html;
+pub mod identity;
 pub mod ingest;
 pub mod receipt;
 pub mod reconcile;

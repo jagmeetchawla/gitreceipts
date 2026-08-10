@@ -251,10 +251,30 @@ fn a_teammates_commit_is_held_out_of_the_equation_by_default() {
     assert_eq!(c.keyframes_excluded, 1, "the teammate commit is held out");
     assert_eq!(audit.verdict(), audit.intervals[0].status());
 
-    // --full-history: the whole in-window spine is back in the equation.
+    // Identity, not position, is what holds Tess out: the default repo
+    // config makes THIS clone's owner someone else, so her commit is not
+    // yours and can never be stamped as the agent's.
+    assert!(audit.intervals[0].mine, "your own commit");
+    assert!(!audit.intervals[1].mine, "Tess's commit is not yours");
+    assert_eq!(c.commits_total, 2, "both commits are in the window");
+    assert_eq!(c.commits_mine, 1, "one of them is yours");
+
+    // --full-history opens the WHEN axis only: your commits that this
+    // session did not make. Tess is still not you, so she stays out. This
+    // is a deliberate contract change — before identity existed,
+    // --full-history swept in the whole spine and billed you for your
+    // teammates' work.
     audit.full_history = true;
     let c = audit.counts();
-    assert_eq!(c.total, 2, "both commits count");
+    assert_eq!(
+        c.total, 1,
+        "--full-history is about WHEN, not WHO — a teammate's commit stays out"
+    );
+
+    // --all-authors opens the WHO axis. Only now does Tess count.
+    audit.all_authors = true;
+    let c = audit.counts();
+    assert_eq!(c.total, 2, "both commits count under --all-authors");
     assert_eq!(c.keyframes_excluded, 0);
 }
 
@@ -1353,6 +1373,13 @@ fn multi_author_keyframe_residue_attributes_to_the_committer() {
     // — not "unexplained", and not this agent.
     let repo = TempRepo::new("multiauthor");
     let root = repo.root.display().to_string();
+    // You are Ada: the audit runs in Ada's clone, so git's own identity for
+    // this repo is hers. Without this the fixture had a teammate's identity
+    // in config and NEITHER commit matched — which is the real hazard this
+    // feature has to survive, covered on its own in
+    // `an_identity_matching_nothing_is_announced_not_silently_green`.
+    repo.git(&["config", "user.name", "Ada Lovelace"]);
+    repo.git(&["config", "user.email", "ada@studio.dev"]);
 
     // Ada's commit — the audited session made this one
     repo.write("a.txt", "x");
@@ -1925,4 +1952,72 @@ fn reformatting_tolerance_does_not_launder_a_different_file() {
         "different content is not a landing"
     );
     assert_eq!(audit.counts().broken, 1, "it stays a broken promise");
+}
+
+#[test]
+fn a_gitignored_claim_that_never_lands_is_grey_not_red() {
+    // Red means one thing: a claimed edit git never got, with nothing to
+    // explain it. A gitignored path has the most declared explanation there
+    // is — you wrote a rule telling git to refuse it, and committed that
+    // rule. The write was real; git declined it by your own instruction, so
+    // nothing git ever held was lost.
+    //
+    // This used to be RED whenever the file was no longer on disk (a clean,
+    // a rebuild). The tool printed "git never saw it" and then counted it as
+    // a broken promise — an agent writing into dist/ or target/ produced a
+    // false accusation the moment that output was cleaned.
+    let repo = TempRepo::new("ignored");
+    let root = repo.root.display().to_string();
+
+    repo.write(".gitignore", "dist/\n");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "ignore build output"],
+        Some("2026-01-01T10:00:20Z"),
+    );
+
+    // The agent writes a build artifact into the ignored directory, then the
+    // session commits something else. The artifact is gone from disk by the
+    // time we audit (cleaned), so it cannot be excused as "persisted
+    // outside git".
+    repo.write("src.txt", "source");
+    repo.git(&["add", "-A"]);
+    repo.git_at(
+        &["commit", "-q", "-m", "work"],
+        Some("2026-01-01T10:00:40Z"),
+    );
+
+    let mut s = SessionBuilder::new(&root);
+    s.user_text("2026-01-01T10:00:00Z", "build it")
+        .write_claim(
+            "2026-01-01T10:00:25Z",
+            "2026-01-01T10:00:26Z",
+            "dist/bundle.js",
+        )
+        .write_claim("2026-01-01T10:00:30Z", "2026-01-01T10:00:31Z", "src.txt")
+        .bash_claim(
+            "2026-01-01T10:00:39Z",
+            "2026-01-01T10:00:41Z",
+            "git add -A && git commit -m work",
+        );
+    let audit = run(&repo, &s);
+
+    let line = audit
+        .intervals
+        .iter()
+        .flat_map(|i| i.ledger.iter())
+        .find(|l| l.path == "dist/bundle.js")
+        .expect("the gitignored claim is still listed, never hidden");
+
+    assert_eq!(line.landing, Landing::Never, "it genuinely never landed");
+    assert!(line.gitignored, "and we know exactly why");
+    assert!(
+        line.resolution.is_some(),
+        "resolved: git was configured to refuse it, so it is not a broken promise"
+    );
+
+    let c = audit.counts();
+    assert_eq!(c.broken, 0, "a gitignored path is never a broken promise");
+    assert_eq!(c.red, 0, "and never reds an interval");
+    assert!(c.grey >= 1, "it is an EXPLAINED finding: grey, not amber");
 }

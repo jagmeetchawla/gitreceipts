@@ -164,7 +164,6 @@ fn render_body(
             100.0 * n as f64 / d as f64
         }
     };
-    let enriched = audit.intervals.iter().any(|i| !i.commit.from_history);
 
     let mut b = String::with_capacity(64 * 1024);
 
@@ -382,7 +381,6 @@ fn render_body(
             iv,
             show,
             show_identity,
-            enriched,
             expand,
             with_output,
             &convo,
@@ -729,6 +727,35 @@ fn render_summary(
     coauthors.sort_unstable();
     coauthors.dedup();
     b.push_str("<div class=\"heading\">who touched this repo <span class=\"dim\">(git identity — not how they authored)</span></div>");
+    // Whose commits the verdict covers, and how that was decided. gitreceipts
+    // reads git's OWN configuration — user.name/user.email decide this — so a
+    // report that hid which identity it used would not be reproducible.
+    {
+        let c = audit.counts();
+        let scope = if audit.all_authors {
+            "every contributor (--all-authors)".to_string()
+        } else if !audit.identity_known {
+            "git has no user.name or user.email here, so every commit is treated as yours"
+                .to_string()
+        } else {
+            format!(
+                "{} of {} commits in this window are yours",
+                c.commits_mine, c.commits_total
+            )
+        };
+        // --no-identity hides the name/email; the ratio stays, because a
+        // filtered report must never be able to pass as an unfiltered one.
+        let who = if show_identity {
+            crate::fmt::redact_home(&audit.identity_described)
+        } else {
+            "(identity hidden)".to_string()
+        };
+        b.push_str(&format!(
+            "<div class=\"line dim\">· you: {} — {}</div>",
+            esc(&who),
+            esc(&scope)
+        ));
+    }
     if show_identity {
         let _ = write!(
             b,
@@ -809,7 +836,6 @@ fn render_interval(
     iv: &crate::reconcile::Interval,
     show: Show,
     show_identity: bool,
-    enriched: bool,
     expand: Expand,
     with_output: bool,
     convo: &[crate::extract::Turn],
@@ -882,9 +908,6 @@ fn render_interval(
     }
     if !iv.agent_committed {
         b.push_str("<span class=\"tag\">keyframe</span>");
-    }
-    if enriched && iv.commit.from_history {
-        b.push_str("<span class=\"tag\">created elsewhere</span>");
     }
     if !iv.commit.reachable {
         b.push_str("<span class=\"tag\">reflog only</span>");

@@ -336,6 +336,75 @@ pub fn print(
         redact_home(repo),
         redact_home(&session.branches.join(", "))
     );
+    // Say WHO the verdict is about, on every run. This tool reads git's own
+    // configuration — user.name/user.email decide whose commits are yours,
+    // .gitignore decides which paths git was never going to take. Both are
+    // inputs to the verdict, so a wrong one changes the answer. Printing the
+    // identity every time means a misconfigured gitconfig shows up as a line
+    // you can read, not as a quietly smaller audit.
+    {
+        let c = audit.counts();
+        let scope = if audit.all_authors {
+            "every contributor (--all-authors)".to_string()
+        } else if !audit.identity_known {
+            "everyone — git has no user.name or user.email set here, so whose \
+             commits these are cannot be determined"
+                .to_string()
+        } else {
+            format!(
+                "{} of {} commits are yours",
+                c.commits_mine, c.commits_total
+            )
+        };
+        // --no-identity means no names or emails anywhere, including here.
+        // The RATIO still prints: how much of the window was counted as
+        // yours is a headline number, not personal data, and hiding it
+        // would make a filtered report look unfiltered.
+        if opts.show_identity {
+            println!(
+                "you: {}   ({})",
+                redact_home(&audit.identity_described),
+                scope
+            );
+        } else {
+            println!("you: (identity hidden)   ({scope})");
+        }
+        // Name the identities that were NOT counted as you. Matching is on
+        // name OR email, so changing either one alone still matches — but
+        // changing BOTH (new job, new laptop, new handle) leaves your older
+        // commits outside your own audit. Listing who was skipped turns that
+        // from a silently smaller report into a line that tells you to add
+        // `--me`, or to write the git-native fix: a .mailmap, which this
+        // tool already honours.
+        if opts.show_identity && audit.identity_known && !audit.all_authors {
+            let mut others: Vec<String> = Vec::new();
+            for iv in audit.intervals.iter().filter(|i| !i.mine) {
+                for who in [&iv.commit.author, &iv.commit.committer] {
+                    if !others.contains(who) {
+                        others.push(who.clone());
+                    }
+                }
+            }
+            if !others.is_empty() {
+                let shown: Vec<String> = others.iter().take(3).map(|o| redact_home(o)).collect();
+                let more = others.len().saturating_sub(3);
+                println!(
+                    "{}",
+                    st.dim(&format!(
+                        "     not counted as you: {}{} — if one of those is also you \
+                         (an old email AND a different name), add it with --me, or map \
+                         it in .mailmap",
+                        shown.join(" · "),
+                        if more > 0 {
+                            format!(" (+{more} more)")
+                        } else {
+                            String::new()
+                        }
+                    ))
+                );
+            }
+        }
+    }
     if !opts.project_section {
         // Private by default: built from chat/agent logs, git contents, and
         // command output. Warn before anyone shares it (redaction reduces,
@@ -351,14 +420,13 @@ pub fn print(
     // Scoped to one commit (--commit): show only that commit's block — none of
     // the session-wide summary above it. lspci -s: just the addressed device.
     if let Some(h) = &opts.commit {
-        let enriched = audit.intervals.iter().any(|i| !i.commit.from_history);
         for (i, interval) in audit.intervals.iter().enumerate() {
             if &interval.commit.hash == h {
                 println!();
                 let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
                 let prov = commit_provenance(session, after, interval.commit.ts, multi_model);
                 let cost = session.cost_in(after, Some(interval.commit.ts));
-                render_interval(&st, interval, opts, enriched, prov, cost);
+                render_interval(&st, interval, opts, prov, cost);
                 if opts.full && (opts.show.prompt || opts.show.summary) {
                     render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
@@ -722,17 +790,15 @@ pub fn print(
     let agent_commits = ex.agent_committed;
     let keyframes = ex.keyframes;
     println!();
-    let hist_n = ex.created_elsewhere;
-    let reflog_n = audit.intervals.len() - hist_n;
-    // Only when a reflog exists does "absent from it" mean anything: those
-    // commits were created elsewhere (pulled/fetched) — attribution, not a
-    // warning. With no reflog, history is simply the spine; say nothing.
-    let enriched = reflog_n > 0;
-    let source_note = if enriched && hist_n > 0 {
-        format!(" · {hist_n} created elsewhere (pulled/fetched)")
-    } else {
-        String::new()
-    };
+    // "Absent from the reflog" was once reported as "created elsewhere
+    // (pulled/fetched)". It never measured provenance — it measured how far
+    // back THIS clone's reflog happens to go. A filter-branch, a rebase, a
+    // fresh clone, or simply git's 90-day reflog expiry all make your own
+    // commits look pulled. On the workload this tool exists for — pointing
+    // it at months of past work — it would have labelled everything
+    // "created elsewhere". Identity answers whose commit it is from data
+    // that does not decay; this guess is gone.
+    let source_note = String::new();
     let filter_note = if let Some(h) = &opts.commit {
         format!(" — scoped to commit {} (1 of {total})", short_hash(h))
     } else {
@@ -802,7 +868,7 @@ pub fn print(
                 let after = (i > 0).then(|| audit.intervals[i - 1].commit.ts);
                 let prov = commit_provenance(session, after, interval.commit.ts, multi_model);
                 let cost = session.cost_in(after, Some(interval.commit.ts));
-                render_interval(&st, interval, opts, enriched, prov, cost);
+                render_interval(&st, interval, opts, prov, cost);
                 if opts.full && (opts.show.prompt || opts.show.summary) {
                     render_conversation(&st, session, after, Some(interval.commit.ts), opts.show);
                 }
@@ -976,7 +1042,6 @@ fn render_interval(
     st: &Style,
     interval: &Interval,
     opts: &Options,
-    enriched: bool,
     prov: Option<String>,
     cost: (usize, u64),
 ) {
@@ -1013,11 +1078,6 @@ fn render_interval(
     } else {
         " [gone from branches — reflog only]"
     };
-    let hist = if enriched && interval.commit.from_history {
-        " [created elsewhere]"
-    } else {
-        ""
-    };
     // char-safe: byte truncate() panics mid-multibyte (emoji/accent in a
     // commit subject) — a real crash found dogfooding.
     let subject: String = redact_home(&interval.commit.subject)
@@ -1047,22 +1107,20 @@ fn render_interval(
         Some(ask) => {
             println!("{mark} {} {ask}", st.cyan(&interval.commit.short));
             println!(
-                "         {} {}{}{}{}",
+                "         {} {}{}{}",
                 st.dim("↳"),
                 st.dim(&subject),
                 st.dim(&who),
                 st.dim(ghost),
-                st.dim(hist),
             );
         }
         None => println!(
-            "{mark} {} {} {}{}{}{}",
+            "{mark} {} {} {}{}{}",
             interval.commit.short,
             interval.commit.ts.format("%m-%d %H:%M"),
             st.dim(&subject),
             st.dim(&who),
             st.dim(ghost),
-            st.dim(hist),
         ),
     }
     if let Some(p) = &prov {
@@ -1956,7 +2014,6 @@ fn print_recap_report(
 
     // --verbose walks every commit in full; the default shows findings of
     // any age plus the recent tail, so a long session stays readable.
-    let enriched = audit.intervals.iter().any(|i| !i.commit.from_history);
     let deep = opts.verbose || opts.with_output || opts.full;
     let index_of = |target: &Interval| {
         audit
@@ -1972,7 +2029,7 @@ fn print_recap_report(
             let prov = commit_provenance(session, after, iv.commit.ts, multi_model);
             let cost = session.cost_in(after, Some(iv.commit.ts));
             println!();
-            render_interval(st, iv, opts, enriched, prov, cost);
+            render_interval(st, iv, opts, prov, cost);
             if opts.full && (opts.show.prompt || opts.show.summary) {
                 render_conversation(st, session, after, Some(iv.commit.ts), opts.show);
             }

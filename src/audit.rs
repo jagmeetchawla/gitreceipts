@@ -106,6 +106,8 @@ pub fn run(
     scan: bool,
     agent: report::Agent,
     full_history: bool,
+    all_authors: bool,
+    me: &[String],
     exit_code: bool,
     this_session: Option<String>,
 ) -> Result<()> {
@@ -128,6 +130,8 @@ pub fn run(
             scan,
             agent,
             full_history,
+            all_authors,
+            me,
             exit_code,
         );
     }
@@ -143,6 +147,8 @@ pub fn run(
             scan,
             agent,
             full_history,
+            all_authors,
+            me,
         )?
     };
     let Loaded {
@@ -155,6 +161,28 @@ pub fn run(
         // don't surface it, so ignore it here.
         agent: _,
     } = &loaded;
+
+    // Not one commit in the window is yours. Refuse rather than render an
+    // empty green: an audit that filtered everything out looks identical to
+    // an audit that found nothing wrong, and only one of those is true.
+    // --all-authors is the way to see it anyway, so nothing is unreachable.
+    if audit.identity_matched_nothing && !all_authors {
+        bail!(
+            "none of the {} commits in this window are yours by git's record.\n\n\
+             \x20 gitreceipts is a git tool: it asks GIT who you are. Whose commits \
+             count as yours comes from git config user.name / user.email, exactly as \
+             `git log` and `git blame` see them.\n\
+             \x20 this repo resolves that to: {}\n\n\
+             \x20 check it:  git -C <repo> config user.email\n\
+             \x20 fix it:    git -C <repo> config user.email you@example.com\n\
+             \x20 or override just this run:  --me <name|email>  (repeatable)\n\
+             \x20 or audit everyone:          --all-authors\n\n\
+             \x20 refusing rather than printing an empty green report — an audit that \
+             filtered everything out looks exactly like one that found nothing wrong.",
+            audit.intervals.len(),
+            audit.identity_described
+        );
+    }
 
     // Resolve --commit against the actual spine (fails on unknown/ambiguous).
     if let Some(needle) = &commit {
@@ -216,6 +244,8 @@ fn run_project(
     scan: bool,
     agent: report::Agent,
     full_history: bool,
+    all_authors: bool,
+    me: &[String],
     exit_code: bool,
 ) -> Result<()> {
     if !sessions.is_empty() {
@@ -296,6 +326,8 @@ fn run_project(
                     scan,
                     agent,
                     full_history,
+                    all_authors,
+                    me,
                 )
             })
             .collect::<Result<Vec<_>>>()?
@@ -498,6 +530,8 @@ pub fn load(
     scan: bool,
     agent: report::Agent,
     full_history: bool,
+    all_authors: bool,
+    me: &[String],
 ) -> Result<Loaded> {
     let store = resolve_store(store)?;
     // Resolve the target repo BEFORE looking for sessions, so the sessions
@@ -541,9 +575,25 @@ pub fn load(
     // sessions) plus any words the user asked to mask. Must precede any render.
     gitreceipts::fmt::set_redaction(&session_data.cwds, redact, scan);
 
-    let mut audit = reconcile::reconcile(&repo_path, &session_data)?;
-    // reconcile always leaves full_history false; the caller sets it from --full-history.
+    // Who is "you" in THIS repo: git's own user.name/user.email, plus any
+    // identity the user named. Resolved per repo, because a work clone and a
+    // personal one legitimately carry different identities.
+    let identity = gitreceipts::identity::Identity::resolve(&repo_path, me);
+    let mut audit = reconcile::reconcile_as(&repo_path, &session_data, &identity)?;
+    // reconcile always leaves these false; the caller sets them from the flags.
     audit.full_history = full_history;
+    audit.all_authors = all_authors;
+
+    // The silent-empty-green guard. An identity that matches NOTHING while
+    // the window holds commits means we are filtering by the wrong person —
+    // a fresh clone, a work-vs-personal email, a repo-local override. Left
+    // quiet, that renders a confident, empty, green audit: the worst output
+    // this tool can produce. Recorded here; the CALLER decides how loud to
+    // be, because a project run must not die on one repo (see the empty
+    // session-dir abort this same release fixed).
+    audit.identity_matched_nothing =
+        identity.known && !audit.intervals.is_empty() && audit.intervals.iter().all(|i| !i.mine);
+
     Ok(Loaded {
         name: session_name(&session_paths),
         repo_display: repo_path.display().to_string(),

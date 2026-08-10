@@ -30,7 +30,7 @@ use crate::report::{Filter, Show};
 ///
 /// 0.8 — added `balance.grey`, ledger `scratch`, and per-command
 /// `failure_class`/`failure_evidence` (the 0.1.1 verdict contract).
-pub const SCHEMA_VERSION: &str = "0.8";
+pub const SCHEMA_VERSION: &str = "0.9";
 
 /// The privacy caution stamped on every receipt (single-repo and project).
 const NOTICE: &str = "Private report — built from chat/agent logs, git contents, \
@@ -190,6 +190,22 @@ pub struct Ingest {
     pub fork_duplicates: usize,
 }
 
+/// Who the verdict is about. Recorded because git config decides it.
+#[derive(Debug, Serialize, Clone)]
+pub struct Identity {
+    /// The resolved identity, as shown in the report header.
+    pub described: String,
+    /// False when git has no user.name/user.email here — every commit is
+    /// then treated as yours and this says so, rather than implying a
+    /// filter ran.
+    pub known: bool,
+    /// `--all-authors`: identity filtering was deliberately switched off.
+    pub all_authors: bool,
+    /// A git identity resolved, the window held commits, and none was
+    /// yours — almost always the wrong identity for this clone.
+    pub matched_nothing: bool,
+}
+
 /// The headline numbers — the same arithmetic the console `intent → outcome`
 /// block prints, so the receipt and the report never disagree.
 #[derive(Debug, Serialize)]
@@ -201,6 +217,18 @@ pub struct Summary {
     /// Non-agent commits (teammate commits, pulls, pre-agent history) held OUT
     /// of the equation — 0 under `--full-history`. Context, not the agent's work.
     pub keyframes_excluded: usize,
+    /// EVERY commit in the session's window, whoever made it — the honest
+    /// denominator for the two counts above.
+    pub commits_total: usize,
+    /// Commits git records as YOURS: matched on author OR committer, by name
+    /// OR email, honouring .mailmap. Equal to `commits_total` when no git
+    /// identity is configured (see `identity`).
+    pub commits_mine: usize,
+    /// Whose commits were counted as yours, and how that was decided. This
+    /// tool reads git's own configuration, so the identity is part of the
+    /// receipt: a different user.email produces a different verdict, and a
+    /// receipt that hid which one it used would not be reproducible.
+    pub identity: Identity,
     pub file_claims: usize,
     pub commands: usize,
     pub mcp_calls: usize,
@@ -249,7 +277,6 @@ pub struct ExceptionCounts {
     pub dismissed: usize,
     pub keyframes: usize,
     pub agent_committed: usize,
-    pub created_elsewhere: usize,
     pub failed_commands_or_edits: usize,
 }
 
@@ -270,7 +297,6 @@ impl From<crate::reconcile::Exceptions> for ExceptionCounts {
             dismissed: e.dismissed,
             keyframes: e.keyframes,
             agent_committed: e.agent_committed,
-            created_elsewhere: e.created_elsewhere,
             failed_commands_or_edits: e.failed_commands_or_edits,
         }
     }
@@ -620,6 +646,14 @@ impl Receipt {
             prompts: audit.prompts,
             commits: counts.total,
             keyframes_excluded: counts.keyframes_excluded,
+            commits_total: counts.commits_total,
+            commits_mine: counts.commits_mine,
+            identity: Identity {
+                described: crate::fmt::redact_home(&audit.identity_described),
+                known: audit.identity_known,
+                all_authors: audit.all_authors,
+                matched_nothing: audit.identity_matched_nothing,
+            },
             file_claims: audit.file_claims,
             commands: audit.commands,
             mcp_calls: audit.mcp_calls,
