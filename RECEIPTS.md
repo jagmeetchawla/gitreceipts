@@ -2,19 +2,19 @@
 
 gitreceipts was built by an AI coding agent. So we pointed the shipped binary at
 its own construction and let it reconcile what the agent *claimed* against what
-git actually *recorded*, commit by commit. Numbers as of **v0.1.1**
+git actually *recorded*, commit by commit. Numbers as of **v0.1.5**
 (2026-08-09); rerun the command below for the current ones.
 
 ## The receipt
 
 ```
 window   2026-07-23 12:25Z → 2026-08-09 22:35Z   (17d 10h, 8 sessions)
-events   13,573 kept / 26,755 log lines
+events   15,483 kept / 30,866 log lines
 
-169 commits · 347 file-edit claims · 2,061 commands · 479 prompts
+190 commits · 354 file-edit claims · 2,537 commands · 559 prompts
 
-balance  133 of 169 intervals fully balanced             (79%)
-claims   347 / 347 landed in git                        (100%)
+balance  149 of 190 intervals fully balanced             (78%)
+claims   354 / 354 landed in git                        (100%)
 broken   0 broken promises
 ```
 
@@ -60,14 +60,20 @@ under stealth labels; the numbers are real):
 |---|---|---|---|---|
 | a stealth macOS app | Swift/SPM · 3 worktrees | 273 | 477/493 | 3 |
 | ClipBob (menu-bar app) | Swift/SPM | 204 | 481/490 | 1 |
-| **gitreceipts** (this tool) | Rust | 173 | 347/347 | 0 |
-| a private ops repo | Markdown/Shell | 108 | 105/105 | 0 |
+| **gitreceipts** (this tool) | Rust | 190 | 354/354 | 0 |
+| a private ops repo | Markdown/Shell | 117 | 109/109 | 0 |
 | four Astro/Wrangler sites | Astro | 96 | 166/168 | 1 |
 | rustic-playground | Rust + Tauri + Svelte | 70 | 97/100 | 0 |
-| **Total** | five stacks | **924** | **1,673/1,703 (98%)** | **5** |
+| **Total** | five stacks | **950** | **1,684/1,714 (98%)** | **5** |
 
-Verdicts across the corpus: **752 green · 128 grey · 39 amber · 5 red** of 924
+Verdicts across the corpus: **771 green · 130 grey · 44 amber · 5 red** of 950
 agent commits.
+
+Identity filtering (new in 0.1.5) changes none of these numbers: every repo
+here is single-contributor, so all 950 commits resolve to one person. Worth
+saying plainly — this corpus **cannot** demonstrate the multi-contributor
+fix. That evidence is test fixtures and a simulated-identity run, not
+dogfood.
 
 ### The number that moved: 50 broken promises → 5
 

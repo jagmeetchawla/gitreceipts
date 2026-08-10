@@ -19,6 +19,15 @@ ones** — so you can feature-detect instead of probing for fields. Schema
 `0.8` (shipped with 0.1.1) added `balance.grey`, the ledger's `scratch`
 flag, and per-command `failure_class` / `failure_evidence`.
 
+`0.9` (shipped with 0.1.3) added `summary.commits_total`,
+`summary.commits_mine`, `summary.identity` (`described` / `known` /
+`all_authors` / `matched_nothing`), and split unclaimed changes into
+`unclaimed_other_contributor` and `unclaimed_yours_outside_session`. It
+REMOVED `exceptions.created_elsewhere`, which measured how far back the
+local reflog reached rather than where a commit came from — the one
+removal so far, made because keeping a field that cannot mean what its
+name says is worse than the break.
+
 Every receipt carries `schema_version`. Consumers should:
 
 - **ignore unknown fields** — new ones will show up;
@@ -86,7 +95,8 @@ predates a feature it would prefer to use, rather than failing.
 | plugin | binary floor | notes |
 |---|---|---|
 | 0.1.x | 0.1.0 | extracts the condensed view from `export` JSON (schema 0.7) |
-| 0.2.0+ | 0.1.1 | uses `recap`, `--summary`, `--emoji`, `--this-session`, `--compact`; on an older binary it says so, offers the upgrade for the route you installed by, and falls back to the 0.1.x path |
+| 0.2.0–0.2.1 | 0.1.1 | uses `recap`, `--summary`, `--emoji`, `--this-session`, `--compact`; on an older binary it says so, offers the upgrade for the route you installed by, and falls back to the 0.1.x path |
+| 0.2.2+ | 0.1.1 (identity guidance wants 0.1.3) | reads the `you:` identity header and can suggest `--me` / `--all-authors`; still runs against 0.1.1, simply without that surface |
 
 The plugin ships no binary and never could — it is markdown that invokes
 whatever `git-receipts` is on your PATH. So the two version independently
