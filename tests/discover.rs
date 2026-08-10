@@ -248,6 +248,68 @@ fn git_init(dir: &std::path::Path) {
     );
 }
 
+/// Create the store directory for a repo but put NO session file in it —
+/// the shell the agent leaves behind for any folder it was opened in.
+fn seed_empty_session_dir(store: &std::path::Path, repo: &std::path::Path) {
+    let canon = repo.canonicalize().unwrap();
+    let encoded: String = canon
+        .display()
+        .to_string()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
+    std::fs::create_dir_all(store.join(encoded)).unwrap();
+}
+
+#[test]
+fn a_session_dir_with_no_jsonl_is_not_a_session() {
+    // An empty store directory used to count as "has sessions", which split
+    // the two project lists apart: `project_repos` kept the repo and then
+    // `all_sessions` aborted the entire roll-up on it, while
+    // `project_repos_without_sessions` excluded it — so the repo appeared in
+    // NEITHER list. The two must stay exactly complementary.
+    let store = fake_store("emptydir");
+    let project = std::env::temp_dir().join(format!("gitreceipts-empty-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&project);
+    let real = project.join("real");
+    let shell = project.join("shell");
+    git_init(&real);
+    git_init(&shell);
+    seed_session(&store, &real);
+    seed_empty_session_dir(&store, &shell);
+
+    let with: Vec<String> = discover::project_repos(&project, &store)
+        .iter()
+        .map(|r| r.file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+    let without: Vec<String> = discover::project_repos_without_sessions(&project, &store)
+        .iter()
+        .map(|r| r.file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+
+    assert_eq!(
+        with,
+        vec!["real".to_string()],
+        "only the repo with a .jsonl"
+    );
+    assert!(
+        without.contains(&"shell".to_string()),
+        "the empty-shell repo must be NAMED as having no sessions, not vanish: {without:?}"
+    );
+    assert!(
+        !without.contains(&"real".to_string()),
+        "the two lists must not overlap"
+    );
+
+    // And the abort itself: asking for the shell's sessions is an error, but
+    // it must be the honest one — not something a project run trips over.
+    assert!(discover::all_sessions(&store, &shell).is_err());
+    assert!(discover::all_sessions(&store, &real).is_ok());
+
+    let _ = std::fs::remove_dir_all(&store);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 #[test]
 fn project_repos_finds_only_repos_with_sessions_and_skips_nested() {
     let store = fake_store("proj");

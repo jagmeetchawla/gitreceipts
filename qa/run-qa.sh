@@ -107,7 +107,7 @@ echo
 # Render a command for display with the home dir collapsed to ~ (never leaks).
 show_cmd() { local c="git receipts $*"; printf '%s' "${c//$HOME/\~}"; }
 
-PASS=0; FAIL=0; declare -a FAILURES=()
+PASS=0; FAIL=0; SKIP=0; declare -a FAILURES=()
 
 # --- validators (0=pass, 1=fail; $1 = output file) --------------------------
 v_nonempty() { [ -s "$1" ]; }
@@ -235,10 +235,20 @@ matrix() {
 
   # The compact page must actually BE smaller — a --compact that quietly
   # stopped compacting would pass every other check here.
-  local full comp
+  #
+  # But the invariant is vacuous when there is nothing to compact: a scope
+  # whose report has no commit intervals (a short read-only session, say)
+  # legitimately renders byte-identical with and without --compact. Assert
+  # it only where compaction has work to do, and record the other case as
+  # SKIP with its reason — a vacuous check must not be counted as a pass.
+  local full comp ivals
   full=$(wc -c < "$OUT/$p-recap-html.html" 2>/dev/null || echo 0)
   comp=$(wc -c < "$OUT/$p-recap-html-comp.html" 2>/dev/null || echo 0)
-  if [ "$comp" -gt 0 ] && [ "$full" -gt 0 ] && [ "$comp" -lt "$full" ]; then
+  ivals=$(grep -o 'class="interval' "$OUT/$p-recap-html.html" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${ivals:-0}" -eq 0 ]; then
+    SKIP=$((SKIP+1)); printf '  %-5s %-46s %s\n' SKIP "$p-compact-smaller" "no intervals to compact"
+    printf 'SKIP\t%s\t-\tno intervals to compact\n' "$p-compact-smaller" >>"$RESULTS"
+  elif [ "$comp" -gt 0 ] && [ "$full" -gt 0 ] && [ "$comp" -lt "$full" ]; then
     PASS=$((PASS+1)); printf '  %-5s %-46s %s\n' PASS "$p-compact-smaller" "$comp < $full"
     printf 'PASS\t%s\t-\t-\n' "$p-compact-smaller" >>"$RESULTS"
   else
@@ -429,12 +439,19 @@ while IFS= read -r gitpath; do
   skip=""
   for glob in ${EXCLUDES+"${EXCLUDES[@]}"}; do case "$repo" in $glob) skip=excluded ;; esac; done
   [ -n "$skip" ] && { echo "  ⊘ skip $(basename "$repo") — matches --exclude"; continue; }
-  out="$("$BIN" audit --latest --repo "$repo" --store "$STORE" --no-pager --color never 2>/dev/null)"
+  # Gate on ALL sessions, not --latest. The matrix below covers every
+  # session, so asking one session whether the repo is worth testing is the
+  # wrong question — and it silently shrinks coverage: a repo with hundreds
+  # of audited commits drops out the moment someone opens a session in it
+  # and does nothing, because that read-only session becomes the latest.
+  # Coverage then differs between two runs minutes apart, and a green run
+  # over fewer repos looks exactly like a green run over all of them.
+  out="$("$BIN" audit --repo "$repo" --store "$STORE" --no-pager --color never 2>/dev/null)"
   [ -z "$out" ] && continue          # no session resolves for this repo
   landed="$(printf '%s' "$out" | grep -oE '[0-9]+ landed in git' | grep -oE '^[0-9]+' | head -1)"
   agentc="$(printf '%s' "$out" | grep -oE '\([0-9]+ agent-committed' | grep -oE '[0-9]+' | head -1)"
   if [ "${landed:-0}" = 0 ] && [ "${agentc:-0}" = 0 ]; then
-    echo "  ⊘ skip $(basename "$repo")  ($repo) — session matched by container descent, no landed/committed work here"
+    echo "  ⊘ skip $(basename "$repo")  ($repo) — no landed or agent-committed work in any session"
     continue
   fi
   base="$(basename "$repo")"; lbl="$base"; n=1
@@ -516,7 +533,7 @@ fi
 fi   # end MODE != repos
 
 # --- summary.md -------------------------------------------------------------
-TOTAL=$((PASS+FAIL))
+TOTAL=$((PASS+FAIL+SKIP))
 {
   echo "# gitreceipts QA run — $LABEL-$TS"
   echo
@@ -561,7 +578,7 @@ TOTAL=$((PASS+FAIL))
 
 echo
 echo "════════════════════════════════════════════════════════════════════"
-echo "  total $TOTAL · pass $PASS · fail $FAIL"
+echo "  total $TOTAL · pass $PASS · fail $FAIL · skip $SKIP"
 echo "  folder:  $OUT"
 echo "  summary.md · MANIFEST.md · RECONCILIATION.md   (⚠ private — do not commit)"
 echo "════════════════════════════════════════════════════════════════════"

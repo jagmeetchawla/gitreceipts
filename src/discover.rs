@@ -42,13 +42,32 @@ pub fn default_store() -> Option<PathBuf> {
 /// paths — fall back to matching project dirs whose encoded name ends
 /// with an ancestor's directory name ("…-myapp" for a repo at any
 /// /Volumes/mount/…/myapp), and say so.
+/// Does this store directory hold at least one session file? Directory
+/// existence is not the same question: the agent creates a directory for
+/// any folder it is opened in, so plenty of them are empty shells.
+fn holds_sessions(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries
+        .flatten()
+        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+}
+
 pub fn session_dirs_for(store: &Path, repo: &Path) -> Vec<PathBuf> {
     let start = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
 
+    // A directory that exists but holds no .jsonl is an empty shell — the
+    // agent opened that folder once and recorded nothing. Treating it as a
+    // hit made three unlike things go wrong: `--project` aborted the whole
+    // roll-up on one such repo, the repo appeared in neither the audited
+    // list nor the named no-sessions list, and the empty shell short-
+    // circuited the cross-machine fallback below. Every caller means "has
+    // usable sessions", so answer that question here, once.
     let exact: Vec<PathBuf> = start
         .ancestors()
         .map(|a| store.join(encode(a)))
-        .filter(|d| d.is_dir())
+        .filter(|d| holds_sessions(d))
         .collect();
     if !exact.is_empty() {
         return exact;
@@ -72,7 +91,7 @@ pub fn session_dirs_for(store: &Path, repo: &Path) -> Vec<PathBuf> {
     let matched: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.is_dir())
+        .filter(|p| holds_sessions(p))
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
