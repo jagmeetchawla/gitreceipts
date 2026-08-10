@@ -1,5 +1,5 @@
 ---
-description: Read a Claude Code session as a story with the git-receipts CLI — what was asked, what the agent did, what landed, commit by commit. Use when the user asks what happened, what an agent did, to catch up on an unattended or overnight run, to recap a session or a commit, to understand work from a while ago, or after any long run.
+description: Read a Claude Code session as a story with the git-receipts CLI — what was asked, what the agent did, what landed, commit by commit. Use when the user asks what happened, what an agent did, to catch up on an unattended or overnight run, to recap a session or a commit, to understand work from a while ago, or after any long run. ALSO use to catch up on a lane or sub-agent the user did not watch, and after this conversation has been compacted — the receipt holds the prompt-to-commit chain the session no longer does.
 ---
 
 # git receipts — read the session as a story
@@ -48,7 +48,8 @@ decides everything below.
 
 ## Version floor — and offering the upgrade
 
-This skill drives views that shipped in **binary 0.1.1**. If
+This skill drives views that shipped in **binary 0.1.1**, and the identity
+guidance below (the `you:` header, `--me`, `--all-authors`) needs **0.1.3**. If
 `git-receipts --version` reports older, say so ONCE, offer the upgrade for
 the route they actually installed by, and carry on with the fallback in
 "Older binaries" — never block the answer they asked for.
@@ -70,7 +71,7 @@ brew list gitreceipts >/dev/null 2>&1 && echo "route: brew"
 
 Phrase it as an offer, once per conversation, and run it only on an
 explicit yes — the same rule as the install. Something like: *"this is
-binary 0.1.0; recap arrived in 0.1.1. Want me to run `brew upgrade
+binary 0.1.0; recap arrived in 0.1.1, and identity in 0.1.3. Want me to run `brew upgrade
 gitreceipts`? I can read the session either way."*
 
 ## Reading a session
@@ -110,6 +111,16 @@ git receipts recap --this-session "$M" --no-pager --color never
 
 If it reports no session contains the marker, the log hasn't flushed —
 wait a second, retry once, then fall back to `--latest` and say so.
+
+**Whose commits.** The header says which git identity the report covers and
+how much of the window it matched — `you: Ada <ada@example.com> (191 of 204
+commits are yours)`. A shrinking ratio means the repo's `user.email` isn't
+the one that made the commits; `--me <name|email>` adds another.
+
+**Who this is for.** An agent with its context intact remembers more than
+any recap can reconstruct — recap is for whoever wasn't there. That's the
+user, and it is also this session **after compaction**, when the receipt
+hands back a prompt-to-commit chain the conversation no longer holds.
 
 ## Interpreting for the user
 

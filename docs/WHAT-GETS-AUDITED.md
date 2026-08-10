@@ -51,6 +51,46 @@ cross-machine fallback, when no exact ancestor matched at all; see
 5. **Sessions are keyed by the path they were recorded at.** A repo that
    has moved, been renamed, or was audited on another machine may have no
    sessions in your store.
+6. **Git decides who you are and what to ignore.** We add no configuration
+   of our own; see below.
+
+## Git's own settings are inputs to the verdict
+
+gitreceipts is a git tool, so it reads git's configuration rather than
+inventing its own. Two settings you already maintain change what the
+report says.
+
+**`user.name` / `user.email` — whose commits count.** A commit is yours
+when git records you as its **author or committer**, matched by **name or
+email**, with `.mailmap` honoured. Either side, either field: a squash-merge
+that lists the forge as committer, a rebase of someone else's patch, or an
+old address under the same name all still resolve to you.
+
+Loose on purpose. Matching too loosely costs you a stray commit inside your
+own audit; matching too tightly *silently drops your own work*. One repo in
+our dogfood carries three emails under one name — email-only matching would
+have claimed 59 of 242 commits and discarded the rest as somebody else's.
+
+Every report prints the identity it used and how much of the window it
+covered (`191 of 204 commits are yours`), names identities it skipped, and
+**refuses to print at all** if nothing matches — an audit that filtered
+everything out is indistinguishable from one that found nothing wrong.
+Override with `--me <name|email>` (repeatable) or `--all-authors`.
+
+What git *cannot* tell you: every coding agent commits under your identity,
+so an agent's commit and one you typed are identical to git. Only a session
+log separates them, and only for the sessions a run loaded.
+
+**`.gitignore` — what git was never going to take.** A claimed edit to an
+ignored path that never lands is not a broken promise; it is git doing what
+you configured it to do. Those are reported as **explained findings** with
+the reason attached. `.git/info/exclude` and your global excludes count too,
+because `git check-ignore` consults them all.
+
+`.gitignore` is the right home for this because it **costs something to
+abuse**: you cannot quietly add `src/` to it without git actually ignoring
+your source. A private config only this tool reads would carry no such
+cost, and could be tuned into a permanently green report.
 
 ## The two layouts
 

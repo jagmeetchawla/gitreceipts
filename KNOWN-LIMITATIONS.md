@@ -63,13 +63,30 @@ detected (content-verified, same filename). But a file that was moved **and
 renamed**, or moved **and further edited** past probe recognition, still reads
 as red. Same safe direction: a false alarm, not a hidden miss.
 
-## 4. Other people's commits can be counted, never explained
+## 4. ~~Other people's commits can be counted, never explained~~ — FIXED in 0.1.3
 
-By default the verdict covers only the agent's own commits; concurrent commits
-by teammates (or your own hand) are **held out** with an honest count —
-attributing them would require *their* session logs, which you don't have.
-`--full-history` includes them as unclaimed keyframes, attributed by git
-identity only.
+Until 0.1.3 the spine was built from the session's time window alone, and
+`agent_committed` was stamped **positionally** — the next N commits after a
+`git commit` command. A colleague's commit, or a merge from a pull, landing
+inside that range was marked as the agent's: its unexplained files became
+*your* residue and its interval entered *your* verdict.
+
+A commit is now yours only when git records you as **author or committer**,
+by **name or email**, honouring `.mailmap`. Other people's commits are held
+out; `--all-authors` includes them.
+
+What remains true: attributing *what someone else did* would need **their**
+session logs, which you don't have. Their commits are shown and counted,
+never explained.
+
+**And one thing git genuinely cannot tell you.** Every coding agent commits
+under *your* git identity — Claude runs `git commit` with your
+`user.name`/`user.email`, and so does every other tool. So git cannot
+separate an agent's commit from one you typed yourself. Only a session log
+can, and only for the sessions a given run loaded. That's why unclaimed
+changes are reported as *"your identity, outside this session"* rather than
+"you" — that bucket holds your hand-written commits, other agent sessions,
+and other tools alike, and nothing on record distinguishes them.
 
 ## 5. The claims side is only as complete as your logs
 
@@ -139,3 +156,26 @@ the outputs private.
 v0.1 reads Claude Code session logs. The event model is deliberately
 harness-neutral; adapters for other agent CLIs are on the roadmap — the
 reconciliation itself never depended on who wrote the log.
+
+## 10. No way to list or select one session — the multi-lane gap
+
+By default gitreceipts merges **every** session for a repo into one stream.
+That is right for solo work: it avoids the trap where your *other* sessions'
+commits look like another contributor's.
+
+Run several agents in parallel and the same default blends the lanes
+together. There is no `git receipts sessions` to list what's available with
+each session's own summary, and no way to select one by name — isolating a
+lane today means identifying its session file yourself. `--this-session`
+only finds the session you are *in*; `--latest` only finds the newest.
+
+This is the top roadmap item for the multi-agent workflow described in the
+README.
+
+## 11. No time scope — you cannot ask "what changed since I last looked"
+
+Scope is per-repo, per-session, or per-commit; there is no `--since`. The
+oversight question after a day away is *what moved since yesterday*, and
+today the repo-wide default answers it by showing everything, oldest
+findings included, with recent work no more prominent than months-old
+history. `--latest` narrows to one session, which is not the same question.

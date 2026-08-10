@@ -10,7 +10,7 @@ Present this reference to the user, concisely and formatted:
 git history: each prompt you typed → the work it drove → the commit it
 became. Runs locally; nothing leaves the machine.
 
-**Setup.** Needs the `git-receipts` binary (0.1.1+ — the skills offer the
+**Setup.** Needs the `git-receipts` binary (0.1.1+, identity needs 0.1.3 — the skills offer the
 upgrade if yours is older, and work either way). If it's missing, the
 skills detect what you have and offer to install it — your approval, your
 choice of route: `brew install cloudcraft-ai/tap/gitreceipts` ·
@@ -35,7 +35,17 @@ checksum-verified prebuilt binary, no package manager needed.
 | "all my repos here" | `--project` |
 | "more detail" | `--verbose` |
 | "just the problems" | `--filter red-amber` |
-| "include my own commits" | `--full-history` |
+| "include my own commits" | `--full-history` (yours, outside this session) |
+| "include everyone's commits" | `--all-authors` (other contributors too) |
+| "that old email is me too" | `--me <name\|email>` |
+
+**It follows git's conventions.** Git decides whose commits are yours —
+`user.name`/`user.email`, matched on author or committer, `.mailmap`
+honoured — and `.gitignore` decides which paths git was never going to take,
+so a claimed edit to one of those is an explained finding, not a broken
+promise. Every report states the identity it used and how much of the window
+it covered; if nothing matches it refuses to run rather than print an empty
+green report.
 
 **Reading the marks.** 🟢 nothing to report · ⚪ explained findings, each
 with its reason · 🟡 unexplained residue — a loose end with no answer on

@@ -1,5 +1,5 @@
 ---
-description: Verify a Claude Code session against git history with the git-receipts CLI — whether every claimed edit really landed, commit by commit, and what the broken promises are. Use when the user asks whether work really landed, to audit or verify a session, to check for broken promises or lost edits, or to gate on the result in CI.
+description: Verify a Claude Code session against git history with the git-receipts CLI — whether every claimed edit really landed, commit by commit, and what the broken promises are. Use when the user asks whether work really landed, to audit or verify a session, to check for broken promises or lost edits, or to gate on the result in CI. ALSO use when a delegated agent, sub-agent, worktree, or parallel lane REPORTS THAT IT IS DONE — "the engine lane says it's finished", "my sub-agent claims it shipped", "verify what that session actually did" — the moment a claim is relayed is the moment this is worth more than the claim.
 ---
 
 # git receipts — the verdict
@@ -39,14 +39,34 @@ color, and the dots ARE the color layer here:
 - 🔴 **red** — a broken promise: a claimed edit git never got, and nothing
   explains it.
 
+A claim on a **gitignored** path that never landed is grey, not red: git was
+configured never to take it, so nothing git held was lost.
+
 Present the table as a code block (pre-aligned), header included. The rule
 that makes it readable: zero counts never print, every nonzero cause is
 named, a clean row shows `—`.
+
+**Whose commits.** A commit counts as the user's when git records them as
+author or committer, by name or email (`.mailmap` honoured). The header
+states it: `you: Ada <ada@example.com> (191 of 204 commits are yours)`.
+Read that line — a wrong `user.email` shows up as a shrinking ratio, not an
+error. If it refuses to run because nothing matched, the fix is
+`--me <name|email>` or `--all-authors`, never ignoring it.
+
+**Verifying a lane you did not run.** When the user is coordinating other
+agents, the valuable audit is the one on a lane they cannot see — the lane
+writes its own summary, it does not write the git history. Note two things
+honestly: isolating one lane out of several is manual today (the default
+merges every session for the repo), and a red found this way is still a
+question, not a conviction — the lane may know something the log doesn't.
 
 Scopes compose exactly as recap's do: `--commit <hash>`, `--project`,
 `--latest`, `--this-session <marker>`, `--full-history`. Narrower views:
 `--filter red-amber` (the unanswered ones), `--filter grey` (the answered
 ones), `--oneline` (every commit, no caps), `--verbose` (full anatomy).
+`--full-history` adds the user's own commits this session didn't make;
+`--all-authors` adds other people's. Different axes — neither implies the
+other.
 
 ## Interpreting for the user
 
