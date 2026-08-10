@@ -197,13 +197,41 @@ every count stays), `--no-identity` (drops names and emails), `--redact
 
 ## Older binaries (before 0.1.1)
 
-`recap`, `--summary`, `--this-session` and `--compact` don't exist there.
-Say an upgrade improves this, then fall back:
+`recap`, `--summary`, `--this-session` and `--compact` don't exist there;
+the identity header, `--me` and `--all-authors` need 0.1.3.
 
-```bash
-git-receipts audit --oneline --no-pager --color never   # the closest view
-git-receipts audit --latest --no-pager                  # one session
-```
+**Do all three things, in this order. The offer is not optional — a
+degraded answer with no way out leaves the user stuck on an old binary
+without knowing a fix exists.**
+
+1. **Say it once** — which view they're getting and why.
+2. **Detect the route and OFFER the upgrade**, with the actual command:
+
+   ```bash
+   which -a git-receipts
+   brew list gitreceipts >/dev/null 2>&1 && echo "route: brew"
+   [ -x "$HOME/.cargo/bin/git-receipts" ] && echo "route: cargo"
+   ```
+
+   | Route | Offer |
+   |---|---|
+   | brew | `brew update && brew upgrade gitreceipts` |
+   | cargo | `cargo install gitreceipts --force` (then `git-receipts man --install`) |
+   | prebuilt | re-run the download block above |
+
+   Run it **only on an explicit yes** — never as a side effect of the
+   answer they actually asked for.
+3. **Then fall back and answer anyway:**
+
+   ```bash
+   git-receipts audit --oneline --no-pager --color never   # the closest view
+   git-receipts audit --latest --no-pager                  # one session
+   ```
+
+Something like: *"this is binary 0.1.0 — recap arrived in 0.1.1 and the
+identity header in 0.1.3, so I'll run the closest view it has. Want me to
+run `brew update && brew upgrade gitreceipts` first? I can read the session
+either way."*
 
 For "this session", find the file by marker yourself and pass it as an
 argument: `grep -rl "$M" ~/.claude/projects/*/ | head -1`.
