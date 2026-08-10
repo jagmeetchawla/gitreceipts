@@ -285,6 +285,13 @@ pub struct Exceptions {
     pub unclaimed_by_command: usize,
     /// …in a commit this session did not make (another contributor, by identity).
     pub unclaimed_other_contributor: usize,
+    /// Unclaimed changes in commits git records as YOURS that this session
+    /// did not make. Deliberately says "your identity", not "you": every
+    /// coding agent commits under the user's git config, so this bucket
+    /// holds your hand-written commits, other Claude sessions, and any
+    /// other agent tool alike. Git cannot separate them and neither can we
+    /// — what we CAN say is that this session's log does not claim it.
+    pub unclaimed_yours_outside_session: usize,
     /// …inside an agent commit with nothing to explain it.
     pub unclaimed_unexplained: usize,
     /// Residue whose path is gitignored/untracked today — listed, dismissed.
@@ -406,11 +413,34 @@ impl Audit {
             .iter()
             .map(|i| i.dismissed_residue.len())
             .sum();
-        // Residue in a commit this session did not make is another contributor's.
+        // Two INDEPENDENT questions, and this used to answer one with the
+        // other. `!agent_committed` means "this session did not commit it" —
+        // it says nothing about who did. Claude commits with YOUR git
+        // identity (there is no separate agent identity), so a commit being
+        // the agent's or your own is invisible to git and knowable only
+        // from the session log; and the log only covers the sessions this
+        // run loaded. Calling every non-session commit "another
+        // contributor" was therefore wrong for every hand-made commit you
+        // ever wrote — 78 of them in one repo of our own corpus, in a repo
+        // with exactly one contributor.
+        //
+        // With identity available, say the true thing instead:
+        //   !mine                    → genuinely someone else's identity
+        //   mine && !agent_committed → your identity, outside this session
+        //                              (your hands, another session, or a
+        //                              different agent tool — all
+        //                              indistinguishable, since they all
+        //                              commit as you)
         let other_contributor: usize = self
             .intervals
             .iter()
-            .filter(|i| !i.agent_committed)
+            .filter(|i| !i.mine)
+            .map(|i| i.residue.len())
+            .sum();
+        let yours_outside_session: usize = self
+            .intervals
+            .iter()
+            .filter(|i| i.mine && !i.agent_committed)
             .map(|i| i.residue.len())
             .sum();
         let keyframes = self.intervals.iter().filter(|i| !i.agent_committed).count();
@@ -425,7 +455,8 @@ impl Audit {
             unclaimed_total: residue + by_command + dismissed,
             unclaimed_by_command: by_command,
             unclaimed_other_contributor: other_contributor,
-            unclaimed_unexplained: residue - other_contributor,
+            unclaimed_yours_outside_session: yours_outside_session,
+            unclaimed_unexplained: residue - other_contributor - yours_outside_session,
             dismissed,
             keyframes,
             agent_committed: self.intervals.len() - keyframes,

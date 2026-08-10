@@ -289,7 +289,14 @@ want = {"commits": s["commits"], "broken": s["broken_promises"],
         # so the two counts must agree across all three formats like any other
         # headline number. A console saying "180 of 180" beside a JSON saying
         # something else would make the filter unauditable.
-        "commits_mine": s["commits_mine"], "commits_total": s["commits_total"]}
+        "commits_mine": s["commits_mine"], "commits_total": s["commits_total"],
+        # The identity-derived split of unclaimed changes. These two used to be
+        # ONE bucket labelled "another contributor" — which was a provenance
+        # claim the data could not support, since every agent commits under the
+        # user's git identity. Reconciled now so the two can never drift apart
+        # across formats.
+        "yours_outside": ex["unclaimed_yours_outside_session"],
+        "other_contrib": ex["unclaimed_other_contributor"]}
 got_text = {"commits": g(t, r"drove (\d+) commits"),
             "broken": g(t, r"broken promises \(claimed, never landed, nothing explains it\): (\d+)"),
             "landed": g(t, r"(\d+)/\d+ claimed files landed"),
@@ -302,6 +309,8 @@ got_text = {"commits": g(t, r"drove (\d+) commits"),
             # balance fields below: session prose quotes this output verbatim.
             "commits_mine": g(t, r"(?m)^you: .*\((\d+) of \d+ commits are yours\)"),
             "commits_total": g(t, r"(?m)^you: .*\(\d+ of (\d+) commits are yours\)"),
+            "yours_outside": g(t, r"your identity, outside this session: (\d+)"),
+            "other_contrib": g(t, r"another contributor's commit: (\d+)"),
             # Anchor EVERY field to the balance line itself. A session's own
             # prose quotes audit output verbatim (this repo's commits are full
             # of it), so an unanchored "green · N grey" reads the conversation
@@ -327,6 +336,8 @@ got_html = {"commits": g(h, r"green · \d+/(\d+)</span>"),
             # Identity counts, anchored to the "· you:" line in the outcome block.
             "commits_mine": g(h, r"· you: .*?(\d+) of \d+ commits in this window are yours"),
             "commits_total": g(h, r"· you: .*?\d+ of (\d+) commits in this window are yours"),
+            "yours_outside": g(h, r"your identity, outside this session: (\d+)"),
+            "other_contrib": g(h, r"another contributor&#39;s commit: (\d+)"),
             "green": g(h, r"class=.balance.>balance: (\d+) green"),
             "grey": g(h, r"class=.balance.>balance: \d+ green · (\d+) grey"),
             "amber": g(h, r"class=.balance.>balance: \d+ green · \d+ grey · (\d+) amber"),

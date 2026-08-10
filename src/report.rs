@@ -656,13 +656,17 @@ pub fn print(
         );
     }
     // Split the genuine residue by WHO: a change in a keyframe (a commit
-    // this session did not make) is another contributor's, attributed by
-    // git identity; residue inside an agent commit is unexplained.
+    // Three distinct answers, never merged: someone else's commit (by git
+    // identity), your own commit from outside this session (yours, but not
+    // this agent's), and residue inside an agent commit (genuinely
+    // unexplained). Claude commits under your identity, so only the session
+    // log separates the middle case from the last.
     let not_session = ex.unclaimed_other_contributor;
+    let yours_outside = ex.unclaimed_yours_outside_session;
     let unexplained = ex.unclaimed_unexplained;
     if residue_all > 0 {
         println!(
-            "    · unclaimed changes (git recorded it, no matching edit claim): {residue_all} — this agent via a command: {attributed_total} · not this session's commit (another contributor): {not_session} · unexplained, inside an agent commit: {unexplained} · dismissed as now ignored/untracked: {dismissed_total}",
+            "    · unclaimed changes (git recorded it, no matching edit claim): {residue_all} — this agent via a command: {attributed_total} · your identity, outside this session: {yours_outside} · another contributor's commit: {not_session} · unexplained, inside an agent commit: {unexplained} · dismissed as now ignored/untracked: {dismissed_total}",
         );
     }
     println!(

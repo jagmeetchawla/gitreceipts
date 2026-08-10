@@ -643,6 +643,7 @@ fn render_summary(
     let dismissed = ex.dismissed;
     let residue = ex.residue;
     let not_session = ex.unclaimed_other_contributor;
+    let yours_outside = ex.unclaimed_yours_outside_session;
     let unexplained = ex.unclaimed_unexplained;
 
     b.push_str("<div class=\"outcome\"><h3>intent → outcome</h3>");
@@ -701,7 +702,7 @@ fn render_summary(
     }
     let _ = write!(
         b,
-        "<div class=\"line dim\">· unclaimed changes (git recorded it, no matching edit claim): {} — this agent via a command: {attributed} · not this session's commit (another contributor): {not_session} · unexplained, inside an agent commit: {unexplained} · dismissed as now ignored/untracked: {dismissed}</div>",
+        "<div class=\"line dim\">· unclaimed changes (git recorded it, no matching edit claim): {} — this agent via a command: {attributed} · your identity, outside this session: {yours_outside} · another contributor's commit: {not_session} · unexplained, inside an agent commit: {unexplained} · dismissed as now ignored/untracked: {dismissed}</div>",
         residue + attributed + dismissed
     );
     let cls = if broken == 0 { "ok" } else { "bad" };
