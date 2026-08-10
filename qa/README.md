@@ -1,8 +1,9 @@
 # QA — audit gitreceipts across *your* repos
 
 `run-qa.sh` is a zero-dependency harness that runs the built `git-receipts`
-binary across every repo you have sessions for and every CLI switch — `audit`
-(text + HTML) and `export` (JSON) — and checks that it holds its promises.
+binary across every repo you have sessions for and every CLI switch — `recap`
+and `audit` (text + HTML, full and compact) and `export` (JSON) — and checks
+that it holds its promises.
 
 > ### ⚠ Privacy
 > Every run writes **real session content** (your prompts, file paths, command
@@ -39,22 +40,32 @@ there's nothing reproducible to diff against. Instead it asserts **invariants**:
 
 - **exit codes** — `0` on the happy path; non-zero on bad repo / session / store
 - **JSON** parses; **HTML** is self-contained (no external asset loads) and well-formed
-- **leak-safety** — your home path never appears (it collapses to `~`)
+- **leak-safety** — your home path never appears (it collapses to `~`), on
+  *every* view. Recap gets the same guarantee as the audit: a narrative frame
+  changes the words, never the protection. This check earned its keep on
+  2026-08-09, catching recap printing prompts unredacted the first time the
+  matrix covered it — prompts routinely name files by absolute path, and recap
+  promotes the prompt to the headline.
 - **suppression** — `--no-prompt` / `--no-summary` / `--no-intent` / `--no-identity`
   empty the right fields
 - **reconciliation** — the console, HTML, and JSON are three renderings of one
   receipt, so every headline **and** exception number must be identical across
   them (commits, broken promises, claims landed, late landings, the unclaimed-
-  change split, keyframes, failures)
+  change split, keyframes, failures, and the four-way green/grey/amber/red
+  balance)
+- **the compact page is actually smaller** than the full one. A `--compact`
+  that quietly stopped compacting would pass every other check here
+- **refusals refuse** — `--repo` pointed at a folder holding several repos must
+  name them and stop, never pick one
 
 ## How this was validated
 
-The harness runs against a real working set before every release. The launch
-run: **11 repositories** across **5 projects** — **14 sessions** spanning
-**~106 days**, **~221k LOC** over five stacks, produced by **3 different
-models** (with mid-session switches) — **209 checks**, all passing, with the
-console/HTML/JSON numbers reconciling 1-to-1 on every repo and the
-`--project` roll-up reconciling across all three formats.
+The harness runs against a real working set before every release. The v0.1.1
+run: **5 repositories and 2 multi-repo projects** across five stacks (Swift,
+Rust, Svelte, Astro, Tauri), sessions produced by **3 different models** with
+mid-session switches — **295 checks**, all passing, with console/HTML/JSON
+reconciling 1-to-1 on every repo and both `--project` roll-ups reconciling
+across all three formats.
 
 The reconciliation check has caught a real cross-format bug **before every
 release** it has run for. Two examples: the HTML summary once showed the count

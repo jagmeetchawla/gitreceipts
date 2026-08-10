@@ -212,6 +212,40 @@ matrix() {
     run "$p-full-commit"    0 "nonempty noleak"          -- audit  --latest --repo "$repo" --store "$STORE" --full --commit "$hash"
     run "$p-export-commit"  0 "json"                     -- export --latest --repo "$repo" --store "$STORE" --commit "$hash"
   fi
+
+  # ---- 0.1.1 surfaces: recap (the default command) and the compact page --
+  # Recap renders the same receipt with a different frame, so it gets the
+  # same leak/secret/identity guarantees as the audit — a narrative view
+  # that leaked what the audit masks would be the worst kind of gap.
+  run "$p-recap"            0 "nonempty noleak nosecret" -- recap  --latest --repo "$repo" --store "$STORE"
+  run "$p-recap-all"        0 "nonempty noleak"          -- recap  --all    --repo "$repo" --store "$STORE"
+  run "$p-recap-verbose"    0 "nonempty noleak nosecret" -- recap  --latest --repo "$repo" --store "$STORE" --verbose
+  run "$p-recap-oneline"    0 "nonempty noleak"          -- recap  --latest --repo "$repo" --store "$STORE" --oneline
+  run "$p-recap-summary"    0 "nonempty noleak"          -- recap  --latest --repo "$repo" --store "$STORE" --summary
+  run "$p-recap-noint"      0 "nonempty noleak"          -- recap  --latest --repo "$repo" --store "$STORE" --no-intent
+  run "$p-recap-noident"    0 "nonempty noleak noemail"  -- recap  --latest --repo "$repo" --store "$STORE" --no-identity
+  run "$p-recap-noansi"     0 "nonempty noansi"          -- recap  --latest --repo "$repo" --store "$STORE" --color never
+  run "$p-recap-html"       0 "html noleak"              -- recap  --latest --repo "$repo" --store "$STORE" --format html
+  run "$p-recap-html-comp"  0 "html noleak"              -- recap  --latest --repo "$repo" --store "$STORE" --format html --compact
+  run "$p-html-compact"     0 "html noleak"              -- audit  --latest --repo "$repo" --store "$STORE" --format html --compact
+  run "$p-summary-emoji"    0 "nonempty noleak"          -- audit  --latest --repo "$repo" --store "$STORE" --summary --emoji
+  if [ -n "$hash" ]; then
+    run "$p-recap-commit"   0 "nonempty noleak"          -- recap  --latest --repo "$repo" --store "$STORE" --commit "$hash"
+  fi
+
+  # The compact page must actually BE smaller — a --compact that quietly
+  # stopped compacting would pass every other check here.
+  local full comp
+  full=$(wc -c < "$OUT/$p-recap-html.html" 2>/dev/null || echo 0)
+  comp=$(wc -c < "$OUT/$p-recap-html-comp.html" 2>/dev/null || echo 0)
+  if [ "$comp" -gt 0 ] && [ "$full" -gt 0 ] && [ "$comp" -lt "$full" ]; then
+    PASS=$((PASS+1)); printf '  %-5s %-46s %s\n' PASS "$p-compact-smaller" "$comp < $full"
+    printf 'PASS\t%s\t-\t-\n' "$p-compact-smaller" >>"$RESULTS"
+  else
+    FAIL=$((FAIL+1)); FAILURES+=("$p-compact-smaller — compact=$comp full=$full")
+    printf '  %-5s %-46s %s\n' FAIL "$p-compact-smaller" "compact=$comp full=$full"
+    printf 'FAIL\t%s\t-\tnot smaller\n' "$p-compact-smaller" >>"$RESULTS"
+  fi
 }
 
 # --- cross-format reconciliation for one repo -------------------------------
@@ -239,7 +273,7 @@ want = {"commits": s["commits"], "broken": s["broken_promises"],
         "keyframes": ex["keyframes"], "created_elsewhere": ex["created_elsewhere"],
         "failed": ex["failed_commands_or_edits"],
         # color balance + execution-error counts (the amber model)
-        "green": bal["green"], "amber": bal["amber"], "red": bal["red"],
+        "green": bal["green"], "grey": bal.get("grey"), "amber": bal["amber"], "red": bal["red"],
         "cmd_errors": exe["os_fs_failed"], "mcp_errors": exe["mcp_errored"], "residue_files": s["residue_files"]}
 got_text = {"commits": g(t, r"drove (\d+) commits"),
             "broken": g(t, r"broken promises \(claimed, never landed, nothing explains it\): (\d+)"),
@@ -250,9 +284,14 @@ got_text = {"commits": g(t, r"drove (\d+) commits"),
             "keyframes": g(t, r"(\d+) commits? not made by this session"),
             "created_elsewhere": g(t, r"(\d+) created elsewhere"),
             "failed": g(t, r"failed commands or edits: (\d+)"),
+            # Anchor EVERY field to the balance line itself. A session's own
+            # prose quotes audit output verbatim (this repo's commits are full
+            # of it), so an unanchored "green · N grey" reads the conversation
+            # instead of the report — a false mismatch that cost an evening.
             "green": g(t, r"(?m)^balance: (\d+) green"),
-            "amber": g(t, r"green · (\d+) amber"),
-            "red": g(t, r"amber · (\d+) red of"),
+            "grey": g(t, r"(?m)^balance: \d+ green · (\d+) grey"),
+            "amber": g(t, r"(?m)^balance: \d+ green · \d+ grey · (\d+) amber"),
+            "red": g(t, r"(?m)^balance: \d+ green · \d+ grey · \d+ amber · (\d+) red"),
             "cmd_errors": g(t, r"OS/FS: \d+ commands · (\d+) failed"),
             "mcp_errors": g(t, r"MCP:\s+\d+ calls · (\d+) errored"),
             "residue_files": g(t, r"your unexplained residue: (\d+) file")}
@@ -268,8 +307,9 @@ got_html = {"commits": g(h, r"green · \d+/(\d+)</span>"),
             "keyframes": g(h, r"(\d+) commit\(s\) not made by this session"),
             "created_elsewhere": None, "failed": None,
             "green": g(h, r"class=.balance.>balance: (\d+) green"),
-            "amber": g(h, r"green · (\d+) amber"),
-            "red": g(h, r"amber · (\d+) red"),
+            "grey": g(h, r"class=.balance.>balance: \d+ green · (\d+) grey"),
+            "amber": g(h, r"class=.balance.>balance: \d+ green · \d+ grey · (\d+) amber"),
+            "red": g(h, r"class=.balance.>balance: \d+ green · \d+ grey · \d+ amber · (\d+) red"),
             "cmd_errors": g(h, r"<b>(\d+)</b><span>commands with errors"),
             "mcp_errors": g(h, r"<b>(\d+)<.b><span>MCP with errors"), "residue_files": g(h, r"<b>(\d+)<.b><span>residue<")}
 html_skip = {"created_elsewhere", "failed"}
@@ -317,8 +357,18 @@ pmatrix() {
   run "$p-export-full"    0 "json project_json noleak"       -- export --project "$dir" --store "$STORE" --full
   run "$p-html"           0 "html noleak"                    -- audit  --project "$dir" --store "$STORE" --format html
   run "$p-html-all"       0 "html noleak"                    -- audit  --project "$dir" --store "$STORE" --format html --expand all
+  # ---- 0.1.1 project surfaces: recap and the compact page --------------
+  run "$p-recap"          0 "nonempty noleak nosecret"       -- recap  --project "$dir" --store "$STORE"
+  run "$p-recap-summary"  0 "nonempty noleak"                -- recap  --project "$dir" --store "$STORE" --summary
+  run "$p-recap-verbose"  0 "nonempty noleak nosecret"       -- recap  --project "$dir" --store "$STORE" --verbose
+  run "$p-recap-html"     0 "html noleak"                    -- recap  --project "$dir" --store "$STORE" --format html
+  run "$p-recap-html-cmp" 0 "html noleak"                    -- recap  --project "$dir" --store "$STORE" --format html --compact
+  run "$p-html-compact"   0 "html noleak"                    -- audit  --project "$dir" --store "$STORE" --format html --compact
+  run "$p-summary-emoji"  0 "nonempty noleak"                -- audit  --project "$dir" --store "$STORE" --summary --emoji
   # mutually-exclusive forms must fail gracefully
   run "$p-both-repo"      nz ""                              -- audit  --project "$dir" --repo "$dir" --store "$STORE"
+  # --repo on a container of repos must refuse rather than pick one
+  run "$p-repo-container" nz ""                              -- audit  --repo "$dir" --store "$STORE"
 }
 
 preconcile() {
@@ -339,11 +389,11 @@ t = open(sys.argv[1]).read(); d = json.load(open(sys.argv[2])); h = open(sys.arg
 keys = ["commits","landed","claims","broken","residue_files","verdict"]
 # console "where it landed" rows: name  commits  landed/claims  broken  residue  ● verdict
 trows = {}
-for m in re.finditer(r"(?m)^\s{2}(\S+)\s+(\d+)\s+(\d+)/(\d+)\s+(\d+)\s+(\d+)\s+\S*\s*(green|amber|red)\s*$", t):
+for m in re.finditer(r"(?m)^\s{2}(\S+)\s+(\d+)\s+(\d+)/(\d+)\s+(\d+)\s+(\d+)\s+\S*\s*(green|grey|amber|red)\s*$", t):
     trows[m.group(1)] = dict(commits=int(m[2]), landed=int(m[3]), claims=int(m[4]),
                              broken=int(m[5]), residue_files=int(m[6]), verdict=m[7])
 # HTML landing rows
-V = {"good":"green","warn":"amber","bad":"red"}
+V = {"good":"green","note":"grey","warn":"amber","bad":"red"}
 hrows = {}
 for m in re.finditer(r'<tr><td><a href="#repo-[^"]*">([^<]+)</a></td><td>(\d+)</td><td>(\d+)/(\d+)</td><td[^>]*>(\d+)</td><td[^>]*>(\d+)</td><td class="verdict (\w+)">', h):
     hrows[m[1]] = dict(commits=int(m[2]), landed=int(m[3]), claims=int(m[4]),

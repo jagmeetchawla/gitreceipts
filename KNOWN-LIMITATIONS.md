@@ -22,13 +22,21 @@ to bill each repo for the others' edits — 48 false reds on a real four-repo
 corpus, now 1 genuine one) and a **path-level late-landing check** that had
 regressed into treating any later touch of the same path as "landed".
 
-What remains: **build-tool churn is still red** when the file exists in
-history and the agent's content was overwritten before the commit. The
-diagnosis says so ("a tracked file, but this edit's content reached no later
-commit"), but distinguishing "a generator rewrote it" from "the edit was
-lost" needs evidence we don't yet collect. Read that diagnosis before
-reading the red as a lie — the errors here still skew toward false alarms,
-never toward hiding.
+0.1.1 also stopped **formatters** from breaking a landing. `cargo fmt`
+rewrapping a call and adding a trailing comma between the write and the
+commit used to leave the claimed bytes unfindable, so a kept promise read
+as broken. Verification now tries the exact bytes, then the bytes with
+whitespace removed, then a single small local difference — identical
+except in one place.
+
+What remains: **a generator that substantially rewrites the file is still
+red** when the path exists in history and the agent's content was replaced
+before the commit. The diagnosis says so ("a tracked file, but this edit's
+content reached no later commit"), but telling "a build step regenerated
+it" from "the edit was lost" needs evidence we don't collect — and
+loosening the match far enough to cover it would start laundering real
+losses. Read the diagnosis before reading the red as a lie; the errors
+here skew toward false alarms, never toward hiding.
 
 ## 2. Uncommitted work in the working tree reads as red
 
@@ -37,6 +45,16 @@ gitignored) is diagnosed "on disk right now, still uncommitted" and counted
 broken. The work is real; it just lives outside committed history, and the tool
 has no first-class "landed in the working tree" state yet. Common first victim:
 a `.gitignore` that was written but never committed.
+
+## 2b. A repo is the folder you are in — never the one above it
+
+`git receipts` looks for `.git` in the folder you name (or are standing in)
+and nowhere else. Unlike `git status`, running from a subdirectory does not
+walk up: `cd src && git receipts` is an error, not an audit of the repo two
+levels above. This is deliberate — the target is always something you can
+see from where you stand, and the tool never picks a repo for you — but it
+will catch people used to git's behaviour. The error says what to do. See
+[docs/WHAT-GETS-AUDITED.md](docs/WHAT-GETS-AUDITED.md).
 
 ## 3. Relocation detection is bounded
 
