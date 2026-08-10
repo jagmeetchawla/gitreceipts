@@ -1516,7 +1516,16 @@ fn render_interval(
                 interval.effectful_commands
             )
         } else {
-            "no effectful commands ran in this agent commit — possibly a human edit".to_string()
+            // Was "possibly a human edit". The evidence is only that no
+            // effectful command in THIS log explains the change — which does
+            // not identify who made it. It could be a hand edit, a write by a
+            // session this run did not load, a scaffolder or script whose
+            // output was never claimed, or anything `git add -A` swept in.
+            // The hedge ("possibly") is what let this survive three earlier
+            // sweeps: it reads as caution while still naming a person.
+            "no effectful command in this session's log explains it — a hand edit, another \
+             session, or a tool whose write was never claimed"
+                .to_string()
         };
         println!("      {}", st.dim(&hint));
     }

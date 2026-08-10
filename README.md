@@ -68,6 +68,11 @@ mirror for your own work, not a badge to show anyone. Details in
 /plugin install gitreceipts@cloudcraft
 ```
 
+Type those in the **Claude Code CLI**. If you're in the desktop app and its
+plugin search doesn't find gitreceipts, that's expected — run the two
+commands in a terminal (`claude plugin marketplace add …`), and the app
+picks it up from there.
+
 **The CLI** — the engine the plugin wraps, and a full standalone tool (no
 AI required). The plugin needs it on your PATH and will point you here:
 
