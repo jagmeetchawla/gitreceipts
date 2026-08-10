@@ -337,7 +337,7 @@ fn render_body(
         format!("interval spine — {total} commits")
     } else if keyframes_excluded > 0 {
         format!(
-            "interval spine — {total} agent commits <span class=\"dim\">({keyframes_excluded} by others held out; --full-history to include)</span>"
+            "interval spine — {total} agent commits <span class=\"dim\">({keyframes_excluded} held out, not made by this session; --full-history / --all-authors to include)</span>"
         )
     } else {
         format!("interval spine — {total} agent commits")
@@ -782,9 +782,11 @@ fn render_summary(
         );
     }
     if keyframes > 0 {
+        let kf_mine = audit.keyframes_mine();
+        let kf_others = audit.keyframes_others();
         let _ = write!(
             b,
-            "<div class=\"line dim\">· {keyframes} commit(s) not made by this session \u{2014} another contributor</div>"
+            "<div class=\"line dim\">· {keyframes} commit(s) not made by this session \u{2014} {kf_mine} yours, {kf_others} by other contributors</div>"
         );
     }
     b.push_str("</div>\n");
@@ -934,7 +936,11 @@ fn render_interval(
             esc(&iv.commit.author)
         );
     } else {
-        b.push_str("<span class=\"badge\">keyframe \u{2014} another contributor</span>");
+        b.push_str(if iv.mine {
+            "<span class=\"badge\">not this session \u{2014} your identity</span>"
+        } else {
+            "<span class=\"badge\">keyframe \u{2014} another contributor</span>"
+        });
     }
     if show_identity {
         for co in &iv.commit.co_authors {

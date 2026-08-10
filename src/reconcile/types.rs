@@ -499,6 +499,34 @@ impl Audit {
             .filter(move |i| full || i.agent_committed)
     }
 
+    /// Of the held-out commits, how many are YOURS by git identity. These are
+    /// held out on the WHEN axis (this session did not make them), not the WHO
+    /// axis — so --full-history reclaims them and --all-authors cannot. Calling
+    /// these "by others" was wrong for every commit the user wrote by hand, and
+    /// pointed them at the one flag that could not help.
+    pub fn keyframes_mine(&self) -> usize {
+        if self.full_history {
+            0
+        } else {
+            self.intervals
+                .iter()
+                .filter(|i| !i.agent_committed && i.mine)
+                .count()
+        }
+    }
+
+    /// Held-out commits that genuinely belong to someone else.
+    pub fn keyframes_others(&self) -> usize {
+        if self.full_history {
+            0
+        } else {
+            self.intervals
+                .iter()
+                .filter(|i| !i.agent_committed && !i.mine)
+                .count()
+        }
+    }
+
     /// Non-agent commits held OUT of the equation (0 under --full-history) —
     /// surfaced as a context count, never counted as the agent's work.
     pub fn keyframes_excluded(&self) -> usize {

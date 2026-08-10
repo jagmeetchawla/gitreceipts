@@ -728,8 +728,10 @@ pub fn print(
     }
     if keyframes > 0 {
         println!(
-            "    · {keyframes} commit{} not made by this session — another contributor",
-            if keyframes == 1 { "" } else { "s" }
+            "    · {keyframes} commit{} not made by this session ({} yours, {} by other contributors)",
+            if keyframes == 1 { "" } else { "s" },
+            audit.keyframes_mine(),
+            audit.keyframes_others()
         );
     }
 
@@ -823,14 +825,31 @@ pub fn print(
             total, agent_commits, keyframes, source_note, filter_note
         )
     } else {
-        // Default: the spine IS the agent's own commits; commits by others in the
-        // window are held out (a teammate's work is not the agent's account).
+        // Default: the spine is what THIS SESSION committed. Everything else in
+        // the window is held out — and the reason matters, because it decides
+        // which flag brings it back. Held out because this session did not make
+        // it (yours, by hand or another session) → --full-history. Held out
+        // because it is not yours → --all-authors. Calling both "by others" was
+        // wrong for every hand-made commit, and sent users to the one flag that
+        // could not help.
         let held = if keyframes_excluded > 0 {
-            format!(
-                " · {keyframes_excluded} commit{} by others held out ({})",
-                if keyframes_excluded == 1 { "" } else { "s" },
-                st.dim("--full-history to include")
-            )
+            let mine = audit.keyframes_mine();
+            let others = audit.keyframes_others();
+            let detail = match (mine, others) {
+                (m, 0) => format!(
+                    "{m} not made by this session ({})",
+                    st.dim("yours — --full-history to include")
+                ),
+                (0, o) => format!(
+                    "{o} by other contributors ({})",
+                    st.dim("--all-authors to include")
+                ),
+                (m, o) => format!(
+                    "{m} not made by this session, {o} by other contributors ({})",
+                    st.dim("--full-history / --all-authors to include")
+                ),
+            };
+            format!(" · {detail}")
         } else {
             String::new()
         };
@@ -1075,7 +1094,11 @@ fn render_interval(
             interval.commit.author
         )
     } else {
-        " [keyframe: not this session — another contributor]".to_string()
+        if interval.mine {
+            " [not this session — your identity]".to_string()
+        } else {
+            " [not this session — another contributor]".to_string()
+        }
     };
     let ghost = if interval.commit.reachable {
         ""
@@ -1480,7 +1503,12 @@ fn render_interval(
                     interval.commit.author
                 )
             } else {
-                "not this session's commit — another contributor".to_string()
+                if interval.mine {
+                    "not this session's commit — your identity, another session or by hand"
+                        .to_string()
+                } else {
+                    "not this session's commit — another contributor".to_string()
+                }
             }
         } else if interval.effectful_commands > 0 {
             format!(
@@ -1720,7 +1748,7 @@ pub fn print_summary(audit: &Audit, opts: &Options) {
         return print_recap(audit, opts, &st, c, CAP);
     }
     println!(
-        "commits {} (+{} by others held out) · {} · claims {}/{} · broken promises {}",
+        "commits {} (+{} held out, not this session) · {} · claims {}/{} · broken promises {}",
         c.total,
         c.keyframes_excluded,
         if opts.emoji {
