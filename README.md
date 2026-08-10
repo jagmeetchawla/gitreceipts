@@ -120,10 +120,20 @@ against what you asked for and explains what it finds. Neither alone gives
 you that — an agent grading its own homework is exactly the problem this
 tool exists to solve.
 
+Six skills, each named for what you want rather than which flag it passes:
+
+| | |
+|---|---|
+| `/gitreceipts:recap` | what happened here |
+| `/gitreceipts:audit` | did every claimed edit land |
+| `/gitreceipts:HTMLReport-Compact` | a page small enough to read inline |
+| `/gitreceipts:HTMLReport-Full` | the complete record, in your browser |
+| `/gitreceipts:JSONExport` | the data, written to a file |
+| `/gitreceipts:help` | all of the above, with the switches |
+
 The plugin wraps the CLI below and will guide you through installing the
-binary if it's missing (it never installs anything for you).
-`/gitreceipts:help` shows everything it can do. And the CLI is a full
-standalone tool — all of it works with no AI in the loop.
+binary if it's missing (it never installs anything for you). And the CLI is
+a full standalone tool — all of it works with no AI in the loop.
 
 ## 2. Read it — `git receipts`
 
@@ -160,6 +170,15 @@ git receipts recap --commit 6d6cdc4   # one commit's whole story
 git receipts recap --verbose          # every commit, in full
 git receipts recap --project          # a folder of repos
 git receipts recap --this-session "$MARKER"   # exactly this live session
+```
+
+**In Claude Code** — same thing, said out loud:
+
+```
+/gitreceipts:recap            what happened here
+"catch me up"                 fires the same skill on its own
+"recap commit 6d6cdc4"        one commit's story
+"what happened in this session"   the live one, matched by identity
 ```
 
 <!-- SCREENSHOT: `recap --commit <hash>` — the ask, the conversation, what landed -->
@@ -207,6 +226,14 @@ git receipts audit --filter red-amber   # just the unanswered ones
 git receipts audit --exit-code          # 0 green/grey · 1 amber · 2 red — for CI
 ```
 
+**In Claude Code:**
+
+```
+/gitreceipts:audit            the verdict, explained in context
+"did all that actually land?"  fires it on its own
+"just the problems"            the unanswered findings only
+```
+
 ## 4. Keep it — pages and data
 
 Every view renders three ways, from one receipt: the console, a
@@ -220,6 +247,15 @@ offline:
 ```bash
 git receipts recap --format html --compact > recap.html   # the story
 git receipts audit --format html --compact > audit.html   # the verdict
+```
+
+**In Claude Code**, each artifact is a command, named for what it's for
+rather than which flag it passes:
+
+```
+/gitreceipts:HTMLReport-Compact   a page small enough to read right here
+/gitreceipts:HTMLReport-Full      the complete record, opened in your browser
+/gitreceipts:JSONExport           the data, written to a file
 ```
 
 `--compact` is the one to reach for: commits with unexplained findings keep
@@ -240,6 +276,9 @@ git receipts export > receipt.json
 git receipts export --project > project.json
 git receipts export --compact          # single line, for piping
 ```
+
+(`/gitreceipts:JSONExport` does the same from Claude Code — always to a
+file, never pasted into the conversation. A real receipt is megabytes.)
 
 - Same facts as the report: per-commit statement, ledger, residue,
   commands, MCP calls, intents, token estimate, provenance, exceptions,
