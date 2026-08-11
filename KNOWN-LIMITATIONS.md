@@ -40,6 +40,8 @@ here skew toward false alarms, never toward hiding.
 
 ## 2. Uncommitted work in the working tree reads as red
 
+*Tracked at [#6](https://github.com/jagmeetchawla/gitreceipts/issues/6).*
+
 A claimed edit whose content is on disk **but never committed** (and not
 gitignored) is diagnosed "on disk right now, still uncommitted" and counted
 broken. The work is real; it just lives outside committed history, and the tool
@@ -47,6 +49,8 @@ has no first-class "landed in the working tree" state yet. Common first victim:
 a `.gitignore` that was written but never committed.
 
 ## 2b. A repo is the folder you are in — never the one above it
+
+*Deliberate (0.1.1). Not a defect; documented so the rule is predictable.*
 
 `git receipts` looks for `.git` in the folder you name (or are standing in)
 and nowhere else. Unlike `git status`, running from a subdirectory does not
@@ -57,6 +61,8 @@ will catch people used to git's behaviour. The error says what to do. See
 [docs/WHAT-GETS-AUDITED.md](docs/WHAT-GETS-AUDITED.md).
 
 ## 3. Relocation detection is bounded
+
+*Tracked at [#7](https://github.com/jagmeetchawla/gitreceipts/issues/7).*
 
 A file written at one path and moved elsewhere *before its first commit* is
 detected (content-verified, same filename). But a file that was moved **and
@@ -96,12 +102,16 @@ and other tools alike, and nothing on record distinguishes them.
 
 ## 5. The claims side is only as complete as your logs
 
+*Inherent, not tracked: logs are what they are. Stated so the boundary is visible.*
+
 git's record is durable and shared; session logs are local, partial, and
 subject to store retention. Absence of a claim is not absence of work — commits
 older than your oldest surviving session show as unclaimed keyframes, honestly
 labeled, not blamed.
 
 ## 6. Honest for reasonable use, not adversary-proof
+
+*By design, not tracked. See the threat model below.*
 
 Timestamps and reflog order can be forged by someone determined to fool their
 own audit. The tool guards against accidents (clock anomalies, amends, rebases)
@@ -121,6 +131,8 @@ the first writable directory on your MANPATH (and tells you what to add
 to MANPATH if there isn't one).
 
 ## 8. Cross-machine / mounted-drive audits are NOT supported in v0.1
+
+*Tracked at [#8](https://github.com/jagmeetchawla/gitreceipts/issues/8).*
 
 Auditing sessions recorded on a **different machine** — a mounted backup
 drive, a copied `~/.claude/projects`, a second computer — is **not a
@@ -159,11 +171,15 @@ the outputs private.
 
 ## 9. One harness today
 
+*Tracked at [#9](https://github.com/jagmeetchawla/gitreceipts/issues/9).*
+
 v0.1 reads Claude Code session logs. The event model is deliberately
 harness-neutral; adapters for other agent CLIs are on the roadmap — the
 reconciliation itself never depended on who wrote the log.
 
 ## 10. No way to list or select one session — the multi-lane gap
+
+*Tracked at [#10](https://github.com/jagmeetchawla/gitreceipts/issues/10).*
 
 By default gitreceipts merges **every** session for a repo into one stream.
 That is right for solo work: it avoids the trap where your *other* sessions'
@@ -180,6 +196,8 @@ README.
 
 ## 11. No time scope — you cannot ask "what changed since I last looked"
 
+*Tracked at [#11](https://github.com/jagmeetchawla/gitreceipts/issues/11).*
+
 Scope is per-repo, per-session, or per-commit; there is no `--since`. The
 oversight question after a day away is *what moved since yesterday*, and
 today the repo-wide default answers it by showing everything, oldest
@@ -187,6 +205,8 @@ findings included, with recent work no more prominent than months-old
 history. `--latest` narrows to one session, which is not the same question.
 
 ## 12. `genuine` is a residual failure class, not a diagnosis
+
+*Tracked at [#1](https://github.com/jagmeetchawla/gitreceipts/issues/1).*
 
 Every failed command is triaged — expected-nonzero, guarded, retried-and-passed,
 user-abort, sandbox-denial, or **`genuine`**. That last one is what's left when
@@ -206,6 +226,8 @@ classes that are cheap to detect, is the top item on the roadmap.
 
 ## 13. Files written by shell commands aren't always attributed
 
+*Tracked at [#2](https://github.com/jagmeetchawla/gitreceipts/issues/2).*
+
 A file the agent creates through the Write/Edit tools is a claim. A file it
 creates by running `cp`, `sips`, `convert`, or a script is not — the ledger
 never sees it, so it surfaces as unexplained residue.
@@ -223,6 +245,8 @@ file a *human* dropped into the repo and the agent committed is also residue,
 and should stay visible.
 
 ## 14. Project-mode exports repeat session-level events per repo
+
+*Tracked at [#3](https://github.com/jagmeetchawla/gitreceipts/issues/3).*
 
 When one session drives several repos under `--project`, each repo's section
 of the JSON export carries that session's command runs. The same command can
@@ -243,6 +267,8 @@ Two rules for anyone parsing the export:
   claims are not broken promises.
 
 ## 15. On-time landings are path-verified; only late landings are content-verified
+
+*Tracked at [#5](https://github.com/jagmeetchawla/gitreceipts/issues/5).*
 
 A claim is checked two ways depending on where it landed.
 
