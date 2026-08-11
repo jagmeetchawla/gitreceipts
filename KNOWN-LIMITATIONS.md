@@ -241,3 +241,26 @@ Two rules for anyone parsing the export:
   `summary.broken_promises`. A never-landed claim may carry a `resolution`
   (superseded, deliberately removed, gitignored, scratch churn), and resolved
   claims are not broken promises.
+
+## 15. On-time landings are path-verified; only late landings are content-verified
+
+A claim is checked two ways depending on where it landed.
+
+- **Landed in the very next commit** — verified at **path level**. That commit
+  changed that file, so the claim counts as landed. The claimed *content* is
+  not re-checked.
+- **Landed in a later commit** — verified at **content level**, against the
+  real blob: the claimed text must be found in the file at that commit.
+
+The asymmetry is deliberate in part. An agent usually edits a file several
+times before committing and only the final state lands; content-checking each
+edit would report the intermediate ones as lost when nothing was lost.
+
+But it has a real cost: **if the commit right after a claim happens to touch
+that file for an unrelated reason, the claim is counted as landed.** That is a
+false green, and this tool can afford those least of all.
+
+Being fixed — see [issue #5](https://github.com/jagmeetchawla/gitreceipts/issues/5).
+Until then, read `landed late (content-verified)` as the stronger evidence it
+is, and treat a plain on-time `landed` as "git recorded a change to this file
+in the expected commit."

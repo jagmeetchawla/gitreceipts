@@ -37,7 +37,9 @@ And you can trust the account, because it's checked, not narrated. The
 session log is the agent's own story. git kept an independent record of what
 actually persisted — a log the agent can't fabricate after the fact.
 gitreceipts reads the two side by side and reconciles them, claim by claim,
-content-level against the actual commit blobs. You're not reading the
+against the actual commit blobs — content-level wherever a claim didn't
+land in the very next commit (see
+[what it verifies](#what-it-checks)). You're not reading the
 agent's memoir. You're reading a checked one. Not the agent's word. Git's.
 
 That checking is always running; `git receipts audit` is where it takes
@@ -344,9 +346,24 @@ Reconciliation runs both directions, and both get billing:
 
 What it **verifies** — because git can witness it:
 
-- **File writes, edits, deletes** — claimed content checked against the
-  actual commit blobs. Content-level, not filename-level, so a coincidental
-  change can't be mistaken for the claim landing.
+- **File writes, edits, deletes** — checked against the commit that
+  followed, and against every later commit if it didn't land there. The
+  two cases differ, and it matters:
+  - **Landed in the next commit** — verified at **path level**: that commit
+    changed that file. The claimed *content* is not re-checked, because an
+    agent typically edits a file several times before committing and only
+    the last state lands; content-checking each edit would report the
+    intermediate ones as lost when nothing was lost.
+  - **Landed later** — verified at **content level**, against the actual
+    commit blob: the claimed text must be found in the file at that commit.
+    A coincidental change to the same path is not accepted as the claim
+    landing.
+
+  So a claim that landed *late* carries stronger evidence than one that
+  landed *on time*. The consequence to be aware of: if the commit right
+  after a claim touches that file for an unrelated reason, the claim is
+  counted as landed. See
+  [issue #5](https://github.com/jagmeetchawla/gitreceipts/issues/5).
 - **Commits** — matched to the real commit graph and reflog.
 - **Pushes** — checked against the remote-tracking refs.
 - **Who** — every commit's author and declared co-authors, straight from
